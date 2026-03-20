@@ -147,11 +147,11 @@ function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||
 // ── Design ────────────────────────────────────────────────────────────
 const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)"};
 const S={
-  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,display:"flex"},
-  nav:{position:"fixed",top:0,left:0,bottom:0,width:72,background:C.white,borderRight:`1px solid ${C.borderLight}`,display:"flex",flexDirection:"column",alignItems:"center",paddingTop:16,paddingBottom:16,zIndex:50,boxShadow:"2px 0 12px rgba(0,0,0,0.04)"},
-  navBtn:a=>({width:52,height:52,background:a?C.accentBg:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:a?C.accent:C.text3,fontFamily:"inherit",borderRadius:14,marginBottom:4,transition:"all 0.15s"}),
-  content:{marginLeft:72,flex:1,minHeight:"100vh"},
-  header:{background:C.white,padding:"52px 20px 16px",borderBottom:`1px solid ${C.borderLight}`},
+  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingBottom:90},
+  nav:{position:"fixed",bottom:0,left:0,right:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${C.borderLight}`,display:"flex",zIndex:100,boxShadow:"0 -2px 12px rgba(0,0,0,0.06)"},
+  navBtn:a=>({flex:1,padding:"10px 4px 12px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,color:a?C.accent:C.text3,fontFamily:"inherit",minHeight:64,position:"relative"}),
+  content:{flex:1},
+  header:{background:C.white,padding:"20px 20px 16px",borderBottom:`1px solid ${C.borderLight}`},
   htitle:{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",color:C.text},
   hSub:{fontSize:12,color:C.text3,fontWeight:500,marginTop:2},
   sec:{padding:"16px 16px 0"},
@@ -2099,37 +2099,31 @@ function App(){
       v 20 Mar 2026 18:27
     </div>
 
-    {/* ── Left Sidebar Nav ── */}
+    {/* ── Main Content ── */}
+    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast}/>}
+    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings}/>}
+    {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
+    {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
+    {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast}/>}
+
+    {/* ── Bottom Nav ── */}
     <div style={S.nav}>
-      <div style={{fontSize:26,marginBottom:16}}>🐱</div>
       {[
-        {id:"rooms",    icon:"🏠",label:"Rooms",   badge:freeToday>0?freeToday:0,badgeColor:C.green},
-        {id:"bookings", icon:"📋",label:"Bookings",badge:todayActive,badgeColor:C.accent},
-        {id:"customers",icon:"😺",label:"Cats",    badge:0},
-        {id:"dashboard",icon:"📊",label:"Stats",   badge:0},
+        {id:"rooms",    icon:"🏠", label:"Rooms",    badge:freeToday>0?freeToday:0, badgeColor:C.green},
+        {id:"bookings", icon:"📋", label:"Bookings", badge:todayActive,             badgeColor:C.accent},
+        {id:"customers",icon:"😺", label:"Customers",badge:0},
+        {id:"dashboard",icon:"📊", label:"Dashboard",badge:0},
+        {id:"settings", icon:"⚙️", label:"Settings", badge:0},
       ].map(n=>(
-        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)} title={n.label}>
+        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)}>
+          {page===n.id&&<div style={{position:"absolute",top:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"0 0 4px 4px"}}/>}
           <div style={{position:"relative",lineHeight:1}}>
-            <span style={{fontSize:22}}>{n.icon}</span>
-            {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:16,height:16,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
+            <span style={{fontSize:24}}>{n.icon}</span>
+            {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
           </div>
-          <div style={{fontSize:9,fontWeight:700,marginTop:2}}>{n.label}</div>
+          <div style={{fontSize:10,fontWeight:page===n.id?800:600,letterSpacing:"0.01em"}}>{n.label}</div>
         </button>
       ))}
-      <div style={{flex:1}}/>
-      <button style={S.navBtn(page==="settings")} onClick={()=>setPage("settings")} title="Settings">
-        <span style={{fontSize:22}}>⚙️</span>
-        <div style={{fontSize:9,fontWeight:700,marginTop:2}}>Settings</div>
-      </button>
-    </div>
-
-    {/* ── Main Content ── */}
-    <div style={S.content}>
-      {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast}/>}
-      {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings}/>}
-      {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
-      {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
-      {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast}/>}
     </div>
 
     <Toast msg={toast} onHide={()=>setToast("")}/>
