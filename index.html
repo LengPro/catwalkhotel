@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cat Hotel">
+<title>🐱 Cat Hotel</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+body { background:#faf9f7; font-family:'Plus Jakarta Sans',-apple-system,sans-serif; }
+input,select,textarea,button { font-family:'Plus Jakarta Sans',-apple-system,sans-serif; }
+input[type=date]::-webkit-calendar-picker-indicator { opacity:0.5; }
+::-webkit-scrollbar { height:4px; width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:#ddd; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey:"AIzaSyDyJDGHrC2GFW-sly--8YI7jf3CJPtN0QU",
+  authDomain:"catwalk-cat-hotel.firebaseapp.com",
+  projectId:"catwalk-cat-hotel",
+  storageBucket:"catwalk-cat-hotel.firebasestorage.app",
+  messagingSenderId:"931868206069",
+  appId:"1:931868206069:web:d32a90874acf679992b6bc"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+async function fbLoad(col){ try{ const s=await db.collection(col).orderBy("createdAt","asc").get(); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ console.error(e); return []; } }
+async function fbSave(col,id,data){ try{ const{id:_,...rest}=data; await db.collection(col).doc(id).set(rest); }catch(e){console.error(e);} }
+async function fbDelete(col,id){ try{ await db.collection(col).doc(id).delete(); }catch(e){console.error(e);} }
+</script>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ── Room Config ───────────────────────────────────────────────────────
+const ROOMS = [
+  {id:"A-S1",zone:"A",type:"S",label:"A-S1"},{id:"A-S2",zone:"A",type:"S",label:"A-S2"},
+  {id:"A-S3",zone:"A",type:"S",label:"A-S3"},{id:"A-S4",zone:"A",type:"S",label:"A-S4"},
+  {id:"A-S5",zone:"A",type:"S",label:"A-S5"},{id:"A-M1",zone:"A",type:"M",label:"A-M1"},
+  {id:"A-M2",zone:"A",type:"M",label:"A-M2"},{id:"B-S6",zone:"B",type:"S",label:"B-S6"},
+  {id:"B-S7",zone:"B",type:"S",label:"B-S7"},{id:"B-S8",zone:"B",type:"S",label:"B-S8"},
+  {id:"B-S9",zone:"B",type:"S",label:"B-S9"},{id:"B-S10",zone:"B",type:"S",label:"B-S10"},
+  {id:"C-S11",zone:"C",type:"S",label:"C-S11"},{id:"C-S12",zone:"C",type:"S",label:"C-S12"},
+  {id:"C-S13",zone:"C",type:"S",label:"C-S13"},{id:"C-S14",zone:"C",type:"S",label:"C-S14"},
+];
+// สีแยกตามกลุ่มห้อง
+const ROOM_COLOR_MAP = {
+  "A-S": "#ff383c",
+  "A-M": "#cb30e0",
+  "B-S": "#ff8d28",
+  "C-S": "#481a29",
+};
+function getRoomColor(roomId){
+  if(!roomId) return "#888";
+  if(roomId.startsWith("A-S")) return ROOM_COLOR_MAP["A-S"];
+  if(roomId.startsWith("A-M")) return ROOM_COLOR_MAP["A-M"];
+  if(roomId.startsWith("B-S")) return ROOM_COLOR_MAP["B-S"];
+  if(roomId.startsWith("C-S")) return ROOM_COLOR_MAP["C-S"];
+  return "#888";
+}
+function getRoomBg(roomId){
+  return getRoomColor(roomId)+"18";
+}
+// Zone fallback colors (for zone label rows)
+const ZONE_COLORS = {
+  A: "#ff383c",
+  B: "#ff8d28",
+  C: "#481a29",
+};
+const ZONE_BG = {
+  A: "#ff383c18",
+  B: "#ff8d2818",
+  C: "#481a2918",
+};
+const PRICES = {S:300,M:400};
+const EXTRA_CAT_FEE = 50;
+const LITTER_FEE = 50; // per week
+const PAY_METHODS = ["Cash","Transfer","Credit Card","QR Code"];
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS_FULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS_SHORT=["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+// ── Helpers ───────────────────────────────────────────────────────────
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
+const today=()=>new Date().toISOString().split("T")[0];
+const fmt=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); return`${x.getDate()} ${MONTHS[x.getMonth()]} ${x.getFullYear()}`; };
+const fmtShort=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); return`${x.getDate()}/${x.getMonth()+1}`; };
+const nights=(a,b)=>Math.max(1,Math.round((new Date(b)-new Date(a))/(864e5)));
+const addDays=(d,n)=>{ const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
+const calcPrice=(n,size,numCats,discount,litter)=>{
+  const litterWeeks=litter?Math.ceil(n/7):0;
+  const litterAmt=litterWeeks*LITTER_FEE;
+  const base=n*(PRICES[size]+Math.max(0,numCats-1)*EXTRA_CAT_FEE)+litterAmt;
+  const discAmt=Math.round(base*(parseFloat(discount)||0)/100);
+  return{base,discAmt,net:base-discAmt,litterAmt,litterWeeks};
+};
+const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:"",notes:""});
+
+// ── Room availability ─────────────────────────────────────────────────
+function getRoomBookings(roomId, bookings) {
+  return bookings.filter(b => b.roomId === roomId || (b.roomIds||[]).includes(roomId));
+}
+function isRoomAvailable(roomId, checkin, checkout, bookings, excludeId=null) {
+  const rb = getRoomBookings(roomId, bookings).filter(b => b.id !== excludeId);
+  for (const b of rb) {
+    // Overlap: existing booking overlaps if it starts before our checkout AND ends after our checkin
+    if (b.checkin < checkout && b.checkout > checkin) return false;
+  }
+  return true;
+}
+function getAvailableRooms(type, checkin, checkout, bookings, excludeId=null) {
+  return ROOMS.filter(r => r.type === type && isRoomAvailable(r.id, checkin, checkout, bookings, excludeId));
+}
+
+// ── CSV helpers ───────────────────────────────────────────────────────
+function dlCSV(rows,fn){ const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"})); a.download=fn; a.click(); }
+function exportBookingsCSV(bookings,customers){
+  const h=["Booking ID","Owner","Phone","Cats","Room","Check-in","Check-out","Nights","Size","Num Cats","Base","Disc%","Disc Amt","Litter Amt","Net Total","Deposit","Remaining","Payment","Paid","Created"];
+  const rows=bookings.map(b=>{ const c=customers.find(x=>x.id===b.customerId)||{}; const n=nights(b.checkin,b.checkout); const nc=b.selectedCatIds?.length||1; const{base,discAmt,net,litterAmt}=calcPrice(n,b.size,nc,b.discount,b.litter); const cats=(b.selectedCatIds||[]).map(id=>(c.cats||[]).find(cat=>cat.id===id)?.name||"").filter(Boolean).join(", ")||b.catName||""; const dep=b.depositAmt||0; const rem=b.paid?0:(b.remaining||Math.max(0,net-dep)); return[b.id,c.nickname||"",c.phone||"",cats,b.roomId||"",b.checkin,b.checkout,n,b.size,nc,base,b.discount||0,discAmt,b.litter?litterAmt:0,net,dep,rem,b.payMethod,b.paid?"Yes":"No",b.createdAt?.split("T")[0]||""]; });
+  dlCSV([h,...rows],`cat-hotel-bookings-${today()}.csv`);
+}
+function exportCustomersCSV(customers,bookings){
+  const h=["ID","Nickname","Full Name","Phone","Line","Address","ID Card","Registered","Cat1","Breed1","Vax1","Cat2","Breed2","Vax2","Cat3","Breed3","Vax3","Bookings","Spent"];
+  const rows=customers.map(c=>{ const cb=bookings.filter(b=>b.customerId===c.id); const spent=cb.reduce((a,b)=>a+(b.net||0),0); const cats=c.cats||[]; const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",cats[i]?.vaccinePassport?"Yes":"No"]); return[c.id,c.nickname||"",c.fullname||"",c.phone||"",c.line||"",c.address||"",c.idCard?"Yes":"No",c.createdAt?.split("T")[0]||"",...cc,cb.length,spent]; });
+  dlCSV([h,...rows],`cat-hotel-customers-${today()}.csv`);
+}
+
+// ── ICS / Calendar ────────────────────────────────────────────────────
+const toICS=d=>d.replace(/-/g,"");
+function exportICS(b,customers){ const c=customers.find(x=>x.id===b.customerId)||{}; const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id)); const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat"; const n=nights(b.checkin,b.checkout); const desc=`Owner: ${c.nickname||""}\\nRoom: ${b.roomId||b.size}\\nCats: ${names}\\n${n} nights · ฿${(b.net||0).toLocaleString()}\\nPayment: ${b.payMethod}${b.paid?" ✓":" (unpaid)"}`; const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z"; const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Cat Hotel//EN","METHOD:PUBLISH","BEGIN:VEVENT",`UID:ci-${b.id}@cathotel`,`DTSTAMP:${ts}`,`DTSTART;VALUE=DATE:${toICS(b.checkin)}`,`DTEND;VALUE=DATE:${toICS(b.checkin)}`,`SUMMARY:🐱 ${names} – Check-in (${b.roomId||b.size})`,`DESCRIPTION:${desc}`,"END:VEVENT","BEGIN:VEVENT",`UID:co-${b.id}@cathotel`,`DTSTAMP:${ts}`,`DTSTART;VALUE=DATE:${toICS(b.checkout)}`,`DTEND;VALUE=DATE:${toICS(b.checkout)}`,`SUMMARY:🐱 ${names} – Check-out (${b.roomId||b.size})`,`DESCRIPTION:${desc}`,"END:VEVENT","END:VCALENDAR"].join("\r\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"})); a.download=`booking-${names.replace(/\s+/g,"-")}-${b.checkin}.ics`; a.click(); }
+function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||{}; const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id)); const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat"; const n=nights(b.checkin,b.checkout); const title=encodeURIComponent(`🐱 ${names} – ${b.roomId||b.size} Cat Hotel`); const details=encodeURIComponent(`Owner: ${c.nickname||""}\nRoom: ${b.roomId||b.size}\nCats: ${names}\n${n} nights · ฿${(b.net||0).toLocaleString()}\nPayment: ${b.payMethod}${b.paid?" ✓":" (pending)"}`); window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${toICS(b.checkin)}/${toICS(b.checkout)}&details=${details}`,"_blank"); }
+
+// ── Design ────────────────────────────────────────────────────────────
+const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)"};
+const S={
+  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingBottom:80},
+  nav:{position:"fixed",bottom:0,left:0,right:0,background:"rgba(255,255,255,0.96)",backdropFilter:"blur(20px)",borderTop:`1px solid ${C.border}`,display:"flex",zIndex:50,overflow:"visible"},
+  navBtn:a=>({flex:1,padding:"10px 4px 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?C.accent:C.text3,fontFamily:"inherit"}),
+  header:{background:C.white,padding:"52px 20px 16px",borderBottom:`1px solid ${C.borderLight}`},
+  htitle:{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",color:C.text},
+  hSub:{fontSize:12,color:C.text3,fontWeight:500,marginTop:2},
+  sec:{padding:"16px 16px 0"},
+  slabel:{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:C.text3,marginBottom:10,paddingLeft:2},
+  card:{background:C.white,borderRadius:14,boxShadow:C.shadow,border:`1px solid ${C.borderLight}`},
+  cardPad:{background:C.white,borderRadius:14,boxShadow:C.shadow,border:`1px solid ${C.borderLight}`,padding:16},
+  lbl:{fontSize:11,fontWeight:600,color:C.text2,marginBottom:5,letterSpacing:"0.04em",textTransform:"uppercase"},
+  inp:{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:"10px 12px",fontFamily:"inherit",fontSize:14,color:C.text,outline:"none"},
+  sel:{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:"10px 12px",fontFamily:"inherit",fontSize:14,color:C.text,outline:"none",appearance:"none"},
+  ta:{width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:"10px 12px",fontFamily:"inherit",fontSize:14,color:C.text,outline:"none",resize:"none",lineHeight:1.5},
+  fg:{marginBottom:14},
+  btnP:{padding:"13px 20px",background:C.accent,color:"#fff",border:"none",borderRadius:12,fontFamily:"inherit",fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 12px rgba(255,107,157,0.25)"},
+  btnG:{padding:"9px 14px",background:"none",color:C.text2,border:`1px solid ${C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:600,cursor:"pointer"},
+  btnD:{padding:"7px 12px",background:"none",color:C.red,border:"1px solid rgba(255,59,48,0.2)",borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:600,cursor:"pointer"},
+  btnB:{padding:"11px 16px",background:C.blue,color:"#fff",border:"none",borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"},
+  chip:c=>({display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:100,background:c+"18",color:c,border:`1px solid ${c}28`}),
+  statCard:{background:C.white,borderRadius:14,padding:16,boxShadow:C.shadow,border:`1px solid ${C.borderLight}`},
+  statVal:{fontSize:26,fontWeight:800,letterSpacing:"-0.03em",lineHeight:1},
+  statLbl:{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:C.text3,marginTop:5},
+  av:img=>({width:44,height:44,borderRadius:10,background:img?"transparent":C.accentBg,backgroundImage:img?`url(${img})`:"none",backgroundSize:"cover",backgroundPosition:"center",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,border:`1px solid ${C.borderLight}`}),
+  overlay:{position:"fixed",inset:0,background:"rgba(0,0,0,0.42)",zIndex:200,display:"flex",alignItems:"flex-end",justifyContent:"center"},
+  sheet:{background:C.white,borderRadius:"20px 20px 0 0",width:"100%",maxWidth:600,maxHeight:"93vh",overflowY:"auto",paddingBottom:44},
+  sheetHandle:{width:36,height:4,background:C.border,borderRadius:4,margin:"12px auto 0"},
+  sheetTitle:{fontSize:17,fontWeight:800,letterSpacing:"-0.01em"},
+  tabs:{display:"flex",background:C.white,borderRadius:10,padding:3,boxShadow:C.shadow,border:`1px solid ${C.borderLight}`},
+  tab:a=>({flex:1,padding:"8px 4px",background:a?C.text:"none",border:"none",fontFamily:"inherit",fontSize:12,fontWeight:700,color:a?"#fff":C.text3,cursor:"pointer",borderRadius:7}),
+};
+
+// ── FileUpload ────────────────────────────────────────────────────────
+function FileUpload({value,onChange,label,icon}){
+  const ref=useRef();
+  const hf=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>onChange(ev.target.result);r.readAsDataURL(f);};
+  const isImg=value&&value.startsWith("data:image");
+  return(<div style={{border:`1px dashed ${value?C.green:C.border}`,borderRadius:12,padding:"12px 14px",background:value?C.greenBg:C.bg,cursor:"pointer"}} onClick={()=>ref.current.click()}>
+    <div style={{display:"flex",alignItems:"center",gap:12}}>
+      {isImg?<img src={value} style={{width:48,height:48,borderRadius:8,objectFit:"cover",flexShrink:0}} alt=""/>:<div style={{width:48,height:48,borderRadius:8,background:C.white,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{icon}</div>}
+      <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:value?C.green:C.text2}}>{value?`✓ ${label} uploaded`:`Upload ${label}`}</div><div style={{fontSize:11,color:C.text3,marginTop:2}}>Tap to {value?"change":"select"}</div></div>
+      {value&&<button style={{...S.btnD,fontSize:11,padding:"5px 10px"}} onClick={e=>{e.stopPropagation();onChange("");}}>✕</button>}
+    </div>
+    <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={hf}/>
+  </div>);
+}
+
+// ── CatEditor ─────────────────────────────────────────────────────────
+function CatEditor({cat,index,total,onChange,onRemove}){
+  const set=(k,v)=>onChange({...cat,[k]:v});
+  return(<div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
+    <div style={{background:C.accentBg,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.accent}}>🐱 Cat #{index+1}{index>0?` (+฿${EXTRA_CAT_FEE}/night)`:""}</div>
+      {total>1&&<button style={S.btnD} onClick={onRemove}>Remove</button>}
+    </div>
+    <div style={{padding:"14px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={S.fg}><div style={S.lbl}>Cat Name *</div><input style={S.inp} placeholder="e.g. Mochi" value={cat.name} onChange={e=>set("name",e.target.value)}/></div>
+        <div style={S.fg}><div style={S.lbl}>Breed</div><input style={S.inp} placeholder="e.g. Scottish Fold" value={cat.breed} onChange={e=>set("breed",e.target.value)}/></div>
+      </div>
+      <div style={S.fg}><div style={S.lbl}>Cat Photo</div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{...S.av(cat.photo),width:56,height:56,borderRadius:12,fontSize:24}}>{!cat.photo&&"🐱"}</div>
+          <div style={{flex:1}}><FileUpload value={cat.photo} onChange={v=>set("photo",v)} label="Cat Photo" icon="🐱"/></div>
+        </div>
+      </div>
+      <div style={S.fg}><div style={S.lbl}>Vaccine Passport</div><FileUpload value={cat.vaccinePassport} onChange={v=>set("vaccinePassport",v)} label="Vaccine Passport" icon="💉"/></div>
+      <div style={S.fg}><div style={S.lbl}>Notes</div><input style={S.inp} placeholder="Allergies, special food..." value={cat.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
+    </div>
+  </div>);
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function Toast({msg,onHide}){useEffect(()=>{if(msg){const t=setTimeout(onHide,2500);return()=>clearTimeout(t);}},[msg]);return <div style={{position:"fixed",bottom:90,left:"50%",transform:`translateX(-50%) translateY(${msg?0:8}px)`,background:C.text,color:"#fff",padding:"10px 20px",borderRadius:100,fontSize:13,fontWeight:600,opacity:msg?1:0,pointerEvents:"none",transition:"all 0.2s",whiteSpace:"nowrap",zIndex:300,boxShadow:C.shadowMd}}>{msg}</div>;}
+
+// ── ImageViewer ───────────────────────────────────────────────────────
+function ImageViewer({src,title,onClose}){return(<div style={{...S.overlay,alignItems:"center",justifyContent:"center",zIndex:400}} onClick={onClose}><div style={{background:C.white,borderRadius:16,padding:16,maxWidth:"90vw",maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:14}}>{title}</div><button style={S.btnG} onClick={onClose}>✕</button></div><img src={src} style={{maxWidth:"80vw",maxHeight:"70vh",borderRadius:10,display:"block"}} alt={title}/></div></div>);}
+
+// ════════════════════════════════════════════════════════════════
+// ROOMS PAGE — Timeline + Availability
+// ════════════════════════════════════════════════════════════════
+function RoomsPage({bookings,customers,setToast}){
+  const [viewDate,setViewDate]=useState(today());
+  const [daysShow,setDaysShow]=useState(30); // configurable: 14/30/60/90
+  const [detailBooking,setDetailBooking]=useState(null);
+  const [checkAvail,setCheckAvail]=useState({checkin:"",checkout:"",type:"S"});
+  const tlRef=useRef(null);
+
+  // Build date array for timeline
+  const dateArr=useMemo(()=>{
+    const arr=[];
+    for(let i=0;i<daysShow;i++) arr.push(addDays(viewDate,i));
+    return arr;
+  },[viewDate,daysShow]);
+
+  const todayStr=today();
+
+  // Scroll today into view on mount / date change
+  useEffect(()=>{
+    if(!tlRef.current) return;
+    const idx=dateArr.indexOf(todayStr);
+    if(idx>=0){ const scrollTo=idx*44; tlRef.current.scrollLeft=Math.max(0,scrollTo-60); }
+  },[viewDate,dateArr]);
+
+  function getBookingForRoomDate(roomId,dateStr){
+    return bookings.find(b=>
+      (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
+      &&b.checkin<=dateStr&&b.checkout>dateStr
+    );
+  }
+
+  const availCheckin=checkAvail.checkin;
+  const availCheckout=checkAvail.checkout;
+  const availableRooms=availCheckin&&availCheckout&&availCheckin<availCheckout
+    ? ROOMS.filter(r=>r.type===checkAvail.type&&isRoomAvailable(r.id,availCheckin,availCheckout,bookings))
+    : null;
+
+  const zones=["A","B","C"];
+
+  // Export ALL bookings as one ICS file
+  function exportAllBookingsICS(){
+    if(!bookings.length){ setToast("No bookings to export"); return; }
+    const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Cat Hotel Rooms//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+    const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
+    bookings.forEach(b=>{
+      const cust=customers.find(c=>c.id===b.customerId)||{};
+      const cats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+      const catNames=cats.map(c=>c.name).join(", ")||b.catName||"Cat";
+      const n=nights(b.checkin,b.checkout);
+      const room=ROOMS.find(r=>r.id===b.roomId);
+      const desc=[
+        `Owner: ${cust.nickname||""}`,
+        `Phone: ${cust.phone||""}`,
+        `Cats: ${catNames}`,
+        `Room: ${b.roomId||b.size} (Zone ${room?.zone||"?"})`,
+        `${n} nights · ฿${(b.net||0).toLocaleString()}`,
+        b.litter?`Cat Litter: ฿${b.litterAmt||0}`:"",
+        `Payment: ${b.payMethod}${b.paid?" ✓":" (unpaid)"}`,
+        b.notes?`Notes: ${b.notes}`:"",
+      ].filter(Boolean).join("\\n");
+      const summary=`🐱 ${catNames} — ${b.roomId||b.size} Cat Hotel`;
+      // Check-in event
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:checkin-${b.id}@cathotel`,
+        `DTSTAMP:${ts}`,
+        `DTSTART;VALUE=DATE:${toICS(b.checkin)}`,
+        `DTEND;VALUE=DATE:${toICS(b.checkin)}`,
+        `SUMMARY:📥 Check-in: ${summary}`,
+        `DESCRIPTION:${desc}`,
+        `LOCATION:${b.roomId||b.size} — Cat Hotel`,
+        "END:VEVENT"
+      );
+      // Check-out event
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:checkout-${b.id}@cathotel`,
+        `DTSTAMP:${ts}`,
+        `DTSTART;VALUE=DATE:${toICS(b.checkout)}`,
+        `DTEND;VALUE=DATE:${toICS(b.checkout)}`,
+        `SUMMARY:📤 Check-out: ${summary}`,
+        `DESCRIPTION:${desc}`,
+        `LOCATION:${b.roomId||b.size} — Cat Hotel`,
+        "END:VEVENT"
+      );
+      // Full stay block event
+      const checkoutPlusOne=addDays(b.checkout,1);
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:stay-${b.id}@cathotel`,
+        `DTSTAMP:${ts}`,
+        `DTSTART;VALUE=DATE:${toICS(b.checkin)}`,
+        `DTEND;VALUE=DATE:${toICS(checkoutPlusOne)}`,
+        `SUMMARY:🏠 ${summary}`,
+        `DESCRIPTION:${desc}`,
+        `LOCATION:${b.roomId||b.size} — Cat Hotel`,
+        "END:VEVENT"
+      );
+    });
+    lines.push("END:VCALENDAR");
+    const blob=new Blob([lines.join("\r\n")],{type:"text/calendar;charset=utf-8"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download=`cat-hotel-all-rooms-${today()}.ics`;
+    a.click();
+    setToast(`✅ Downloaded ${bookings.length} bookings as .ics`);
+  }
+
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <div><div style={S.htitle}>Rooms</div><div style={S.hSub}>{ROOMS.length} rooms · {bookings.filter(b=>b.checkin<=todayStr&&b.checkout>todayStr).length} occupied today · S ฿{PRICES.S} · M ฿{PRICES.M}/night</div></div>
+        <button style={{...S.btnB,fontSize:12,padding:"9px 14px",whiteSpace:"nowrap"}} onClick={exportAllBookingsICS}>
+          📅 Download All .ICS
+        </button>
+      </div>
+    </div>
+
+    {/* ── Check Availability Panel ── */}
+    <div style={{...S.sec,marginTop:16}}>
+      <div style={S.slabel}>Check Availability</div>
+      <div style={{...S.card,padding:14,marginBottom:0}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <div><div style={{...S.lbl,marginBottom:4}}>Check-in</div><input type="date" style={S.inp} min="2018-01-01" max="2030-12-31" value={checkAvail.checkin} onChange={e=>setCheckAvail(v=>({...v,checkin:e.target.value}))}/></div>
+          <div><div style={{...S.lbl,marginBottom:4}}>Check-out</div><input type="date" style={S.inp} min="2018-01-01" max="2030-12-31" value={checkAvail.checkout} onChange={e=>setCheckAvail(v=>({...v,checkout:e.target.value}))}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {["S","M"].map(t=>(
+            <button key={t} style={{padding:"10px",background:checkAvail.type===t?C.text:C.bg,color:checkAvail.type===t?"#fff":C.text2,border:`1px solid ${checkAvail.type===t?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}} onClick={()=>setCheckAvail(v=>({...v,type:t}))}>
+              Room {t} — ฿{PRICES[t]}/night
+            </button>
+          ))}
+        </div>
+        {availableRooms!==null&&(
+          <div style={{marginTop:12,padding:"10px 14px",background:availableRooms.length>0?C.greenBg:C.accentBg,borderRadius:10,border:`1px solid ${availableRooms.length>0?C.green:C.accent}40`}}>
+            <div style={{fontSize:13,fontWeight:700,color:availableRooms.length>0?C.green:C.accent,marginBottom:availableRooms.length>0?6:0}}>
+              {availableRooms.length>0?`✅ ${availableRooms.length} room${availableRooms.length>1?"s":""} available (${nights(availCheckin,availCheckout)} nights)`:"❌ No rooms available for this period"}
+            </div>
+            {availableRooms.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {availableRooms.map(r=>(
+                  <span key={r.id} style={{...S.chip(getRoomColor(r.id)),fontWeight:700}}>{r.label}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+
+    {/* ── Timeline ── */}
+    <div style={{...S.sec,marginTop:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={S.slabel}>Room Timeline</div>
+          {/* Days selector */}
+          <div style={{display:"flex",gap:4}}>
+            {[14,30,60,90].map(d=>(
+              <button key={d} style={{padding:"3px 9px",background:daysShow===d?C.text:C.bg,color:daysShow===d?"#fff":C.text2,border:`1px solid ${daysShow===d?C.text:C.border}`,borderRadius:7,fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer"}} onClick={()=>setDaysShow(d)}>{d}d</button>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <input type="month" style={{...S.inp,width:"auto",padding:"5px 10px",fontSize:12,borderRadius:8}} min="2018-01" max="2030-12"
+            value={viewDate.slice(0,7)}
+            onChange={e=>{ if(e.target.value) setViewDate(e.target.value+"-01"); }}
+          />
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,-30))} title="Prev month">《</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,-7))}>‹</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"0 12px",height:32,cursor:"pointer",fontSize:11,fontWeight:700,color:C.text2}} onClick={()=>setViewDate(today())}>Today</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,7))}>›</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,30))} title="Next month">》</button>
+        </div>
+      </div>
+
+      {/* Current period label */}
+      <div style={{fontSize:12,fontWeight:600,color:C.text2,marginBottom:8,paddingLeft:2}}>
+        {(()=>{ const x=new Date(viewDate+"T12:00:00"); return `${MONTHS_FULL[x.getMonth()]} ${x.getFullYear()}`; })()}
+        {" → "}{(()=>{ const x=new Date(dateArr[dateArr.length-1]+"T12:00:00"); return `${MONTHS_FULL[x.getMonth()]} ${x.getFullYear()}`; })()}
+        <span style={{color:C.text3,fontWeight:400}}> · scroll ← → to see all days</span>
+      </div>
+
+      {/* Legend */}
+      <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+        {zones.map(z=><div key={z} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:ZONE_COLORS[z]}}><div style={{width:12,height:12,borderRadius:3,background:ZONE_COLORS[z]}}/> Zone {z}</div>)}
+        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:C.text3}}><div style={{width:12,height:12,borderRadius:3,background:"#f0f0f0",border:`1px solid ${C.border}`}}/> Free</div>
+        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:C.accent}}><div style={{width:12,height:12,borderRadius:3,background:C.accentBg,border:`1px solid ${C.accent}40`}}/> Today</div>
+      </div>
+
+      {/* Timeline table — horizontal scroll, sticky room column */}
+      <div ref={tlRef} style={{overflowX:"auto",borderRadius:14,border:`1px solid ${C.borderLight}`,background:C.white,boxShadow:C.shadow,WebkitOverflowScrolling:"touch"}}>
+        <div style={{minWidth:68+daysShow*44}}>
+
+          {/* Date header row */}
+          <div style={{display:"flex",position:"sticky",top:0,zIndex:10,background:C.white}}>
+            {/* Sticky room label corner */}
+            <div style={{width:68,flexShrink:0,padding:"8px 8px",fontSize:10,fontWeight:700,color:C.text3,background:C.bg,borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:20}}>ROOM</div>
+            {dateArr.map(d=>{
+              const x=new Date(d+"T12:00:00");
+              const isToday=d===todayStr;
+              const isSun=x.getDay()===0; const isSat=x.getDay()===6;
+              const isMonth1=x.getDate()===1;
+              return(<div key={d} style={{width:44,flexShrink:0,textAlign:"center",padding:"4px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
+                <div style={{fontSize:9,fontWeight:600,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
+                <div style={{fontSize:12,fontWeight:isToday?800:600,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
+                <div style={{fontSize:8,color:isMonth1?C.text2:C.text3,fontWeight:isMonth1?700:400}}>{MONTHS[x.getMonth()]}</div>
+              </div>);
+            })}
+          </div>
+
+          {/* Zone + Room rows */}
+          {zones.map(zone=>{
+            const zRooms=ROOMS.filter(r=>r.zone===zone);
+            return(<div key={zone}>
+              {/* Zone label row */}
+              <div style={{display:"flex",background:ZONE_BG[zone],borderBottom:`1px solid ${C.borderLight}`}}>
+                <div style={{width:68,flexShrink:0,padding:"5px 8px",fontSize:10,fontWeight:800,color:ZONE_COLORS[zone],borderRight:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:5,background:ZONE_BG[zone]}}>ZONE {zone}</div>
+                {dateArr.map(d=><div key={d} style={{width:44,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:ZONE_BG[zone]}}/>)}
+              </div>
+
+              {/* Each room row */}
+              {zRooms.map((room,ri)=>(
+                <div key={room.id} style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
+                  {/* Sticky room label */}
+                  <div style={{width:68,flexShrink:0,padding:"6px 8px",borderRight:`1px solid ${C.border}`,background:ri%2===0?C.white:"#fdfcfc",display:"flex",flexDirection:"column",justifyContent:"center",position:"sticky",left:0,zIndex:5}}>
+                    <div style={{fontSize:11,fontWeight:800,color:getRoomColor(room.id)}}>{room.label}</div>
+                    <div style={{fontSize:9,color:C.text3}}>{room.type}</div>
+                  </div>
+
+                  {/* Day cells */}
+                  {dateArr.map((d,di)=>{
+                    const bk=getBookingForRoomDate(room.id,d);
+                    const isToday=d===todayStr;
+                    const isStart=bk&&bk.checkin===d;
+                    const isEnd=bk&&addDays(bk.checkout,-1)===d;
+                    const isWeekend=new Date(d+"T12:00:00").getDay()===0||new Date(d+"T12:00:00").getDay()===6;
+                    const isMonth1=new Date(d+"T12:00:00").getDate()===1;
+                    if(bk){
+                      const cust=customers.find(c=>c.id===bk.customerId);
+                      const cats=(cust?.cats||[]).filter(c=>(bk.selectedCatIds||[]).includes(c.id));
+                      const allCatNames=cats.map(c=>c.name).join(", ")||bk.catName||"Cat";
+                      const nickname=cust?.nickname||"";
+                      // Display label: "Leng: Tofu, โชคดี"
+                      const displayLabel=nickname?`${nickname}: ${allCatNames}`:allCatNames;
+                      const tooltipText=`${nickname?nickname+": ":""}${allCatNames} (${bk.checkin}→${bk.checkout})`;
+                      return(<div key={d} style={{
+                        width:44,flexShrink:0,height:38,
+                        background:getRoomColor(room.id)+"25",
+                        borderRight:`1px solid ${isMonth1?"#bbb":getRoomColor(room.id)+"30"}`,
+                        borderLeft:isStart?`3px solid ${getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":"none"),
+                        cursor:"pointer",
+                        display:"flex",alignItems:"center",justifyContent:"center",
+                        position:"relative",
+                        borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
+                      }} onClick={()=>setDetailBooking(bk)} title={tooltipText}>
+                        {isStart&&(
+                          <div style={{
+                            display:"flex",flexDirection:"column",alignItems:"flex-start",
+                            padding:"0 4px",overflow:"hidden",maxWidth:40,
+                          }}>
+                            {nickname&&<div style={{
+                              fontSize:8,fontWeight:800,color:getRoomColor(room.id),
+                              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                              maxWidth:38,lineHeight:1.2,
+                            }}>{nickname}</div>}
+                            <div style={{
+                              fontSize:8,fontWeight:600,
+                              color:getRoomColor(room.id)+"cc",
+                              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                              maxWidth:38,lineHeight:1.2,
+                            }}>{allCatNames}</div>
+                          </div>
+                        )}
+                        {isToday&&!isStart&&<div style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:C.accent}}/>}
+                      </div>);
+                    }
+                    return(<div key={d} style={{
+                      width:44,flexShrink:0,height:38,
+                      background:isToday?"#fff5f8":isWeekend?"#fafafa":C.white,
+                      borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
+                      borderLeft:isMonth1?"2px solid #bbb":"none",
+                    }}/>);
+                  })}
+                </div>
+              ))}
+            </div>);
+          })}
+        </div>
+      </div>
+    </div>
+
+    {/* ── Today's Occupancy Summary ── */}
+    <div style={{...S.sec,marginTop:16,paddingBottom:0}}>
+      <div style={S.slabel}>Today's Rooms — {fmt(todayStr)}</div>
+      {zones.map(zone=>{
+        const zRooms=ROOMS.filter(r=>r.zone===zone);
+        return(<div key={zone} style={{...S.cardPad,marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:800,color:ZONE_COLORS[zone],marginBottom:10}}>Zone {zone}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(80px,1fr))",gap:8}}>
+            {zRooms.map(room=>{
+              const b=getBookingForRoomDate(room.id,todayStr);
+              const cust=b?customers.find(c=>c.id===b.customerId):null;
+              const cats=b?(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id)):[];
+              const allCatNames=cats.map(c=>c.name).join(", ")||b?.catName||null;
+              const nickname=cust?.nickname||null;
+              return(<div key={room.id} style={{borderRadius:10,padding:"8px 10px",background:b?getRoomColor(room.id)+"18":C.bg,border:`1px solid ${b?getRoomColor(room.id)+"40":C.border}`,textAlign:"center",cursor:b?"pointer":"default"}} onClick={()=>b&&setDetailBooking(b)}>
+                <div style={{fontSize:12,fontWeight:800,color:b?getRoomColor(room.id):C.text2}}>{room.label}</div>
+                {b?(
+                  <>
+                    {nickname&&<div style={{fontSize:10,marginTop:2,color:getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}</div>}
+                    <div style={{fontSize:9,color:getRoomColor(room.id)+"aa",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{allCatNames||"Occupied"}</div>
+                  </>
+                ):<div style={{fontSize:10,marginTop:2,color:C.text3,fontWeight:600}}>Free</div>}
+              </div>);
+            })}
+          </div>
+        </div>);
+      })}
+    </div>
+
+    {/* ── Year Quick Jump ── */}
+    <div style={{...S.sec,marginTop:16,paddingBottom:16}}>
+      <div style={S.slabel}>Jump to Year</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {[2018,2019,2020,2021,2022,2023,2024,2025,2026,2027,2028,2029,2030].map(yr=>{
+          const curYear=new Date(viewDate+"T12:00:00").getFullYear();
+          const isNow=new Date().getFullYear()===yr;
+          return(<button key={yr} style={{padding:"8px 14px",background:curYear===yr?C.text:(isNow?C.accentBg:C.bg),color:curYear===yr?"#fff":(isNow?C.accent:C.text2),border:`1px solid ${curYear===yr?C.text:(isNow?C.accent+"50":C.border)}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:curYear===yr||isNow?700:500,cursor:"pointer"}} onClick={()=>setViewDate(`${yr}-01-01`)}>
+            {yr}{isNow?" ★":""}
+          </button>);
+        })}
+      </div>
+    </div>
+    {detailBooking&&(
+      <div style={S.overlay} onClick={()=>setDetailBooking(null)}>
+        <div style={{...S.sheet,maxHeight:"60vh"}} onClick={e=>e.stopPropagation()}>
+          <div style={S.sheetHandle}/>
+          <div style={{padding:"16px 20px"}}>
+            {(()=>{
+              const b=detailBooking;
+              const cust=customers.find(c=>c.id===b.customerId)||{};
+              const cats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+              const catNames=cats.map(c=>c.name).join(", ")||b.catName||"Cat";
+              const n=nights(b.checkin,b.checkout);
+              const room=ROOMS.find(r=>r.id===b.roomId);
+              return(<>
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                  <div style={{background:room?getRoomColor(room.id)+"18":C.accentBg,borderRadius:12,padding:"10px 14px",textAlign:"center",flexShrink:0}}>
+                    <div style={{fontSize:16,fontWeight:800,color:room?getRoomColor(room.id):C.accent}}>{b.roomId||b.size}</div>
+                    <div style={{fontSize:10,color:C.text3,marginTop:2}}>{b.size} room</div>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:16,fontWeight:800}}>{catNames}</div>
+                    <div style={{fontSize:13,color:C.text2}}>{cust.nickname||"?"}</div>
+                    <div style={{fontSize:12,color:C.text3}}>{fmt(b.checkin)} → {fmt(b.checkout)} · {n} night{n>1?"s":""}</div>
+                  </div>
+                  <div style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                  <span style={S.chip(b.paid?C.green:C.orange)}>{b.paid?"✓ Paid":"Unpaid"}</span>
+                  <span style={S.chip(C.blue)}>{b.payMethod}</span>
+                  {b.discount>0&&<span style={S.chip(C.red)}>-{b.discount}%</span>}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button style={{flex:1,padding:"10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{exportICS(b,customers);setToast("iCal downloaded!");}}>📅 iCal</button>
+                  <button style={{flex:1,padding:"10px",background:"#fff4f0",color:"#ea4335",border:"1px solid #ea433525",borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>openGCal(b,customers)}>📆 Google</button>
+                  <button style={S.btnG} onClick={()=>setDetailBooking(null)}>Close</button>
+                </div>
+              </>);
+            })()}
+          </div>
+        </div>
+      </div>
+    )}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// BOOKING FORM with room selector
+// ════════════════════════════════════════════════════════════════
+function BookingSheet({booking,customers,bookings,onSave,onClose}){
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Cash",paid:false,litter:false,notes:""});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const cust=customers.find(c=>c.id===form.customerId);
+  const cats=cust?.cats||[];
+  const numCats=form.selectedCatIds?.length||0;
+  const n=form.checkin&&form.checkout&&form.checkin<form.checkout?nights(form.checkin,form.checkout):0;
+  const selectedRooms=form.roomIds||[];
+  const numRooms=Math.max(selectedRooms.length,1);
+  // Price = sum of each room separately
+  const totalNet=selectedRooms.length>0
+    ? selectedRooms.reduce((sum,rid)=>{
+        const r=ROOMS.find(x=>x.id===rid);
+        const sz=r?.type||form.size;
+        const {net:rNet}=calcPrice(n,sz,numCats,form.discount,form.litter);
+        return sum+rNet;
+      },0)
+    : (n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter).net:0);
+  const net=totalNet;
+  const {base,discAmt,litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
+  const depositAmt=Math.max(0,parseFloat(form.deposit)||0);
+  const remaining=Math.max(0,net-depositAmt);
+  const toggleRoom=id=>{
+    const ids=form.roomIds||[];
+    set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
+  };
+  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<form.checkout&&(form.roomIds||[]).length>0;
+  const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
+  useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
+
+  // Available rooms for selected dates+type
+  const availRooms=form.checkin&&form.checkout&&form.checkin<form.checkout
+    ? ROOMS.filter(r=>r.type===form.size&&isRoomAvailable(r.id,form.checkin,form.checkout,bookings,booking?.id))
+    : [];
+  // Auto-clear roomIds that are no longer available
+  useEffect(()=>{
+    if((form.roomIds||[]).length>0){
+      const stillAvail=(form.roomIds||[]).filter(id=>availRooms.find(r=>r.id===id));
+      if(stillAvail.length!==(form.roomIds||[]).length) set("roomIds",stillAvail);
+    }
+  },[form.checkin,form.checkout,form.size]);
+
+  // backward compat: if old booking has roomId (string), convert
+  useEffect(()=>{
+    if(booking?.roomId&&!(booking?.roomIds?.length)){
+      set("roomIds",[booking.roomId]);
+    }
+  },[]);
+
+  return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={S.sheet}>
+      <div style={S.sheetHandle}/>
+      <div style={{padding:"16px 20px 0",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={S.sheetTitle}>{booking?"Edit Booking":"New Booking"}</div>
+        <button style={S.btnG} onClick={onClose}>Cancel</button>
+      </div>
+      <div style={{padding:"0 16px"}}>
+        {/* Customer */}
+        <div style={S.fg}><div style={S.lbl}>Customer *</div>
+          <select style={S.sel} value={form.customerId} onChange={e=>set("customerId",e.target.value)}>
+            <option value="">— Select customer —</option>
+            {customers.map(c=><option key={c.id} value={c.id}>{c.nickname} ({(c.cats||[]).map(x=>x.name).join(", ")||"No cats"})</option>)}
+          </select>
+        </div>
+        {/* Cats */}
+        {cust&&cats.length>0&&(
+          <div style={S.fg}><div style={S.lbl}>Select Cat(s) *</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {cats.map((cat,i)=>{
+                const sel=(form.selectedCatIds||[]).includes(cat.id);
+                return(<div key={cat.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",border:`2px solid ${sel?C.accent:C.border}`,borderRadius:12,cursor:"pointer",background:sel?C.accentBg:C.white}} onClick={()=>toggleCat(cat.id)}>
+                  <div style={{...S.av(cat.photo),width:38,height:38,borderRadius:9,fontSize:18}}>{!cat.photo&&"🐱"}</div>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{cat.name}</div><div style={{fontSize:11,color:C.text3}}>{cat.breed||"Cat"}</div></div>
+                  {i>0&&<span style={S.chip(C.orange)}>+฿{EXTRA_CAT_FEE}/night</span>}
+                  <div style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${sel?C.accent:C.border}`,background:sel?C.accent:"none",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,flexShrink:0}}>{sel?"✓":""}</div>
+                </div>);
+              })}
+            </div>
+          </div>
+        )}
+        {/* Dates */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={S.fg}><div style={S.lbl}>Check-in *</div><input type="date" style={S.inp} min="2018-01-01" max="2030-12-31" value={form.checkin} onChange={e=>set("checkin",e.target.value)}/></div>
+          <div style={S.fg}><div style={S.lbl}>Check-out *</div><input type="date" style={S.inp} min="2018-01-01" max="2030-12-31" value={form.checkout} onChange={e=>set("checkout",e.target.value)}/></div>
+        </div>
+        {/* Size */}
+        <div style={S.fg}><div style={S.lbl}>Room Type</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {["S","M"].map(sz=><button key={sz} style={{padding:"11px",background:form.size===sz?C.text:C.bg,color:form.size===sz?"#fff":C.text2,border:`1px solid ${form.size===sz?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}} onClick={()=>set("size",sz)}>{sz} — ฿{PRICES[sz]}/night</button>)}
+          </div>
+        </div>
+        {/* Room selector — multi-select */}
+        <div style={S.fg}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={S.lbl}>เลือกห้อง * (เลือกได้หลายห้อง)</div>
+            {selectedRooms.length>0&&<span style={S.chip(C.accent)}>{selectedRooms.length} ห้อง</span>}
+          </div>
+          {form.checkin&&form.checkout&&form.checkin<form.checkout?(
+            availRooms.length>0?(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+                {availRooms.map(r=>{
+                  const sel=selectedRooms.includes(r.id);
+                  return(
+                    <button key={r.id} style={{padding:"10px 4px",background:sel?getRoomColor(r.id):getRoomBg(r.id),color:sel?"#fff":getRoomColor(r.id),border:`2px solid ${sel?getRoomColor(r.id):getRoomColor(r.id)+"40"}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:800,cursor:"pointer",textAlign:"center"}} onClick={()=>toggleRoom(r.id)}>
+                      {r.label}
+                      {sel&&<div style={{fontSize:9,marginTop:2}}>✓</div>}
+                    </button>
+                  );
+                })}
+              </div>
+            ):<div style={{padding:"12px 14px",background:C.accentBg,borderRadius:10,fontSize:13,fontWeight:600,color:C.accent}}>❌ No {form.size} rooms available for these dates</div>
+          ):<div style={{padding:"12px 14px",background:C.bg,borderRadius:10,fontSize:13,color:C.text3}}>Enter dates to see available rooms</div>}
+          {selectedRooms.length>1&&(
+            <div style={{marginTop:8,padding:"8px 12px",background:C.blueBg,borderRadius:8,fontSize:12,color:C.blue,fontWeight:600}}>
+              ✓ {selectedRooms.length} ห้อง: {selectedRooms.join(", ")} · ราคาคำนวณแยกต่อห้อง
+            </div>
+          )}
+        </div>
+        {/* Price breakdown */}
+        {n>0&&numCats>0&&selectedRooms.length>0&&(
+          <div style={{background:C.bg,borderRadius:12,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.border}`}}>
+            {selectedRooms.map((rid,ri)=>{
+              const r=ROOMS.find(x=>x.id===rid);
+              const sz=r?.type||form.size;
+              const {base:rb,discAmt:rd,net:rn}=calcPrice(n,sz,numCats,form.discount,form.litter);
+              return(
+                <div key={rid} style={{marginBottom:ri<selectedRooms.length-1?10:0,paddingBottom:ri<selectedRooms.length-1?10:0,borderBottom:ri<selectedRooms.length-1?`1px dashed ${C.border}`:"none"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:12,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
+                    <span style={{fontSize:12,fontWeight:700}}>฿{rn.toLocaleString()}</span>
+                  </div>
+                  <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} extra cat`:""}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
+                </div>
+              );
+            })}
+            {form.litter&&litterAmt>0&&selectedRooms.length===1&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:5,marginTop:5}}><span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว {litterWeeks} สัปดาห์</span><span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{litterAmt.toLocaleString()}</span></div>}
+            {discAmt>0&&selectedRooms.length===1&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:C.text2}}>Discount ({form.discount}%)</span><span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{discAmt.toLocaleString()}</span></div>}
+            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:8,display:"flex",justifyContent:"space-between",marginBottom:depositAmt>0?8:0}}>
+              <span style={{fontSize:15,fontWeight:800}}>Net Total {selectedRooms.length>1&&`(${selectedRooms.length} ห้อง)`}</span>
+              <span style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{net.toLocaleString()}</span>
+            </div>
+            {depositAmt>0&&(<>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,padding:"6px 10px",background:"#fffbf0",borderRadius:8}}>
+                <span style={{fontSize:13,color:C.orange,fontWeight:600}}>💰 มัดจำ (Deposit paid)</span>
+                <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{depositAmt.toLocaleString()}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"8px 10px",background:remaining===0?C.greenBg:"#fff5f5",borderRadius:8,border:`1px solid ${remaining===0?C.green+"40":"#ff3b3020"}`}}>
+                <span style={{fontSize:14,fontWeight:800,color:remaining===0?C.green:C.red}}>{remaining===0?"✅ ชำระครบแล้ว":"💳 ยังค้างชำระ (Due at check-in)"}</span>
+                <span style={{fontSize:16,fontWeight:800,color:remaining===0?C.green:C.red}}>{remaining===0?"✓":"฿"+remaining.toLocaleString()}</span>
+              </div>
+            </>)}
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={S.fg}><div style={S.lbl}>Discount %</div><input type="number" style={S.inp} min="0" max="100" value={form.discount} onChange={e=>set("discount",e.target.value)}/></div>
+          <div style={S.fg}><div style={S.lbl}>Payment Method</div><select style={S.sel} value={form.payMethod} onChange={e=>set("payMethod",e.target.value)}>{PAY_METHODS.map(m=><option key={m}>{m}</option>)}</select></div>
+        </div>
+        {/* Deposit */}
+        <div style={{...S.fg,padding:"14px",background:"#fffbf0",borderRadius:12,border:`1px solid ${depositAmt>0?C.orange+"60":"#ffd70050"}`,marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <span style={{fontSize:16}}>💰</span>
+            <div style={{fontSize:14,fontWeight:700,color:C.orange}}>มัดจำ (Deposit)</div>
+            {depositAmt>0&&net>0&&<span style={{...S.chip(C.orange),marginLeft:"auto"}}>จ่ายไปแล้ว {Math.round(depositAmt/net*100)}%</span>}
+          </div>
+          <input type="number" style={{...S.inp,borderColor:depositAmt>0?C.orange+"80":C.border}} min="0" placeholder="0" value={form.deposit||""} onChange={e=>set("deposit",e.target.value)}/>
+          {depositAmt>0&&net>0&&(
+            <div style={{marginTop:8,display:"flex",justifyContent:"space-between",fontSize:12,color:C.text2}}>
+              <span>ยอดรวม ฿{net.toLocaleString()}</span>
+              <span style={{color:remaining>0?C.red:C.green,fontWeight:700}}>คงเหลือ ฿{remaining.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+        {/* Cat Litter */}
+        <div style={{...S.fg,padding:"12px 14px",background:form.litter?"#f0f6ff":C.bg,borderRadius:12,border:`1px solid ${form.litter?C.blue+"40":C.border}`,marginBottom:10}}>
+          <label style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}>
+            <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue}}/>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
+              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/สัปดาห์ · {n>0?`${Math.ceil(n/7)} สัปดาห์ = ฿${Math.ceil(n/7)*LITTER_FEE}`:"เลือกวันก่อน"}</div>
+            </div>
+            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{litterAmt.toLocaleString()}</span>}
+          </label>
+        </div>
+        {/* Paid */}
+        <div style={S.fg}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={form.paid} onChange={e=>set("paid",e.target.checked)} style={{width:18,height:18,accentColor:C.green}}/><span style={{fontSize:14,fontWeight:600}}>ชำระเงินครบแล้ว (Fully Paid)</span></label></div>
+        <div style={S.fg}><div style={S.lbl}>Notes</div><textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Special requests..."/></div>
+        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,depositAmt,remaining,roomId:selectedRooms[0]||""})}>
+          {booking?"Save Changes":"Add Booking"}
+        </button>
+      </div>
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// CUSTOMER FORM
+// ════════════════════════════════════════════════════════════════
+function CustomerSheet({customer,onSave,onClose}){
+  const [form,setForm]=useState(customer||{nickname:"",phone:"",line:"",address:"",idCard:"",notes:"",cats:[newCat()]});
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const setCat=(i,u)=>setForm(f=>{const cats=[...f.cats];cats[i]=u;return{...f,cats};});
+  const valid=form.nickname.trim()&&form.cats.some(c=>c.name.trim());
+  return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={S.sheet}>
+      <div style={S.sheetHandle}/>
+      <div style={{padding:"16px 20px 0",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={S.sheetTitle}>{customer?"Edit Customer":"New Customer"}</div>
+        <button style={S.btnG} onClick={onClose}>Cancel</button>
+      </div>
+      <div style={{padding:"0 16px"}}>
+        <div style={{background:C.blueBg,borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:12,fontWeight:700,color:C.blue}}>👤 OWNER INFORMATION</div>
+        <div style={S.fg}><div style={S.lbl}>Name *</div><input style={S.inp} placeholder="e.g. Khun Nong" value={form.nickname} onChange={e=>set("nickname",e.target.value)}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={S.fg}><div style={S.lbl}>Phone</div><input style={S.inp} type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="0812345678" value={form.phone} onChange={e=>set("phone",e.target.value)}/></div>
+          <div style={S.fg}><div style={S.lbl}>Line ID</div><input style={S.inp} placeholder="Line ID" value={form.line} onChange={e=>set("line",e.target.value)}/></div>
+        </div>
+        <div style={S.fg}><div style={S.lbl}>Address</div><textarea style={S.ta} rows={2} value={form.address} onChange={e=>set("address",e.target.value)} placeholder="Address..."/></div>
+        <div style={S.fg}><div style={S.lbl}>Owner ID Card</div><FileUpload value={form.idCard} onChange={v=>set("idCard",v)} label="ID Card" icon="🪪"/></div>
+        <div style={S.fg}><div style={S.lbl}>Notes</div><textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Any notes..."/></div>
+        <div style={{background:C.accentBg,borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:12,fontWeight:700,color:C.accent}}>
+          🐱 CATS — {form.cats.length} cat{form.cats.length>1?"s":""}{form.cats.length>1?` · +฿${(form.cats.length-1)*EXTRA_CAT_FEE}/night extra`:""}
+        </div>
+        {form.cats.map((cat,i)=><CatEditor key={cat.id} cat={cat} index={i} total={form.cats.length} onChange={v=>setCat(i,v)} onRemove={()=>setForm(f=>({...f,cats:f.cats.filter((_,idx)=>idx!==i)}))}/>)}
+        <button style={{...S.btnG,width:"100%",marginBottom:16,borderStyle:"dashed"}} onClick={()=>setForm(f=>({...f,cats:[...f.cats,newCat()]}))}>+ Add Another Cat (+฿{EXTRA_CAT_FEE}/night per extra)</button>
+        <button style={{...S.btnP,width:"100%",marginBottom:8,opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:customer?.id||uid(),createdAt:customer?.createdAt||new Date().toISOString()})}>
+          {customer?"Save Changes":"Add Customer"}
+        </button>
+      </div>
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// CUSTOMER DETAIL
+// ════════════════════════════════════════════════════════════════
+function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}){
+  const [viewer,setViewer]=useState(null);
+  const cb=bookings.filter(b=>b.customerId===customer.id).sort((a,b)=>b.checkin.localeCompare(a.checkin));
+  const totalSpent=cb.reduce((a,b)=>a+(b.net||0),0);
+  const cats=customer.cats||[];
+  return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={S.sheet}>
+      <div style={S.sheetHandle}/>
+      <div style={{padding:"16px 20px 0"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14}}>
+          <div><div style={{fontSize:20,fontWeight:800,letterSpacing:"-0.01em"}}>{customer.nickname}</div></div>
+          <button style={S.btnG} onClick={onClose}>✕</button>
+        </div>
+        <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+          {customer.phone&&<div style={{fontSize:13,color:C.text2,marginBottom:3}}>📞 {customer.phone}</div>}
+          {customer.line&&<div style={{fontSize:13,color:C.text2,marginBottom:3}}>💬 {customer.line}</div>}
+          {customer.address&&<div style={{fontSize:13,color:C.text2,marginBottom:3}}>📍 {customer.address}</div>}
+          {customer.notes&&<div style={{fontSize:13,color:C.text2,fontStyle:"italic"}}>📝 {customer.notes}</div>}
+        </div>
+        {customer.idCard&&<div style={{marginBottom:12}}><div style={S.slabel}>ID Card</div><div style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setViewer({src:customer.idCard,title:"Owner ID Card"})}><span style={{fontSize:20}}>🪪</span><div style={{flex:1,fontSize:13,fontWeight:600,color:C.green}}>ID Card on file</div><span style={{fontSize:11,color:C.text3}}>Tap to view</span></div></div>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:22,color:C.accent}}>{cb.length}</div><div style={S.statLbl}>Bookings</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:22,color:C.blue}}>฿{totalSpent.toLocaleString()}</div><div style={S.statLbl}>Total Spent</div></div>
+        </div>
+        <div style={S.slabel}>Cats ({cats.length})</div>
+        {cats.map((cat,i)=>(<div key={cat.id} style={{...S.cardPad,marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+            <div style={{...S.av(cat.photo),width:52,height:52,borderRadius:12,fontSize:24}}>{!cat.photo&&"🐱"}</div>
+            <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800}}>{cat.name}</div><div style={{fontSize:12,color:C.text3}}>{cat.breed||"Cat"}</div>{cat.notes&&<div style={{fontSize:12,color:C.text2,marginTop:2,fontStyle:"italic"}}>{cat.notes}</div>}</div>
+            {i>0&&<span style={S.chip(C.orange)}>+฿{EXTRA_CAT_FEE}/night</span>}
+          </div>
+          {cat.vaccinePassport?<div style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>setViewer({src:cat.vaccinePassport,title:`${cat.name} – Vaccine Passport`})}><span>💉</span><span style={{fontSize:12,fontWeight:600,color:C.green,flex:1}}>Vaccine Passport on file</span><span style={{fontSize:11,color:C.text3}}>View</span></div>:<div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",fontSize:12,color:C.text3}}>💉 No vaccine passport</div>}
+        </div>))}
+        <div style={{display:"flex",gap:8,marginTop:8,marginBottom:14}}>
+          <button style={{...S.btnP,flex:1}} onClick={onNewBooking}>+ New Booking</button>
+          <button style={S.btnG} onClick={onEdit}>Edit</button>
+          <button style={S.btnD} onClick={onDelete}>Delete</button>
+        </div>
+        {cb.length>0&&(<><div style={S.slabel}>Booking History</div>{cb.map(b=>(<div key={b.id} style={{...S.cardPad,marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>{fmt(b.checkin)} → {fmt(b.checkout)}</div>
+              {b.roomId&&<div style={{fontSize:11,color:C.text3,marginTop:1}}>Room {b.roomId}</div>}
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:14,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>
+              {b.depositAmt>0&&<div style={{fontSize:11,color:C.orange,marginTop:1}}>มัดจำ ฿{b.depositAmt.toLocaleString()}</div>}
+              {!b.paid&&(b.remaining||0)>0&&<div style={{fontSize:11,color:C.red,fontWeight:700}}>ค้าง ฿{(b.remaining||0).toLocaleString()}</div>}
+            </div>
+          </div>
+          {b.depositAmt>0&&b.net>0&&(
+            <div style={{marginBottom:8}}>
+              <div style={{height:6,background:C.bg,borderRadius:4,overflow:"hidden",marginBottom:4}}>
+                <div style={{height:"100%",background:b.paid?C.green:C.orange,borderRadius:4,width:`${Math.min(100,Math.round((b.paid?b.net:b.depositAmt)/b.net*100))}%`}}/>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.text3}}>
+                <span>💰 มัดจำ {Math.round(b.depositAmt/b.net*100)}%</span>
+                <span style={{color:b.paid?C.green:C.red,fontWeight:600}}>{b.paid?"ชำระครบ ✓":`ค้างชำระ ฿${(b.remaining||0).toLocaleString()}`}</span>
+              </div>
+            </div>
+          )}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {b.roomId&&<span style={S.chip(getRoomColor(b.roomId))}>{b.roomId}</span>}
+            <span style={S.chip(b.paid?C.green:(b.depositAmt>0?C.orange:"#ff3b30"))}>{b.paid?"✓ Paid Full":(b.depositAmt>0?"มัดจำแล้ว":"Unpaid")}</span>
+            <span style={S.chip(C.blue)}>{b.payMethod}</span>
+            {b.discount>0&&<span style={S.chip(C.red)}>-{b.discount}%</span>}
+          </div>
+        </div>))}</>)}
+      </div>
+    </div>
+    {viewer&&<ImageViewer src={viewer.src} title={viewer.title} onClose={()=>setViewer(null)}/>}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// CSV IMPORT HELPERS
+// ════════════════════════════════════════════════════════════════
+function parseCSV(text){
+  const lines=text.trim().split(/\r?\n/);
+  if(lines.length<2) return[];
+  const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim().toLowerCase());
+  return lines.slice(1).map(line=>{
+    // handle quoted fields with commas inside
+    const fields=[]; let cur=""; let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){ inQ=!inQ; }
+      else if(ch===","&&!inQ){ fields.push(cur.trim()); cur=""; }
+      else{ cur+=ch; }
+    }
+    fields.push(cur.trim());
+    const row={};
+    headers.forEach((h,i)=>{ row[h]=(fields[i]||"").replace(/^"|"$/g,"").trim(); });
+    return row;
+  }).filter(r=>Object.values(r).some(v=>v));
+}
+
+function downloadTemplateCustCSV(){
+  const h=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat1 Notes","Cat2 Name","Cat2 Breed","Cat2 Notes","Cat3 Name","Cat3 Breed","Cat3 Notes"];
+  const ex=[["K.Nong","0812345678","@nong_cat","10/5 ถ.สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","กินข้าววันละ 2 ครั้ง","Luna","Persian",""],["K.Joy","0898765432","@joy123","","","Taro","Maine Coon","","","",""]];
+  dlCSV([h,...ex],"cathotel-customers-template.csv");
+}
+
+function downloadTemplateBookingCSV(){
+  const h=["Customer Nickname","Cat Names (comma separated)","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Room Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];
+  const ex=[["K.Nong","Mochi,Luna","A-S1","2026-04-01","2026-04-07","S","10","500","Transfer","No","Yes","ให้อาหาร 2 ครั้งต่อวัน"],["K.Joy","Taro","B-S6","2026-04-05","2026-04-10","S","0","0","Cash","Yes","No",""]];
+  dlCSV([h,...ex],"cathotel-bookings-template.csv");
+}
+
+function importCustomersFromCSV(rows, existingCustomers){
+  const results={imported:0, skipped:0, errors:[]};
+  const newCustomers=[];
+  rows.forEach((r,i)=>{
+    const nickname=(r["name"]||r["nickname"]||r["ชื่อ"]||r["ชื่อเล่น"]||"").trim();
+    const phone=(r["phone"]||r["เบอร์โทร"]||r["tel"]||r["mobile"]||"").trim();
+    if(!nickname){ results.errors.push(`Row ${i+2}: No name`); results.skipped++; return; }
+    // Check duplicate
+    const dup=existingCustomers.find(c=>c.nickname.toLowerCase()===nickname.toLowerCase()&&(!phone||c.phone===phone));
+    if(dup){ results.skipped++; return; }
+    // Parse cats — Cat1 Name, Cat1 Breed ... Cat3
+    const cats=[];
+    for(let ci=1;ci<=5;ci++){
+      const catName=(r[`cat${ci} name`]||r[`cat${ci}name`]||r[`cat${ci}_name`]||r[`cat ${ci} name`]||"").trim();
+      const catBreed=(r[`cat${ci} breed`]||r[`cat${ci}breed`]||r[`cat${ci}_breed`]||r[`cat ${ci} breed`]||"").trim();
+      const catNotes=(r[`cat${ci} notes`]||r[`cat${ci}notes`]||"").trim();
+      if(catName) cats.push({id:uid(),name:catName,breed:catBreed,notes:catNotes,photo:"",vaccinePassport:""});
+    }
+    // Also handle single "cat name" column
+    if(cats.length===0){
+      const singleCat=(r["cat name"]||r["cat"]||r["ชื่อแมว"]||"").trim();
+      const singleBreed=(r["breed"]||r["สายพันธุ์"]||"").trim();
+      if(singleCat) cats.push({id:uid(),name:singleCat,breed:singleBreed,notes:"",photo:"",vaccinePassport:""});
+    }
+    newCustomers.push({
+      id:uid(),
+      nickname,
+      phone,
+      line:(r["line id"]||r["line"]||r["line_id"]||"").trim(),
+      address:(r["address"]||r["ที่อยู่"]||"").trim(),
+      notes:(r["notes"]||r["หมายเหตุ"]||"").trim(),
+      cats:cats.length>0?cats:[{id:uid(),name:"",breed:"",notes:"",photo:"",vaccinePassport:""}],
+      idCard:"",
+      createdAt:new Date().toISOString(),
+    });
+    results.imported++;
+  });
+  return{newCustomers,results};
+}
+
+function importBookingsFromCSV(rows, customers){
+  const results={imported:0,skipped:0,errors:[]};
+  const newBookings=[];
+  rows.forEach((r,i)=>{
+    const nick=(r["customer nickname"]||r["nickname"]||r["customer"]||"").trim();
+    const checkin=(r["check-in (yyyy-mm-dd)"]||r["check-in"]||r["checkin"]||r["check in"]||"").trim();
+    const checkout=(r["check-out (yyyy-mm-dd)"]||r["check-out"]||r["checkout"]||r["check out"]||"").trim();
+    const roomId=(r["room id"]||r["room"]||r["roomid"]||"").trim().toUpperCase();
+    if(!nick||!checkin||!checkout){ results.errors.push(`Row ${i+2}: Missing nickname/dates`); results.skipped++; return; }
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(checkin)||!/^\d{4}-\d{2}-\d{2}$/.test(checkout)){ results.errors.push(`Row ${i+2}: Date format must be YYYY-MM-DD`); results.skipped++; return; }
+    const cust=customers.find(c=>c.nickname.toLowerCase()===nick.toLowerCase());
+    if(!cust){ results.errors.push(`Row ${i+2}: Customer "${nick}" not found — add them first`); results.skipped++; return; }
+    const size=(r["room size (s/m)"]||r["size"]||r["room size"]||"S").trim().toUpperCase()==="M"?"M":"S";
+    const validRoom=ROOMS.find(rm=>rm.id===roomId);
+    const discount=parseFloat(r["discount %"]||r["discount"]||"0")||0;
+    const depositAmt=parseFloat(r["deposit"]||"0")||0;
+    const payMethod=r["payment method"]||r["payment"]||"Cash";
+    const paid=(r["paid (yes/no)"]||r["paid"]||"").toLowerCase()==="yes";
+    const litter=(r["cat litter (yes/no)"]||r["cat litter"]||r["litter"]||"").toLowerCase()==="yes";
+    const notes=(r["notes"]||r["หมายเหตุ"]||"").trim();
+    const n=nights(checkin,checkout);
+    const selectedCatIds=(cust.cats||[]).filter(c=>c.name).map(c=>c.id);
+    // Parse specific cat names if provided
+    const catNamesStr=(r["cat names (comma separated)"]||r["cat names"]||"").trim();
+    let selCatIds=selectedCatIds;
+    if(catNamesStr){
+      const catNames=catNamesStr.split(",").map(x=>x.trim().toLowerCase());
+      const matched=(cust.cats||[]).filter(c=>catNames.includes(c.name.toLowerCase())).map(c=>c.id);
+      if(matched.length>0) selCatIds=matched;
+    }
+    const numCats=selCatIds.length||1;
+    const{base,discAmt,net,litterAmt,litterWeeks}=calcPrice(n,size,numCats,discount,litter);
+    const remaining=Math.max(0,net-depositAmt);
+    newBookings.push({
+      id:uid(), customerId:cust.id, selectedCatIds:selCatIds,
+      checkin, checkout, size, roomId:validRoom?roomId:"",
+      discount:String(discount), payMethod, paid, litter, notes,
+      base, discAmt, net, litterAmt, litterWeeks,
+      depositAmt, remaining,
+      numCats, createdAt:new Date().toISOString(),
+    });
+    results.imported++;
+  });
+  return{newBookings,results};
+}
+
+// ── Import Sheet Modal ────────────────────────────────────────────
+function ImportSheet({mode, customers, onImportCustomers, onImportBookings, onClose}){
+  const [step,setStep]=useState("upload"); // upload | preview | done
+  const [rows,setRows]=useState([]);
+  const [preview,setPreview]=useState(null); // {newItems, results}
+  const [error,setError]=useState("");
+  const fileRef=useRef();
+
+  const handleFile=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const parsed=parseCSV(ev.target.result);
+        if(!parsed.length){setError("ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง"); return;}
+        setRows(parsed); setError("");
+        if(mode==="customers"){
+          const{newCustomers,results}=importCustomersFromCSV(parsed,customers);
+          setPreview({items:newCustomers,results});
+        } else {
+          const{newBookings,results}=importBookingsFromCSV(parsed,customers);
+          setPreview({items:newBookings,results});
+        }
+        setStep("preview");
+      }catch(err){setError("ไม่สามารถอ่านไฟล์ได้: "+err.message);}
+    };
+    reader.readAsText(f,"UTF-8");
+  };
+
+  const handleConfirm=async()=>{
+    if(!preview) return;
+    if(mode==="customers") await onImportCustomers(preview.items);
+    else await onImportBookings(preview.items);
+    setStep("done");
+  };
+
+  const isCustomer=mode==="customers";
+
+  return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={S.sheet}>
+      <div style={S.sheetHandle}/>
+      <div style={{padding:"16px 20px 0",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <div style={S.sheetTitle}>📥 Import {isCustomer?"Customers":"Bookings"}</div>
+        <button style={S.btnG} onClick={onClose}>✕</button>
+      </div>
+
+      <div style={{padding:"0 20px 20px"}}>
+        {/* Step indicator */}
+        <div style={{display:"flex",gap:4,alignItems:"center",margin:"12px 0 20px"}}>
+          {["upload","preview","done"].map((s,i)=>{
+            const steps=["upload","preview","done"];
+            const curIdx=steps.indexOf(step);
+            return(
+              <div key={s} style={{display:"flex",flex:i<2?"1 1 auto":"0 0 auto",alignItems:"center",gap:4}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:step===s?C.accent:curIdx>i?C.green:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:curIdx>=i?"#fff":C.text3,flexShrink:0}}>
+                  {curIdx>i?"✓":i+1}
+                </div>
+                {i<2&&<div style={{flex:1,height:2,background:curIdx>i?C.green:C.borderLight,minWidth:16}}/>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* STEP 1: Upload */}
+        {step==="upload"&&(<>
+          {/* Download template */}
+          <div style={{background:C.blueBg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:8}}>
+              📄 ขั้นตอนที่ 1 — ดาวน์โหลด Template
+            </div>
+            <div style={{fontSize:12,color:C.text2,marginBottom:12,lineHeight:1.7}}>
+              {isCustomer?(
+                <div>{"Download template CSV → เปิดใน Numbers/Excel → กรอกข้อมูล → Export เป็น CSV → Import กลับมา"}
+                  <div style={{marginTop:4,fontWeight:600,color:C.blue}}>คอลัมน์: Name, Phone, Line ID, Address, Notes, Cat1 Name, Cat1 Breed, Cat1 Notes, Cat2 Name...</div>
+                </div>
+              ):(
+                <div>{"Download template CSV → กรอกข้อมูล Booking → Import"}
+                  <div style={{marginTop:4,color:C.orange,fontWeight:600}}>⚠️ ต้องมีชื่อลูกค้าในระบบก่อน (Nickname ต้องตรง)</div>
+                  <div style={{marginTop:4,fontWeight:600,color:C.blue}}>คอลัมน์: Customer Nickname, Cat Names, Room ID, Check-in, Check-out, Size, Discount%, Deposit, Payment...</div>
+                </div>
+              )}
+            </div>
+            <button style={{...S.btnB,width:"100%",fontSize:13}} onClick={isCustomer?downloadTemplateCustCSV:downloadTemplateBookingCSV}>
+              ⬇ Download Template CSV
+            </button>
+          </div>
+
+          {/* Tips */}
+          <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:12,color:C.text2,lineHeight:1.8}}>
+            <div style={{fontWeight:700,marginBottom:6,color:C.text}}>💡 วิธีใช้ใน Numbers (Mac)</div>
+            <div>{"1. เปิดไฟล์ template ใน Numbers"}</div>
+            <div>{"2. กรอกข้อมูลลูกค้า"}{ isCustomer?" แมวหลายตัวใส่ Cat2, Cat3":""}{" ให้ครบ"}</div>
+            <div>{"3. File → Export To → CSV..."}</div>
+            <div>{"4. กลับมากด Upload CSV ด้านล่าง"}</div>
+          </div>
+
+          {/* Upload area */}
+          <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"24px 20px",textAlign:"center",cursor:"pointer",background:C.bg}} onClick={()=>fileRef.current.click()}>
+            <div style={{fontSize:32,marginBottom:8}}>📂</div>
+            <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:4}}>Tap to select CSV file</div>
+            <div style={{fontSize:12,color:C.text3}}>รองรับ .csv (UTF-8) จาก Numbers, Excel, Google Sheets</div>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleFile}/>
+          </div>
+          {error&&<div style={{marginTop:10,padding:"10px 14px",background:"#fff5f5",borderRadius:10,fontSize:13,color:C.red,fontWeight:600}}>{"⚠️ "}{error}</div>}
+        </>)}
+
+        {/* STEP 2: Preview */}
+        {step==="preview"&&preview&&(<>
+          {/* Summary */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+            <div style={{...S.statCard,textAlign:"center"}}>
+              <div style={{...S.statVal,fontSize:28,color:C.green}}>{preview.results.imported}</div>
+              <div style={S.statLbl}>✅ พร้อม Import</div>
+            </div>
+            <div style={{...S.statCard,textAlign:"center"}}>
+              <div style={{...S.statVal,fontSize:28,color:preview.results.skipped>0?C.orange:C.text3}}>{preview.results.skipped}</div>
+              <div style={S.statLbl}>⏭ ข้าม (ซ้ำ/ผิด)</div>
+            </div>
+          </div>
+
+          {/* Errors */}
+          {preview.results.errors.length>0&&(
+            <div style={{background:"#fff5f5",borderRadius:10,padding:"10px 14px",marginBottom:14,border:"1px solid #ff3b3030"}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.red,marginBottom:6}}>⚠️ ข้อผิดพลาด</div>
+              {preview.results.errors.map((e,i)=><div key={i} style={{fontSize:11,color:C.red,marginBottom:2}}>• {e}</div>)}
+            </div>
+          )}
+
+          {/* Preview items */}
+          {preview.items.length>0?(
+            <>
+              <div style={S.slabel}>ตัวอย่างข้อมูลที่จะ Import</div>
+              <div style={{maxHeight:280,overflowY:"auto",marginBottom:16}}>
+                {preview.items.slice(0,20).map((item,i)=>(
+                  <div key={i} style={{...S.card,padding:"11px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:28,height:28,borderRadius:8,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>
+                      {isCustomer?"🐱":"📋"}
+                    </div>
+                    {isCustomer?(
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700}}>{item.nickname}</div>
+                        <div style={{fontSize:11,color:C.text2}}>{item.phone||"—"} · {(item.cats||[]).map(c=>c.name).filter(Boolean).join(", ")||"No cat"}</div>
+                      </div>
+                    ):(
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700}}>{customers.find(c=>c.id===item.customerId)?.nickname||"?"} → {item.roomId||item.size}</div>
+                        <div style={{fontSize:11,color:C.text2}}>{item.checkin} → {item.checkout} · ฿{(item.net||0).toLocaleString()}</div>
+                      </div>
+                    )}
+                    <span style={S.chip(C.green)}>New</span>
+                  </div>
+                ))}
+                {preview.items.length>20&&<div style={{textAlign:"center",fontSize:12,color:C.text3,padding:"8px"}}>...และอีก {preview.items.length-20} รายการ</div>}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button style={{...S.btnG,flex:1}} onClick={()=>setStep("upload")}>← กลับ</button>
+                <button style={{...S.btnP,flex:2}} onClick={handleConfirm}>
+                  ✅ Import {preview.items.length} รายการ
+                </button>
+              </div>
+            </>
+          ):(
+            <div style={{textAlign:"center",padding:"20px",color:C.text3}}>
+              <div style={{fontSize:28,marginBottom:8}}>😕</div>
+              <div style={{fontSize:13}}>ไม่มีข้อมูลใหม่ที่จะ import</div>
+              <button style={{...S.btnG,marginTop:12}} onClick={()=>setStep("upload")}>← ลองใหม่</button>
+            </div>
+          )}
+        </>)}
+
+        {/* STEP 3: Done */}
+        {step==="done"&&(
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <div style={{fontSize:52,marginBottom:12}}>🎉</div>
+            <div style={{fontSize:18,fontWeight:800,marginBottom:8}}>Import สำเร็จ!</div>
+            <div style={{fontSize:14,color:C.text2,marginBottom:20}}>
+              เพิ่ม {preview?.items.length||0} {isCustomer?"ลูกค้า":"booking"} เข้าระบบแล้ว
+            </div>
+            <button style={{...S.btnP,width:"100%"}} onClick={onClose}>เสร็จสิ้น ✓</button>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// CUSTOMERS PAGE
+// ════════════════════════════════════════════════════════════════
+function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSaveBooking,onImportCustomers,setToast}){
+  const [search,setSearch]=useState("");
+  const [showForm,setShowForm]=useState(false);
+  const [editCust,setEditCust]=useState(null);
+  const [detailCust,setDetailCust]=useState(null);
+  const [bookingFor,setBookingFor]=useState(null);
+  const [showImport,setShowImport]=useState(false);
+  const filtered=customers.filter(c=>c.nickname.toLowerCase().includes(search.toLowerCase())||(c.cats||[]).some(cat=>cat.name.toLowerCase().includes(search.toLowerCase()))||(c.phone||"").includes(search));
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={S.htitle}>Customers</div><div style={S.hSub}>{customers.length} registered · {customers.reduce((a,c)=>a+(c.cats||[]).length,0)} cats</div></div>
+        <div style={{display:"flex",gap:6}}>
+          <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={()=>{exportCustomersCSV(customers,bookings);setToast("CSV downloaded!");}}>⬇ CSV</button>
+          <button style={{...S.btnB,fontSize:12,padding:"8px 10px"}} onClick={()=>setShowImport(true)}>📥 Import</button>
+          <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Add</button>
+        </div>
+      </div>
+      <input style={{...S.inp,marginTop:12}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>setSearch(e.target.value)}/>
+    </div>
+    <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
+      {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>🐱</div>No customers found</div>
+        :filtered.map(c=>{
+          const cats=c.cats||[]; const cb=bookings.filter(b=>b.customerId===c.id); const last=cb.sort((a,b)=>b.checkin.localeCompare(a.checkin))[0];
+          return(<div key={c.id} style={{...S.card,marginBottom:10,cursor:"pointer"}} onClick={()=>setDetailCust(c)}>
+            <div style={{padding:"13px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:cats.length>1?8:0}}>
+                <div style={{display:"flex",position:"relative",flexShrink:0}}>
+                  {cats.slice(0,3).map((cat,i)=><div key={cat.id} style={{...S.av(cat.photo),width:40,height:40,fontSize:18,marginLeft:i>0?-12:0,border:`2px solid ${C.white}`,zIndex:cats.length-i}}>{!cat.photo&&"🐱"}</div>)}
+                </div>
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{cats.map(x=>x.name).join(", ")||"—"}</div><div style={{fontSize:12,color:C.text2}}>{c.nickname}{c.phone?` · ${c.phone}`:""}</div></div>
+                <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:12,fontWeight:600,color:C.accent}}>{cb.length} booking{cb.length!==1?"s":""}</div>{last&&<div style={{fontSize:11,color:C.text3}}>{fmt(last.checkin)}</div>}</div>
+              </div>
+              {cats.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{cats.map((cat,i)=><span key={cat.id} style={S.chip(i===0?C.text2:C.orange)}>{cat.name}{i>0?" +฿50":""}</span>)}</div>}
+            </div>
+          </div>);
+        })
+      }
+    </div></div>
+    {(showForm||editCust)&&<CustomerSheet customer={editCust} onSave={async d=>{await onSaveCustomer(d);setShowForm(false);setEditCust(null);if(detailCust)setDetailCust(d);}} onClose={()=>{setShowForm(false);setEditCust(null);}}/>}
+    {detailCust&&<CustomerDetail customer={detailCust} bookings={bookings} onEdit={()=>{setEditCust(detailCust);setDetailCust(null);}} onDelete={async()=>{if(!window.confirm("Delete this customer?"))return;await onDeleteCustomer(detailCust.id);setDetailCust(null);}} onClose={()=>setDetailCust(null)} onNewBooking={()=>{setBookingFor(detailCust);setDetailCust(null);}}/>}
+    {bookingFor&&<BookingSheet customers={customers} bookings={bookings} booking={{customerId:bookingFor.id,selectedCatIds:(bookingFor.cats||[]).slice(0,1).map(x=>x.id),checkin:"",checkout:"",size:"S",roomId:"",discount:"0",payMethod:"Cash",paid:false,notes:""}} onSave={async d=>{await onSaveBooking(d);setBookingFor(null);}} onClose={()=>setBookingFor(null)}/>}
+    {showImport&&<ImportSheet mode="customers" customers={customers} onImportCustomers={onImportCustomers} onImportBookings={()=>{}} onClose={()=>setShowImport(false)}/>}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// BOOKINGS PAGE
+// ════════════════════════════════════════════════════════════════
+function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings}){
+  const [showForm,setShowForm]=useState(false);
+  const [editBook,setEditBook]=useState(null);
+  const [filter,setFilter]=useState("upcoming");
+  const [showImport,setShowImport]=useState(false);
+  const now=today();
+  const filtered=bookings.filter(b=>filter==="upcoming"?b.checkout>=now:filter==="past"?b.checkout<now:true).sort((a,b)=>a.checkin.localeCompare(b.checkin));
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>now).length} active now</div></div>
+        <div style={{display:"flex",gap:6}}>
+          <button style={{...S.btnB,fontSize:12,padding:"8px 10px"}} onClick={()=>setShowImport(true)}>📥 Import</button>
+          <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Book</button>
+        </div>
+      </div>
+      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>setFilter(v)}>{l}</button>)}</div>
+    </div>
+    <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
+      {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📋</div>No bookings</div>
+        :filtered.map(b=>{
+          const cust=customers.find(c=>c.id===b.customerId);
+          const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+          const n=nights(b.checkin,b.checkout); const isActive=b.checkin<=now&&b.checkout>now;
+          const room=ROOMS.find(r=>r.id===b.roomId);
+          return(<div key={b.id} style={{...S.card,marginBottom:10,borderLeft:isActive?`3px solid ${C.accent}`:""}}>
+            <div style={{padding:"14px 16px"}}>
+              <div style={{display:"flex",gap:10,marginBottom:10}}>
+                <div style={{display:"flex",flexShrink:0}}>
+                  {cats.slice(0,2).map((cat,i)=><div key={cat.id} style={{...S.av(cat.photo),width:38,height:38,borderRadius:9,fontSize:17,marginLeft:i>0?-10:0,border:`2px solid ${C.white}`}}>{!cat.photo&&"🐱"}</div>)}
+                  {cats.length===0&&<div style={{...S.av(""),width:38,height:38,borderRadius:9,fontSize:17}}>🐱</div>}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700}}>{cats.length>0?cats.map(c=>c.name).join(", "):(b.catName||"Cat")} <span style={{fontSize:11,color:C.text3}}>({cust?.nickname||"?"})</span></div>
+                  <div style={{fontSize:12,color:C.text2}}>{fmt(b.checkin)} → {fmt(b.checkout)} · {n} night{n>1?"s":""}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>{b.discount>0&&<div style={{fontSize:11,color:C.red}}>-{b.discount}%</div>}</div>
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+                {isActive&&<span style={S.chip(C.accent)}>🐾 Active</span>}
+                {(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId]).filter(Boolean).map(rid=>{
+                  const rr=ROOMS.find(x=>x.id===rid);
+                  return rid?<span key={rid} style={S.chip(getRoomColor(rid))}>{rid}</span>:null;
+                })}
+                <span style={S.chip(b.paid?C.green:C.orange)}>{b.paid?"✓ Paid Full":"Unpaid"}</span>
+                {!b.paid&&b.depositAmt>0&&<span style={S.chip(C.orange)}>💰 มัดจำ ฿{b.depositAmt.toLocaleString()}</span>}
+                {!b.paid&&b.remaining>0&&<span style={S.chip(C.red)}>คงเหลือ ฿{b.remaining.toLocaleString()}</span>}
+                <span style={S.chip(C.blue)}>{b.payMethod}</span>
+                {(b.selectedCatIds?.length||0)>1&&<span style={S.chip(C.purple)}>{b.selectedCatIds.length} cats</span>}
+                {b.litter&&<span style={S.chip(C.blue)}>🪣 ทราย</span>}
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button style={{...S.btnG,fontSize:12,padding:"7px 12px"}} onClick={()=>setEditBook(b)}>Edit</button>
+                <button style={S.btnD} onClick={()=>{if(window.confirm("Delete this booking?"))onDeleteBooking(b.id);}}>Delete</button>
+                <button style={{padding:"7px 10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>exportICS(b,customers)}>📅 iCal</button>
+                <button style={{padding:"7px 10px",background:"#fff4f0",color:"#ea4335",border:"1px solid #ea433525",borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>openGCal(b,customers)}>📆 Google</button>
+                {!b.paid&&<button style={{padding:"7px 12px",background:C.greenBg,color:C.green,border:`1px solid ${C.green}30`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer",marginLeft:"auto"}} onClick={()=>onSaveBooking({...b,paid:true})}>Mark Paid ✓</button>}
+              </div>
+            </div>
+          </div>);
+        })
+      }
+    </div></div>
+    {(showForm||editBook)&&<BookingSheet booking={editBook} customers={customers} bookings={bookings} onSave={async d=>{await onSaveBooking(d);setShowForm(false);setEditBook(null);}} onClose={()=>{setShowForm(false);setEditBook(null);}}/>}
+    {showImport&&<ImportSheet mode="bookings" customers={customers} onImportCustomers={()=>{}} onImportBookings={onImportBookings} onClose={()=>setShowImport(false)}/>}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// DASHBOARD PAGE — Revenue + MoM + YoY
+// ════════════════════════════════════════════════════════════════
+
+// Color palette for multi-year lines
+const YEAR_COLORS=["#ff6b9d","#0071e3","#34c759","#ff9500","#af52de"];
+
+function getMonthRevenue(bookings, year, month){
+  // month: 0-11
+  const s=new Date(year,month,1);
+  const e=new Date(year,month+1,0);
+  const ds=d=>d.toISOString().split("T")[0];
+  return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).reduce((a,b)=>a+(b.net||0),0);
+}
+function getMonthBookings(bookings, year, month){
+  const s=new Date(year,month,1);
+  const e=new Date(year,month+1,0);
+  const ds=d=>d.toISOString().split("T")[0];
+  return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).length;
+}
+function pct(a,b){ if(!b) return null; return Math.round((a-b)/b*100); }
+function PctBadge({val}){
+  if(val===null) return <span style={{fontSize:11,color:"#bbb"}}>—</span>;
+  const up=val>=0;
+  return <span style={{fontSize:11,fontWeight:700,color:up?C.green:C.red,background:up?"#f0fdf4":"#fff5f5",padding:"2px 7px",borderRadius:100,border:`1px solid ${up?C.green+"40":C.red+"40"}`}}>{up?"+":""}{val}%</span>;
+}
+
+function DashboardPage({bookings,customers,onExportBookings}){
+  const [dashTab,setDashTab]=useState("overview"); // overview | mom | yoy
+  const [period,setPeriod]=useState("month");
+  const [offset,setOffset]=useState(0);
+  // MoM: pick a month, show 12 months trend
+  const [momYears,setMomYears]=useState([new Date().getFullYear(),new Date().getFullYear()-1]);
+  const toggleMomYear=yr=>{
+    if(momYears.includes(yr)){ if(momYears.length>1) setMomYears(y=>y.filter(x=>x!==yr)); }
+    else setMomYears(y=>[...y,yr]);
+  };
+  // YoY: pick years (up to 5)
+  const curYear=new Date().getFullYear();
+  const [yoyYears,setYoyYears]=useState([curYear,curYear-1]);
+  const toggleYear=yr=>{
+    if(yoyYears.includes(yr)) { if(yoyYears.length>1) setYoyYears(y=>y.filter(x=>x!==yr)); }
+    else setYoyYears(y=>[...y,yr].sort((a,b)=>b-a));
+  };
+
+  useEffect(()=>setOffset(0),[period]);
+  const ds=d=>d.toISOString().split("T")[0];
+
+  // ── Overview helpers ──
+  const getRange=()=>{
+    const now=new Date();now.setHours(0,0,0,0);
+    if(period==="day"){const d=new Date(now);d.setDate(now.getDate()+offset);return{start:d,end:d,label:`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`};}
+    if(period==="week"){const m=new Date(now);m.setDate(now.getDate()-((now.getDay()+6)%7)+offset*7);const s=new Date(m);s.setDate(m.getDate()+6);return{start:m,end:s,label:`${m.getDate()} ${MONTHS[m.getMonth()]} – ${s.getDate()} ${MONTHS[s.getMonth()]} ${s.getFullYear()}`};}
+    if(period==="month"){const s=new Date(now.getFullYear(),now.getMonth()+offset,1);const e=new Date(now.getFullYear(),now.getMonth()+offset+1,0);return{start:s,end:e,label:`${MONTHS_FULL[s.getMonth()]} ${s.getFullYear()}`};}
+    const y=new Date().getFullYear()+offset;return{start:new Date(y,0,1),end:new Date(y,11,31),label:`${y}`};
+  };
+  const{start,end,label}=getRange();
+  const inRange=bookings.filter(b=>b.checkin>=ds(start)&&b.checkin<=ds(end));
+  const revenue=inRange.reduce((a,b)=>a+(b.net||0),0);
+  const unpaid=inRange.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0);
+  const totalNights=inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
+  const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
+  let bars=[];
+  if(period==="week"){for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);const ds2=ds(d);const v=bookings.filter(b=>b.checkin===ds2).reduce((a,b)=>a+(b.net||0),0);bars.push({label:["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()],val:v});}}
+  else if(period==="month"){let ws=new Date(start);while(ws<=end){const we=new Date(ws);we.setDate(ws.getDate()+6);const ae=we>end?end:we;const v=bookings.filter(b=>b.checkin>=ds(ws)&&b.checkin<=ds(ae)).reduce((a,b)=>a+(b.net||0),0);bars.push({label:`${ws.getDate()}/${ws.getMonth()+1}`,val:v});ws=new Date(we);ws.setDate(we.getDate()+1);}}
+  else if(period==="year"){for(let m=0;m<12;m++){const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);const v=bookings.filter(b=>b.checkin>=ds(ms)&&b.checkin<=ds(me)).reduce((a,b)=>a+(b.net||0),0);bars.push({label:MONTHS[m],val:v});}}
+  else{bars=[{label:"Today",val:revenue}];}
+  const maxBar=Math.max(...bars.map(r=>r.val),1);
+  const pmMap={};inRange.forEach(b=>{pmMap[b.payMethod]=(pmMap[b.payMethod]||0)+(b.net||0);});
+  const pmEntries=Object.entries(pmMap).sort((a,b)=>b[1]-a[1]);
+  const maxPm=Math.max(...pmEntries.map(e=>e[1]),1);
+  const roomStats=ROOMS.map(r=>({room:r,count:inRange.filter(b=>b.roomId===r.id).length,revenue:inRange.filter(b=>b.roomId===r.id).reduce((a,b)=>a+(b.net||0),0)})).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
+
+  // ── MoM: 12 months in a year, with MoM % change ──
+  // momYears data computed inline in render
+
+  // ── YoY: all 12 months, multiple years side by side ──
+  const yoyData=Array.from({length:12},(_,m)=>{
+    const entry={month:MONTHS[m],monthFull:MONTHS_FULL[m]};
+    yoyYears.forEach(yr=>{ entry[yr]=getMonthRevenue(bookings,yr,m); });
+    return entry;
+  });
+  const maxYoy=Math.max(...yoyData.flatMap(d=>yoyYears.map(yr=>d[yr]||0)),1);
+  // Year totals
+  const yearTotals=yoyYears.map(yr=>({yr,total:Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0),bkgs:Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0)}));
+
+  const availYears=Array.from({length:13},(_,i)=>2030-i); // 2030 down to 2018
+
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={S.htitle}>Dashboard</div><div style={S.hSub}>Revenue analytics</div></div>
+        <button style={S.btnB} onClick={onExportBookings}>⬇ Export</button>
+      </div>
+      {/* Main tab: Overview / MoM / YoY */}
+      <div style={{display:"flex",gap:8,marginTop:12}}>
+        {[["overview","📊 Overview"],["mom","📈 MoM"],["yoy","📅 YoY"]].map(([v,l])=>(
+          <button key={v} style={{flex:1,padding:"10px 4px",background:dashTab===v?C.text:C.white,color:dashTab===v?"#fff":C.text2,border:`1px solid ${dashTab===v?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>setDashTab(v)}>{l}</button>
+        ))}
+      </div>
+    </div>
+
+    {/* ══ OVERVIEW TAB ══════════════════════════════════════════ */}
+    {dashTab==="overview"&&(
+      <div style={{padding:"14px 16px 0"}}>
+        <div style={{...S.tabs,marginBottom:12}}>{[["day","Day"],["week","Week"],["month","Month"],["year","Year"]].map(([v,l])=><button key={v} style={S.tab(period===v)} onClick={()=>setPeriod(v)}>{l}</button>)}</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div style={{display:"flex",gap:8}}>
+            <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14}} onClick={()=>setOffset(o=>o-1)}>‹</button>
+            <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14}} onClick={()=>setOffset(o=>o+1)}>›</button>
+          </div>
+          <div style={{fontSize:14,fontWeight:700}}>{label}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{revenue.toLocaleString()}</div><div style={S.statLbl}>Revenue</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{unpaid.toLocaleString()}</div><div style={S.statLbl}>Unpaid</div></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalCats}</div><div style={S.statLbl}>Cats</div></div>
+        </div>
+        {period!=="day"&&bars.length>0&&(<><div style={S.slabel}>Revenue Chart</div>
+          <div style={{...S.cardPad,marginBottom:14}}>{bars.map((r,i)=>{const pct2=r.val/maxBar*100;const inside=pct2>30;return(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.text3,width:46,textAlign:"right",flexShrink:0}}>{r.label}</div>
+            <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+              <div style={{height:"100%",borderRadius:6,background:C.accent,width:`${pct2}%`,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8,minWidth:0}}>{inside&&r.val>0&&<span style={{fontSize:10,fontWeight:700,color:"#fff"}}>฿{r.val.toLocaleString()}</span>}</div>
+              {!inside&&r.val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 4px)`,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:C.text2}}>฿{r.val.toLocaleString()}</span>}
+              {r.val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.text3}}>—</span>}
+            </div>
+          </div>);})}
+          </div>
+        </>)}
+        {pmEntries.length>0&&(<><div style={S.slabel}>By Payment</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{pmEntries.map(([pm,v],i,arr)=>(<div key={pm} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{flex:1,fontSize:13,fontWeight:600}}>{pm}</div><div style={{width:70,height:4,background:C.bg,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:C.accent,width:`${v/maxPm*100}%`}}/></div><div style={{fontSize:13,fontWeight:700,minWidth:65,textAlign:"right"}}>฿{v.toLocaleString()}</div></div>))}</div></>)}
+        {roomStats.length>0&&(<><div style={S.slabel}>Top Rooms</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{roomStats.slice(0,8).map(({room,count,revenue:rv},i,arr)=>(<div key={room.id} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{...S.chip(getRoomColor(room.id)),marginRight:4}}>{room.label}</div><div style={{flex:1,fontSize:13,color:C.text2}}>{count} booking{count>1?"s":""}</div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{rv.toLocaleString()}</div></div>))}</div></>)}
+        {inRange.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📊</div>No data for this period</div>}
+      </div>
+    )}
+
+    {/* ══ MoM TAB ═══════════════════════════════════════════════ */}
+    {dashTab==="mom"&&(
+      <div style={{padding:"14px 16px 0"}}>
+
+        {/* Multi-year picker */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>
+            Month-over-Month — เลือกได้ทุกปี 2018–2030
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
+            {availYears.map(yr=>{
+              const sel=momYears.includes(yr);
+              const colIdx=momYears.indexOf(yr);
+              return(
+                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleMomYear(yr)}>
+                  {yr}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11,color:C.text3}}>{momYears.length} ปีที่เลือก — {[...momYears].sort((a,b)=>b-a).join(", ")}</div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setMomYears(availYears)}>เลือกทั้งหมด</button>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setMomYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
+          </div>
+        </div>
+
+        {/* Year summary cards */}
+        <div style={S.slabel}>สรุปรายปี</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(momYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
+          {[...momYears].sort((a,b)=>b-a).map(yr=>{
+            const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
+            const totalPrev=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr-1,m)).reduce((a,b)=>a+b,0);
+            const bkgsTotal=Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0);
+            const colIdx=momYears.indexOf(yr);
+            return(
+              <div key={yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[colIdx]}`}}>
+                <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[colIdx],marginBottom:4}}>{yr}</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{total.toLocaleString()}</div>
+                <div style={{fontSize:11,color:C.text3,marginBottom:5}}>{bkgsTotal} bookings</div>
+                <PctBadge val={pct(total,totalPrev)}/>
+                <span style={{fontSize:10,color:C.text3,marginLeft:4}}>vs {yr-1}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Monthly grouped bar chart */}
+        <div style={S.slabel}>
+          รายได้รายเดือน — {[...momYears].sort((a,b)=>b-a).join(" vs ")}
+        </div>
+        <div style={{...S.cardPad,marginBottom:14}}>
+          {/* Legend */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+            {[...momYears].sort((a,b)=>b-a).map(yr=>(
+              <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
+                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}/>
+                {yr}
+              </div>
+            ))}
+          </div>
+          {/* Bars per month */}
+          {Array.from({length:12},(_,mi)=>{
+            const isCurrentMonth=new Date().getMonth()===mi;
+            const sortedYrs=[...momYears].sort((a,b)=>b-a);
+            const maxVal=Math.max(...sortedYrs.map(yr=>getMonthRevenue(bookings,yr,mi)),1);
+            return(
+              <div key={mi} style={{marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:isCurrentMonth?800:600,color:isCurrentMonth?C.accent:C.text2,marginBottom:4}}>
+                  {MONTHS_FULL[mi]}{isCurrentMonth?" ◀":""}
+                </div>
+                {sortedYrs.map((yr,yi)=>{
+                  const val=getMonthRevenue(bookings,yr,mi);
+                  const bk=getMonthBookings(bookings,yr,mi);
+                  const globalMax=Math.max(...Array.from({length:12},(_,m2)=>Math.max(...sortedYrs.map(y=>getMonthRevenue(bookings,y,m2)))),1);
+                  const pct2=val/globalMax*100;
+                  const inside=pct2>32;
+                  const color=YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length];
+                  // MoM: compare same month, this year vs prev year in selection
+                  const prevYrInSel=sortedYrs[yi+1];
+                  const prevVal=prevYrInSel!==undefined?getMonthRevenue(bookings,prevYrInSel,mi):null;
+                  return(
+                    <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <div style={{fontSize:10,fontWeight:700,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
+                      <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${pct2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                          {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
+                        </div>
+                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                        {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
+                      </div>
+                      <div style={{width:20,flexShrink:0,textAlign:"center",fontSize:10,color:C.text3}}>{bk>0?bk:""}</div>
+                      <div style={{width:50,flexShrink:0,textAlign:"right"}}>
+                        {prevVal!==null&&<PctBadge val={pct(val,prevVal)}/>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* MoM Detail Table — months as rows, years as columns */}
+        <div style={S.slabel}>ตารางเปรียบเทียบ MoM</div>
+        <div style={{overflowX:"auto",marginBottom:24}}>
+          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+momYears.length*110)}}>
+            {/* Header */}
+            <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
+              <div style={{width:44,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
+              {[...momYears].sort((a,b)=>b-a).map((yr,i)=>(
+                <div key={yr} style={{flex:1,textAlign:"right",fontSize:10,fontWeight:800,color:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}>
+                  {yr}
+                  {i>0&&<div style={{fontSize:9,fontWeight:500,color:C.text3}}>vs {[...momYears].sort((a,b)=>b-a)[i-1]}</div>}
+                </div>
+              ))}
+            </div>
+            {/* Rows */}
+            {Array.from({length:12},(_,mi)=>{
+              const isCurrentMonth=new Date().getMonth()===mi;
+              const sortedYrs=[...momYears].sort((a,b)=>b-a);
+              return(
+                <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
+                  <div style={{width:44,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>
+                    {MONTHS[mi]}{isCurrentMonth&&" ◀"}
+                  </div>
+                  {sortedYrs.map((yr,i)=>{
+                    const val=getMonthRevenue(bookings,yr,mi);
+                    const prevYr=sortedYrs[i+1];
+                    const prevVal=prevYr!==undefined?getMonthRevenue(bookings,prevYr,mi):null;
+                    return(
+                      <div key={yr} style={{flex:1,textAlign:"right"}}>
+                        <div style={{fontSize:12,fontWeight:700,color:val>0?YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]:C.text3}}>
+                          {val>0?`฿${val.toLocaleString()}`:"—"}
+                        </div>
+                        {prevVal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(val,prevVal)}/></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            {/* Total row */}
+            <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{width:44,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
+              {[...momYears].sort((a,b)=>b-a).map((yr,i)=>{
+                const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
+                const sortedYrs=[...momYears].sort((a,b)=>b-a);
+                const prevYr=sortedYrs[i+1];
+                const prevTotal=prevYr!==undefined?Array.from({length:12},(_,m)=>getMonthRevenue(bookings,prevYr,m)).reduce((a,b)=>a+b,0):null;
+                return(
+                  <div key={yr} style={{flex:1,textAlign:"right"}}>
+                    <div style={{fontSize:12,fontWeight:800,color:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}>฿{total.toLocaleString()}</div>
+                    {prevTotal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(total,prevTotal)}/></div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ══ YoY TAB ═══════════════════════════════════════════════ */}
+    {dashTab==="yoy"&&(
+      <div style={{padding:"14px 16px 0"}}>
+        {/* Year picker */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>Year-over-Year — เลือกได้ทุกปี 2018–2030</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {availYears.map((yr,i)=>{
+              const sel=yoyYears.includes(yr);
+              const colorIdx=yoyYears.indexOf(yr);
+              return(
+                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleYear(yr)}>
+                  {yr}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11,color:C.text3,marginTop:6}}>{yoyYears.length} ปีที่เลือก — {yoyYears.sort((a,b)=>b-a).join(", ")}</div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([...availYears])}>เลือกทั้งหมด</button>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
+          </div>
+        </div>
+
+        {/* Year total summary cards */}
+        <div style={S.slabel}>สรุปรายปี</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(yoyYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
+          {yearTotals.sort((a,b)=>b.yr-a.yr).map((yt,i)=>{
+            const prevYr=yearTotals.find(x=>x.yr===yt.yr-1);
+            return(
+              <div key={yt.yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[yoyYears.indexOf(yt.yr)%YEAR_COLORS.length]||C.accent}`}}>
+                <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yt.yr)%YEAR_COLORS.length]||C.accent,marginBottom:4}}>{yt.yr}</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{yt.total.toLocaleString()}</div>
+                <div style={{fontSize:11,color:C.text3,marginBottom:4}}>{yt.bkgs} bookings</div>
+                {prevYr&&<PctBadge val={pct(yt.total,prevYr.total)}/>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* YoY bar chart — grouped by month */}
+        <div style={S.slabel}>รายได้รายเดือน เปรียบเทียบ {yoyYears.sort((a,b)=>b-a).join(" vs ")}</div>
+        <div style={{...S.cardPad,marginBottom:14}}>
+          {/* Legend */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+            {yoyYears.sort((a,b)=>b-a).map((yr,i)=>(
+              <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
+                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]}}/>
+                {yr}
+              </div>
+            ))}
+          </div>
+          {yoyData.map((d,mi)=>(
+            <div key={mi} style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:4}}>{d.monthFull}</div>
+              {yoyYears.sort((a,b)=>b-a).map((yr,yi)=>{
+                const val=d[yr]||0;
+                const pct2=val/maxYoy*100;
+                const inside=pct2>30;
+                const colIdx=yoyYears.indexOf(yr);
+                const color=YEAR_COLORS[colIdx]||C.accent;
+                const prevYrVal=yoyYears.includes(yr-1)?d[yr-1]||0:null;
+                return(
+                  <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <div style={{fontSize:10,fontWeight:600,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
+                    <div style={{flex:1,height:22,background:C.bg,borderRadius:5,overflow:"hidden",position:"relative"}}>
+                      <div style={{height:"100%",borderRadius:5,background:color,width:`${pct2}%`,opacity:0.85,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                        {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
+                      </div>
+                      {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                      {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
+                    </div>
+                    {prevYrVal!==null&&<div style={{width:44,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(val,prevYrVal)}/></div>}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* YoY table — month by month comparison */}
+        <div style={S.slabel}>ตารางเปรียบเทียบ YoY</div>
+        <div style={{overflowX:"auto",marginBottom:14}}>
+          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,180+yoyYears.length*100)}}>
+            {/* Header */}
+            <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
+              <div style={{width:52,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
+              {yoyYears.sort((a,b)=>b-a).map(yr=>(
+                <div key={yr} style={{flex:1,fontSize:10,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent,textAlign:"right"}}>{yr}</div>
+              ))}
+              {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3,textAlign:"right"}}>YoY %</div>}
+            </div>
+            {yoyData.map((d,mi)=>{
+              const sortedYrs=yoyYears.sort((a,b)=>b-a);
+              const latestYr=sortedYrs[0];
+              const prevYr=sortedYrs[1];
+              const yoyChange=prevYr?pct(d[latestYr]||0,d[prevYr]||0):null;
+              const isCurrentMonth=new Date().getMonth()===mi;
+              return(
+                <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
+                  <div style={{width:52,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>{d.month}</div>
+                  {sortedYrs.map(yr=>(
+                    <div key={yr} style={{flex:1,fontSize:12,fontWeight:700,textAlign:"right",color:(d[yr]||0)>0?C.text:C.text3}}>
+                      {(d[yr]||0)>0?`฿${(d[yr]).toLocaleString()}`:"—"}
+                    </div>
+                  ))}
+                  {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={yoyChange}/></div>}
+                </div>
+              );
+            })}
+            {/* Year total row */}
+            <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{width:52,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
+              {yoyYears.sort((a,b)=>b-a).map(yr=>(
+                <div key={yr} style={{flex:1,fontSize:12,fontWeight:800,textAlign:"right",color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent}}>
+                  ฿{yearTotals.find(y=>y.yr===yr)?.total.toLocaleString()||"0"}
+                </div>
+              ))}
+              {yoyYears.length>=2&&(()=>{
+                const s=yoyYears.sort((a,b)=>b-a);
+                const t0=yearTotals.find(y=>y.yr===s[0])?.total||0;
+                const t1=yearTotals.find(y=>y.yr===s[1])?.total||0;
+                return <div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(t0,t1)}/></div>;
+              })()}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// MAIN APP
+// ════════════════════════════════════════════════════════════════
+function App(){
+  const [page,setPage]=useState("rooms");
+  const [customers,setCustomers]=useState([]);
+  const [bookings,setBookings]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [dbError,setDbError]=useState(null);
+  const [toast,setToast]=useState("");
+  const [sync,setSync]=useState("");
+
+  // Load + realtime listeners
+  useEffect(()=>{
+    let loadTimeout=setTimeout(()=>{
+      setLoading(false);
+      setDbError("connection_timeout");
+    },10000); // 10s timeout
+
+    const unsubC=db.collection("customers").orderBy("createdAt","asc").onSnapshot(
+      snap=>{
+        clearTimeout(loadTimeout);
+        setCustomers(snap.docs.map(d=>({id:d.id,...d.data()})));
+        setLoading(false);
+        setDbError(null);
+      },
+      err=>{
+        clearTimeout(loadTimeout);
+        console.error("Firestore customers error:",err);
+        setLoading(false);
+        setDbError(err.code||"unknown");
+      }
+    );
+    const unsubB=db.collection("bookings").orderBy("createdAt","asc").onSnapshot(
+      snap=>{ setBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
+      err=>{ console.error("Firestore bookings error:",err); }
+    );
+    return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); };
+  },[]);
+
+  const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
+
+  const onImportCustomers=useCallback(async(newItems)=>{
+    saving(async()=>{
+      const batch=db.batch();
+      newItems.forEach(item=>{ const{id,...rest}=item; batch.set(db.collection("customers").doc(id),rest); });
+      await batch.commit();
+      // ไม่ต้อง setCustomers เอง — onSnapshot จะอัพเดทให้อัตโนมัติ
+      setToast(`✅ Import ${newItems.length} ลูกค้าสำเร็จ!`);
+    });
+  },[]);
+
+  const onImportBookings=useCallback(async(newItems)=>{
+    saving(async()=>{
+      const batch=db.batch();
+      newItems.forEach(item=>{ const{id,...rest}=item; batch.set(db.collection("bookings").doc(id),rest); });
+      await batch.commit();
+      // ไม่ต้อง setBookings เอง — onSnapshot จะอัพเดทให้อัตโนมัติ
+      setToast(`✅ Import ${newItems.length} booking สำเร็จ!`);
+    });
+  },[]);
+  const onSaveCustomer=useCallback(async d=>saving(async()=>{await fbSave("customers",d.id,d);setToast("Saved ☁️");}),[]);
+  const onDeleteCustomer=useCallback(async id=>saving(async()=>{await fbDelete("customers",id);setToast("Deleted ✓");}),[]);
+  const onSaveBooking=useCallback(async d=>saving(async()=>{await fbSave("bookings",d.id,d);setToast("Saved ☁️");}),[]);
+  const onDeleteBooking=useCallback(async id=>saving(async()=>{await fbDelete("bookings",id);setToast("Deleted ✓");}),[]);
+
+  if(loading)return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.text3}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🐱</div>
+        <div style={{fontSize:14,fontWeight:600,marginBottom:4,color:C.text}}>กำลังโหลดข้อมูล...</div>
+        <div style={{fontSize:12}}>Connecting to Firebase</div>
+      </div>
+    </div>
+  );
+
+  if(dbError)return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:24,background:C.bg}}>
+      <div style={{textAlign:"center",maxWidth:340,width:"100%"}}>
+        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+        <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:8}}>ไม่สามารถเชื่อมต่อ Database</div>
+        <div style={{fontSize:13,color:C.text2,lineHeight:1.8,marginBottom:20}}>
+          <div>Firebase rules อาจหมดอายุ (30 วัน test mode)</div>
+          <div>ต้องอัพเดท Firestore Rules ก่อนครับ</div>
+        </div>
+        <div style={{background:C.blueBg,borderRadius:14,padding:"16px 18px",textAlign:"left",marginBottom:16,border:`1px solid ${C.blue}20`}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.blue,marginBottom:10}}>🔧 วิธีแก้ (2 นาที)</div>
+          {[
+            ["1","ไปที่ console.firebase.google.com"],
+            ["2","เลือก project CATWALK CMS"],
+            ["3","เมนูซ้าย → Firestore Database"],
+            ["4",'คลิก tab "Rules" แถวบนสุด'],
+            ["5","แทนที่ rules ด้วย code ด้านล่าง"],
+            ["6","กด Publish สีน้ำเงิน → กลับมากดปุ่ม Reload"],
+          ].map(([n,t])=>(
+            <div key={n} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
+              <div style={{width:22,height:22,borderRadius:"50%",background:C.blue,color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{n}</div>
+              <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{t}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:"#1c1c1e",borderRadius:12,padding:"14px 16px",textAlign:"left",marginBottom:16}}>
+          <div style={{fontSize:10,color:"#888",marginBottom:8,letterSpacing:"0.06em",fontFamily:"monospace"}}>FIRESTORE RULES — copy ทั้งหมด</div>
+          <pre style={{fontSize:11,color:"#4fffb0",margin:0,lineHeight:1.8,fontFamily:"monospace",whiteSpace:"pre-wrap"}}>{"rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}"}</pre>
+        </div>
+        <button style={{...S.btnB,width:"100%",marginBottom:10,padding:"14px"}} onClick={()=>window.open("https://console.firebase.google.com","_blank")}>
+          🔗 เปิด Firebase Console
+        </button>
+        <button style={{...S.btnG,width:"100%",padding:"13px",fontSize:13}} onClick={()=>window.location.reload()}>
+          🔄 Reload หลังแก้ Rules แล้ว
+        </button>
+        <div style={{marginTop:12,fontSize:11,color:C.text3}}>Error: {dbError}</div>
+      </div>
+    </div>
+  );
+
+  const todayActive=bookings.filter(b=>b.checkin<=today()&&b.checkout>today()).length;
+  const freeToday=ROOMS.length-todayActive;
+
+  return(<div style={S.app}>
+    {sync&&<div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:999,background:sync==="saving"?C.orange:sync==="saved"?C.green:C.red,transition:"background 0.3s"}}/>}
+    {/* Version */}
+    <div style={{position:"fixed",top:6,right:10,fontSize:9,color:C.text3,fontWeight:500,zIndex:998,pointerEvents:"none",letterSpacing:"0.02em"}}>
+      v 19 Mar 2026 18:27
+    </div>
+    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast}/>}
+    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings}/>}
+    {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
+    {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
+    <div style={S.nav}>
+      {[
+        {id:"rooms",    icon:"🏠",label:"Rooms",   badge:freeToday>0?freeToday:0,badgeColor:C.green},
+        {id:"bookings", icon:"📋",label:"Bookings",badge:todayActive,badgeColor:C.accent},
+        {id:"customers",icon:"🐱",label:"Customers",badge:0},
+        {id:"dashboard",icon:"📊",label:"Dashboard",badge:0},
+      ].map(n=>(
+        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)}>
+          <div style={{position:"relative",lineHeight:1}}>
+            <span style={{fontSize:20}}>{n.icon}</span>
+            {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:16,height:16,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
+          </div>
+          <div style={{fontSize:10,fontWeight:700}}>{n.label}</div>
+        </button>
+      ))}
+    </div>
+    <Toast msg={toast} onHide={()=>setToast("")}/>
+  </div>);
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
