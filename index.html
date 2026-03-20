@@ -147,9 +147,9 @@ function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||
 // ── Design ────────────────────────────────────────────────────────────
 const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)"};
 const S={
-  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingBottom:90},
-  nav:{position:"fixed",bottom:0,left:0,right:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${C.borderLight}`,display:"flex",zIndex:100,boxShadow:"0 -2px 12px rgba(0,0,0,0.06)"},
-  navBtn:a=>({flex:1,padding:"10px 4px 12px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,color:a?C.accent:C.text3,fontFamily:"inherit",minHeight:64,position:"relative"}),
+  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingTop:64},
+  nav:{position:"fixed",top:0,left:0,right:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${C.borderLight}`,display:"flex",zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"},
+  navBtn:a=>({flex:1,padding:"10px 4px 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:a?C.accent:C.text3,fontFamily:"inherit",minHeight:56,position:"relative"}),
   content:{flex:1},
   header:{background:C.white,padding:"20px 20px 16px",borderBottom:`1px solid ${C.borderLight}`},
   htitle:{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",color:C.text},
@@ -1781,8 +1781,92 @@ function DashboardPage({bookings,customers,onExportBookings}){
 // ════════════════════════════════════════════════════════════════
 // SETTINGS PAGE
 // ════════════════════════════════════════════════════════════════
+function importCombinedCSV(rows, existingCustomers, existingBookings){
+  const newCustomers=[];
+  const newBookings=[];
+  const errors=[];
+  const custMap={}; // nickname.lower -> customer obj
+
+  // Pre-load existing customers into map
+  existingCustomers.forEach(c=>{ custMap[c.nickname.toLowerCase()]=c; });
+
+  rows.forEach((r,i)=>{
+    const rowNum=i+2;
+    // ── Read fields (flexible column names) ──
+    const name=(r["name"]||r["nickname"]||r["ชื่อ"]||r["ชื่อเล่น"]||r["owner"]||r["owner name"]||"").trim();
+    const phone=(r["phone"]||r["tel"]||r["mobile"]||r["เบอร์โทร"]||"").trim();
+    const lineId=(r["line"]||r["line id"]||r["line_id"]||"").trim();
+    const address=(r["address"]||r["ที่อยู่"]||"").trim();
+    const ownerNotes=(r["owner notes"]||r["customer notes"]||"").trim();
+    const catName=(r["cat name"]||r["cat"]||r["ชื่อแมว"]||r["cat1 name"]||r["cat 1"]||"").trim();
+    const catBreed=(r["breed"]||r["cat breed"]||r["สายพันธุ์"]||r["cat1 breed"]||"").trim();
+    const cat2Name=(r["cat2 name"]||r["cat 2"]||"").trim();
+    const cat2Breed=(r["cat2 breed"]||"").trim();
+    const cat3Name=(r["cat3 name"]||r["cat 3"]||"").trim();
+    const cat3Breed=(r["cat3 breed"]||"").trim();
+    const roomId=(r["room"]||r["room id"]||r["ห้อง"]||r["roomid"]||"").trim().toUpperCase();
+    const checkin=(r["check-in"]||r["checkin"]||r["check in"]||r["วันเข้า"]||"").trim();
+    const checkout=(r["check-out"]||r["checkout"]||r["check out"]||r["วันออก"]||"").trim();
+    const size=(r["size"]||r["room size"]||r["type"]||"S").trim().toUpperCase()||"S";
+    const discount=parseFloat(r["discount"]||r["discount %"]||r["ส่วนลด"]||"0")||0;
+    const deposit=parseFloat(r["deposit"]||r["มัดจำ"]||"0")||0;
+    const payMethod=(r["payment"]||r["payment method"]||r["การชำระ"]||r["pay method"]||"Cash").trim()||"Cash";
+    const paid=(r["paid"]||r["ชำระแล้ว"]||"").toLowerCase()==="yes";
+    const litter=(r["litter"]||r["cat litter"]||r["ทราย"]||"").toLowerCase()==="yes";
+    const notes=(r["notes"]||r["หมายเหตุ"]||"").trim();
+
+    if(!name){ errors.push(`Row ${rowNum}: ไม่มีชื่อลูกค้า`); return; }
+
+    // ── Create or find customer ──
+    const nameKey=name.toLowerCase();
+    if(!custMap[nameKey]){
+      const cats=[];
+      if(catName) cats.push({id:uid(),name:catName,breed:catBreed,notes:"",photo:"",vaccinePassport:""});
+      if(cat2Name) cats.push({id:uid(),name:cat2Name,breed:cat2Breed,notes:"",photo:"",vaccinePassport:""});
+      if(cat3Name) cats.push({id:uid(),name:cat3Name,breed:cat3Breed,notes:"",photo:"",vaccinePassport:""});
+      const newCust={
+        id:uid(),nickname:name,phone,line:lineId,address,notes:ownerNotes,idCard:"",
+        cats:cats.length>0?cats:[{id:uid(),name:catName||"",breed:catBreed,notes:"",photo:"",vaccinePassport:""}],
+        createdAt:new Date().toISOString(),
+      };
+      newCustomers.push(newCust);
+      custMap[nameKey]=newCust;
+    }
+
+    // ── Create booking if dates present ──
+    if(checkin&&checkout){
+      const cust=custMap[nameKey];
+      const cats=cust.cats||[];
+      const selectedCatIds=cats.filter(c=>c.name).map(c=>c.id);
+      const numCats=Math.max(selectedCatIds.length,1);
+      const roomSize=roomId?(ROOMS.find(r=>r.id===roomId)?.type||size):size;
+      const n=nights(checkin,checkout);
+      const {base,discAmt,net,litterAmt,litterWeeks}=n>0?calcPrice(n,roomSize,numCats,discount,litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
+      const remaining=Math.max(0,net-deposit);
+
+      // Check duplicate booking
+      const dupBook=existingBookings.find(b=>b.customerId===cust.id&&b.checkin===checkin&&b.checkout===checkout);
+      if(dupBook){ errors.push(`Row ${rowNum}: booking ซ้ำ (${name} ${checkin})`); return; }
+
+      newBookings.push({
+        id:uid(),customerId:cust.id,
+        roomId:roomId||"",roomIds:roomId?[roomId]:[],
+        size:roomSize,checkin,checkout,
+        selectedCatIds,numCats,
+        discount,base,discAmt,net,
+        litter,litterAmt,litterWeeks,
+        depositAmt:deposit,remaining,paid,
+        payMethod,notes,
+        createdAt:new Date().toISOString(),
+      });
+    }
+  });
+
+  return{newCustomers,newBookings,errors,totalRows:rows.length};
+}
+
 function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast}){
-  const [step,setStep]=useState("idle"); // idle | importing | done
+  const [step,setStep]=useState("idle");
   const [preview,setPreview]=useState(null);
   const [dragOver,setDragOver]=useState(false);
   const fileRef=useRef();
@@ -1794,17 +1878,20 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
     const rows=parseCSV(text);
     if(rows.length===0){setStep("idle");setToast("❌ ไม่พบข้อมูลในไฟล์");return;}
 
-    // Detect type by headers
     const headers=Object.keys(rows[0]).map(h=>h.toLowerCase());
-    const isBooking=headers.some(h=>h.includes("check-in")||h.includes("checkin")||h.includes("check in")||h.includes("room"));
-    const isCustomer=headers.some(h=>h.includes("name")||h.includes("nickname"));
+    const hasBookingCols=headers.some(h=>h.includes("check")||h.includes("room"));
+    const hasCustomerCols=headers.some(h=>h.includes("name")||h.includes("nickname"));
 
-    if(isBooking){
+    if(hasCustomerCols&&hasBookingCols){
+      // Combined format
+      const result=importCombinedCSV(rows,customers,bookings);
+      setPreview({type:"combined",...result});
+    } else if(hasBookingCols){
       const{newBookings,results}=importBookingsFromCSV(rows,customers);
-      setPreview({type:"bookings",items:newBookings,results,total:rows.length});
-    } else if(isCustomer){
+      setPreview({type:"bookings",newBookings,results,totalRows:rows.length});
+    } else if(hasCustomerCols){
       const{newCustomers,results}=importCustomersFromCSV(rows,customers);
-      setPreview({type:"customers",items:newCustomers,results,total:rows.length});
+      setPreview({type:"customers",newCustomers,results,totalRows:rows.length});
     } else {
       setToast("❌ ไม่รู้จัก format ของไฟล์นี้");
       setStep("idle");
@@ -1813,108 +1900,120 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
     setStep("preview");
   };
 
-  const handleFile=e=>{
-    const file=e.target.files[0];
-    if(file) processFile(file);
-  };
-
-  const handleDrop=e=>{
-    e.preventDefault();
-    setDragOver(false);
-    const file=e.dataTransfer.files[0];
-    if(file) processFile(file);
-  };
-
   const handleConfirm=async()=>{
     if(!preview) return;
-    if(preview.type==="customers") await onImportCustomers(preview.items);
-    else await onImportBookings(preview.items);
-    setToast(`✅ Import ${preview.items.length} รายการสำเร็จ!`);
+    if(preview.type==="combined"){
+      if(preview.newCustomers.length>0) await onImportCustomers(preview.newCustomers);
+      if(preview.newBookings.length>0) await onImportBookings(preview.newBookings);
+      setToast(`✅ Import ${preview.newCustomers.length} ลูกค้า + ${preview.newBookings.length} booking สำเร็จ!`);
+    } else if(preview.type==="customers"){
+      await onImportCustomers(preview.newCustomers);
+      setToast(`✅ Import ${preview.newCustomers.length} ลูกค้าสำเร็จ!`);
+    } else {
+      await onImportBookings(preview.newBookings);
+      setToast(`✅ Import ${preview.newBookings.length} booking สำเร็จ!`);
+    }
     setStep("done");
     setTimeout(()=>{setStep("idle");setPreview(null);},3000);
-  };
-
-  const downloadCombinedTemplate=()=>{
-    // Customer template
-    const custH=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat1 Notes","Cat2 Name","Cat2 Breed","Cat2 Notes"];
-    const custEx=[["K.Nong","0812345678","@nong_cat","Bangkok","","Mochi","Scottish Fold","","Luna","Persian",""]];
-    dlCSV([custH,...custEx],"template-customers.csv");
-    setTimeout(()=>{
-      // Booking template
-      const bookH=["Customer Nickname","Cat Names (comma separated)","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Room Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];
-      const bookEx=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""],["K.Joy","Taro, Luna","B-S6","2026-04-05","2026-04-10","S","10","0","Transfer","Yes","Yes",""]];
-      dlCSV([bookH,...bookEx],"template-bookings.csv");
-    },500);
   };
 
   return(<div>
     <div style={S.header}>
       <div style={S.htitle}>⚙️ Settings</div>
-      <div style={S.hSub}>Import data & manage system</div>
+      <div style={S.hSub}>Import & manage data</div>
     </div>
     <div style={{padding:"16px 16px 40px"}}>
 
-      {/* Import section */}
-      <div style={S.slabel}>📥 Import Data from CSV</div>
+      {/* ── Combined Import ── */}
+      <div style={S.slabel}>📥 Import จาก CSV (รองรับทุก format)</div>
       <div style={{...S.cardPad,marginBottom:16}}>
-        <div style={{fontSize:13,color:C.text2,marginBottom:12,lineHeight:1.6}}>
-          Import ข้อมูลลูกค้าหรือ booking จาก CSV ไฟล์ — ระบบจะตรวจจับ format อัตโนมัติ
+
+        {/* format guide */}
+        <div style={{background:C.blueBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:C.blue,lineHeight:1.7}}>
+          <div style={{fontWeight:800,marginBottom:4}}>✅ รองรับ 3 format:</div>
+          <div>1. <b>Combined</b> — 1 ไฟล์รวม ลูกค้า+แมว+booking ทีเดียว</div>
+          <div>2. <b>Customers only</b> — ข้อมูลลูกค้าและแมว</div>
+          <div>3. <b>Bookings only</b> — ข้อมูลการจองอย่างเดียว</div>
         </div>
 
-        {/* Drop zone */}
         {step==="idle"&&(
           <div
             onDragOver={e=>{e.preventDefault();setDragOver(true);}}
             onDragLeave={()=>setDragOver(false)}
-            onDrop={handleDrop}
+            onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)processFile(f);}}
             onClick={()=>fileRef.current.click()}
-            style={{border:`2px dashed ${dragOver?C.accent:C.border}`,borderRadius:14,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:dragOver?C.accentBg:C.bg,transition:"all 0.2s",marginBottom:12}}
+            style={{border:`2px dashed ${dragOver?C.accent:C.border}`,borderRadius:14,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:dragOver?C.accentBg:C.bg,transition:"all 0.2s"}}
           >
-            <div style={{fontSize:36,marginBottom:8}}>📂</div>
-            <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:4}}>Drag & Drop CSV ที่นี่</div>
-            <div style={{fontSize:12,color:C.text3}}>หรือคลิกเพื่อเลือกไฟล์</div>
-            <div style={{fontSize:11,color:C.text3,marginTop:8}}>รองรับทั้ง customers.csv และ bookings.csv</div>
-            <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}} onChange={handleFile}/>
+            <div style={{fontSize:40,marginBottom:8}}>📂</div>
+            <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>แตะเพื่อเลือกไฟล์ CSV</div>
+            <div style={{fontSize:12,color:C.text3}}>หรือ Drag & Drop ที่นี่</div>
+            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{display:"none"}} onChange={e=>{if(e.target.files[0])processFile(e.target.files[0]);}}/>
           </div>
         )}
 
         {step==="importing"&&(
           <div style={{textAlign:"center",padding:"32px 20px"}}>
-            <div style={{fontSize:32,marginBottom:8}}>⏳</div>
-            <div style={{fontSize:14,fontWeight:600}}>กำลังอ่านไฟล์...</div>
+            <div style={{fontSize:36,marginBottom:8}}>⏳</div>
+            <div style={{fontSize:14,fontWeight:600}}>กำลังอ่านและวิเคราะห์ไฟล์...</div>
           </div>
         )}
 
         {step==="preview"&&preview&&(
           <div>
-            <div style={{padding:"12px 14px",background:C.accentBg,borderRadius:10,marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>
-                {preview.type==="customers"?"👤 Customer Import":"📋 Booking Import"}
-              </div>
-              <div style={{fontSize:12,color:C.text2}}>
-                พบ {preview.total} แถว · Import ได้ {preview.items.length} · ข้าม {preview.results.skipped}
-              </div>
-              {preview.results.errors.length>0&&(
-                <div style={{marginTop:6,fontSize:11,color:C.red}}>
-                  {preview.results.errors.slice(0,3).map((e,i)=><div key={i}>⚠️ {e}</div>)}
+            {/* Summary */}
+            <div style={{background:preview.errors?.length>0?C.accentBg:C.greenBg,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+              {preview.type==="combined"&&(
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>📊 Combined Import Preview</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+                    <div style={{...S.statCard,textAlign:"center"}}>
+                      <div style={{fontSize:20,fontWeight:800,color:C.accent}}>{preview.newCustomers.length}</div>
+                      <div style={{fontSize:10,color:C.text3}}>ลูกค้าใหม่</div>
+                    </div>
+                    <div style={{...S.statCard,textAlign:"center"}}>
+                      <div style={{fontSize:20,fontWeight:800,color:C.blue}}>{preview.newBookings.length}</div>
+                      <div style={{fontSize:10,color:C.text3}}>Booking</div>
+                    </div>
+                    <div style={{...S.statCard,textAlign:"center"}}>
+                      <div style={{fontSize:20,fontWeight:800,color:C.text3}}>{preview.errors.length}</div>
+                      <div style={{fontSize:10,color:C.text3}}>ข้ามแถว</div>
+                    </div>
+                  </div>
+                  {preview.errors.length>0&&<div style={{fontSize:11,color:C.red}}>{preview.errors.slice(0,3).map((e,i)=><div key={i}>⚠️ {e}</div>)}</div>}
+                </div>
+              )}
+              {preview.type!=="combined"&&(
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>
+                    {preview.type==="customers"?"👤 Customer Import":"📋 Booking Import"}
+                  </div>
+                  <div style={{fontSize:12,color:C.text2}}>
+                    พบ {preview.totalRows} แถว · Import ได้ {preview.type==="customers"?preview.newCustomers?.length:preview.newBookings?.length} · ข้าม {preview.results?.skipped}
+                  </div>
                 </div>
               )}
             </div>
+
             {/* Preview rows */}
-            <div style={{...S.card,overflow:"hidden",marginBottom:12,maxHeight:200,overflowY:"auto"}}>
-              {preview.items.slice(0,5).map((item,i)=>(
-                <div key={i} style={{padding:"10px 14px",borderBottom:i<Math.min(preview.items.length,5)-1?`1px solid ${C.borderLight}`:"none",fontSize:12}}>
-                  {preview.type==="customers"
-                    ?<div><span style={{fontWeight:700}}>{item.nickname}</span> · {item.phone} · {(item.cats||[]).map(c=>c.name).filter(Boolean).join(", ")}</div>
-                    :<div><span style={{fontWeight:700}}>{customers.find(c=>c.id===item.customerId)?.nickname||"?"}</span> · {item.roomId||item.size} · {item.checkin} → {item.checkout}</div>
-                  }
-                </div>
-              ))}
-              {preview.items.length>5&&<div style={{padding:"8px 14px",fontSize:11,color:C.text3}}>...และอีก {preview.items.length-5} รายการ</div>}
-            </div>
+            {preview.type==="combined"&&(preview.newCustomers.length>0||preview.newBookings.length>0)&&(
+              <div style={{...S.card,overflow:"hidden",marginBottom:12,maxHeight:220,overflowY:"auto"}}>
+                <div style={{padding:"8px 14px",background:C.bg,fontSize:10,fontWeight:700,color:C.text3,borderBottom:`1px solid ${C.borderLight}`}}>ตัวอย่างข้อมูล</div>
+                {preview.newBookings.slice(0,6).map((b,i)=>{
+                  const c=preview.newCustomers.find(x=>x.id===b.customerId)||customers.find(x=>x.id===b.customerId);
+                  return(
+                    <div key={i} style={{padding:"9px 14px",borderBottom:i<5?`1px solid ${C.borderLight}`:"none",fontSize:12}}>
+                      <div style={{fontWeight:700,color:C.accent}}>{c?.nickname||"?"}</div>
+                      <div style={{color:C.text2,marginTop:2}}>{b.roomId||b.size} · {b.checkin} → {b.checkout} · ฿{(b.net||0).toLocaleString()}</div>
+                    </div>
+                  );
+                })}
+                {preview.newBookings.length>6&&<div style={{padding:"8px 14px",fontSize:11,color:C.text3}}>...และอีก {preview.newBookings.length-6} booking</div>}
+              </div>
+            )}
+
             <div style={{display:"flex",gap:8}}>
               <button style={{...S.btnP,flex:1}} onClick={handleConfirm}>
-                ✅ Import {preview.items.length} รายการ
+                ✅ Confirm Import
               </button>
               <button style={S.btnG} onClick={()=>{setStep("idle");setPreview(null);}}>ยกเลิก</button>
             </div>
@@ -1923,32 +2022,45 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
 
         {step==="done"&&(
           <div style={{textAlign:"center",padding:"24px 20px"}}>
-            <div style={{fontSize:36,marginBottom:8}}>🎉</div>
-            <div style={{fontSize:14,fontWeight:700,color:C.green}}>Import สำเร็จ!</div>
+            <div style={{fontSize:40,marginBottom:8}}>🎉</div>
+            <div style={{fontSize:15,fontWeight:700,color:C.green}}>Import สำเร็จ!</div>
           </div>
         )}
       </div>
 
-      {/* Download templates */}
-      <div style={S.slabel}>📄 Download Template CSV</div>
-      <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
-        <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:2}}>👤 Customer Template</div>
-          <div style={{fontSize:11,color:C.text3,marginBottom:10}}>Name, Phone, Line ID, Address, Cat1 Name, Cat1 Breed...</div>
-          <button style={{...S.btnB,fontSize:12,padding:"8px 14px"}} onClick={()=>{const h=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat1 Notes","Cat2 Name","Cat2 Breed","Cat2 Notes"];const ex=[["K.Nong","0812345678","@nong_cat","Bangkok","","Mochi","Scottish Fold","","Luna","Persian",""]];dlCSV([h,...ex],"template-customers.csv");}}>
-            ⬇ Download Customer Template
-          </button>
+      {/* ── Download Combined Template ── */}
+      <div style={S.slabel}>📄 Download Template</div>
+      <div style={{...S.cardPad,marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>Combined Template (แนะนำ)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:12,lineHeight:1.6}}>
+          1 ไฟล์ รวมทั้งลูกค้า+แมว+booking — แต่ละแถว = 1 booking
         </div>
-        <div style={{padding:"14px 16px"}}>
-          <div style={{fontSize:13,fontWeight:700,marginBottom:2}}>📋 Booking Template</div>
-          <div style={{fontSize:11,color:C.text3,marginBottom:10}}>Customer Name, Room ID, Check-in, Check-out, Size, Discount%, Deposit...</div>
-          <button style={{...S.btnB,fontSize:12,padding:"8px 14px"}} onClick={()=>{const h=["Customer Nickname","Cat Names (comma separated)","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Room Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];const ex=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""]];dlCSV([h,...ex],"template-bookings.csv");}}>
-            ⬇ Download Booking Template
+        <div style={{fontSize:11,color:C.text3,marginBottom:12}}>
+          คอลัมน์: Name, Phone, Cat Name, Breed, Room, Check-in, Check-out, Size, Discount%, Deposit, Payment, Paid
+        </div>
+        <button style={{...S.btnP,width:"100%"}} onClick={()=>{
+          const h=["Name","Phone","Line ID","Cat Name","Breed","Cat2 Name","Cat2 Breed","Room","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];
+          const ex=[
+            ["K.Nong","0812345678","@nong","Mochi","Scottish Fold","Luna","Persian","A-S2","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""],
+            ["K.Nong","0812345678","@nong","Mochi","Scottish Fold","Luna","Persian","A-S2","2026-05-10","2026-05-15","S","10","0","Transfer","Yes","No",""],
+            ["K.Joy","0898765432","","Taro","Maine Coon","","","B-S6","2026-04-05","2026-04-10","S","0","0","Cash","Yes","Yes",""],
+          ];
+          dlCSV([h,...ex],"catwalk-combined-template.csv");
+          setToast("✅ Downloaded template!");
+        }}>
+          ⬇ Download Combined Template
+        </button>
+        <div style={{marginTop:10,display:"flex",gap:8}}>
+          <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{const h=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed"];const ex=[["K.Nong","0812345678","@nong","Bangkok","","Mochi","Scottish Fold","Luna","Persian","",""]];dlCSV([h,...ex],"template-customers.csv");}}>
+            ⬇ Customers only
+          </button>
+          <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{const h=["Customer Nickname","Cat Names","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];const ex=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""]];dlCSV([h,...ex],"template-bookings.csv");}}>
+            ⬇ Bookings only
           </button>
         </div>
       </div>
 
-      {/* Export section */}
+      {/* ── Export ── */}
       <div style={S.slabel}>📤 Export Data</div>
       <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
         <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1961,14 +2073,13 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
         </div>
       </div>
 
-      {/* App info */}
+      {/* ── About ── */}
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 19 Mar 2026 20:26</div>
+        <div style={{fontSize:12,color:C.text3}}>v 20 Mar 2026 18:27</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
-
     </div>
   </div>);
 }
@@ -2116,7 +2227,7 @@ function App(){
         {id:"settings", icon:"⚙️", label:"Settings", badge:0},
       ].map(n=>(
         <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)}>
-          {page===n.id&&<div style={{position:"absolute",top:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"0 0 4px 4px"}}/>}
+          {page===n.id&&<div style={{position:"absolute",bottom:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"4px 4px 0 0"}}/>}
           <div style={{position:"relative",lineHeight:1}}>
             <span style={{fontSize:24}}>{n.icon}</span>
             {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
