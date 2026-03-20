@@ -1793,8 +1793,8 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
     const cat3Name=(r["cat3 name"]||r["cat 3"]||"").trim();
     const cat3Breed=(r["cat3 breed"]||"").trim();
     const roomId=(r["room"]||r["room id"]||r["ห้อง"]||r["roomid"]||"").trim().toUpperCase();
-    const checkin=(r["check-in"]||r["checkin"]||r["check in"]||r["วันเข้า"]||"").trim();
-    const checkout=(r["check-out"]||r["checkout"]||r["check out"]||r["วันออก"]||"").trim();
+    const checkin=(r["check-in (yyyy-mm-dd)"]||r["check-in"]||r["checkin"]||r["check in"]||r["วันเข้า"]||r["เช็คอิน"]||"").trim();
+    const checkout=(r["check-out (yyyy-mm-dd)"]||r["check-out"]||r["checkout"]||r["check out"]||r["วันออก"]||r["เช็คเอาท์"]||"").trim();
     const size=(r["size"]||r["room size"]||r["type"]||"S").trim().toUpperCase()||"S";
     const discount=parseFloat(r["discount"]||r["discount %"]||r["ส่วนลด"]||"0")||0;
     const deposit=parseFloat(r["deposit"]||r["มัดจำ"]||"0")||0;
@@ -1823,6 +1823,11 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
 
     // ── Create booking if dates present ──
     if(checkin&&checkout){
+      // Validate date format YYYY-MM-DD
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(checkin)||!/^\d{4}-\d{2}-\d{2}$/.test(checkout)){
+        errors.push(`Row ${rowNum}: วันที่ format ผิด (ต้องเป็น YYYY-MM-DD) → "${checkin}" / "${checkout}"`);
+        return;
+      }
       const cust=custMap[nameKey];
       const cats=cust.cats||[];
       const selectedCatIds=cats.filter(c=>c.name).map(c=>c.id);
