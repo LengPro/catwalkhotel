@@ -147,9 +147,10 @@ function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||
 // ── Design ────────────────────────────────────────────────────────────
 const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)"};
 const S={
-  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingBottom:80},
-  nav:{position:"fixed",bottom:0,left:0,right:0,background:"rgba(255,255,255,0.96)",backdropFilter:"blur(20px)",borderTop:`1px solid ${C.border}`,display:"flex",zIndex:50,overflow:"visible"},
-  navBtn:a=>({flex:1,padding:"10px 4px 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?C.accent:C.text3,fontFamily:"inherit"}),
+  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,display:"flex"},
+  nav:{position:"fixed",top:0,left:0,bottom:0,width:72,background:C.white,borderRight:`1px solid ${C.borderLight}`,display:"flex",flexDirection:"column",alignItems:"center",paddingTop:16,paddingBottom:16,zIndex:50,boxShadow:"2px 0 12px rgba(0,0,0,0.04)"},
+  navBtn:a=>({width:52,height:52,background:a?C.accentBg:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:a?C.accent:C.text3,fontFamily:"inherit",borderRadius:14,marginBottom:4,transition:"all 0.15s"}),
+  content:{marginLeft:72,flex:1,minHeight:"100vh"},
   header:{background:C.white,padding:"52px 20px 16px",borderBottom:`1px solid ${C.borderLight}`},
   htitle:{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",color:C.text},
   hSub:{fontSize:12,color:C.text3,fontWeight:500,marginTop:2},
@@ -220,7 +221,7 @@ function CatEditor({cat,index,total,onChange,onRemove}){
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────
-function Toast({msg,onHide}){useEffect(()=>{if(msg){const t=setTimeout(onHide,2500);return()=>clearTimeout(t);}},[msg]);return <div style={{position:"fixed",bottom:90,left:"50%",transform:`translateX(-50%) translateY(${msg?0:8}px)`,background:C.text,color:"#fff",padding:"10px 20px",borderRadius:100,fontSize:13,fontWeight:600,opacity:msg?1:0,pointerEvents:"none",transition:"all 0.2s",whiteSpace:"nowrap",zIndex:300,boxShadow:C.shadowMd}}>{msg}</div>;}
+function Toast({msg,onHide}){useEffect(()=>{if(msg){const t=setTimeout(onHide,2500);return()=>clearTimeout(t);}},[msg]);return <div style={{position:"fixed",bottom:24,left:"50%",transform:`translateX(-50%) translateY(${msg?0:8}px)`,background:C.text,color:"#fff",padding:"10px 20px",borderRadius:100,fontSize:13,fontWeight:600,opacity:msg?1:0,pointerEvents:"none",transition:"all 0.2s",whiteSpace:"nowrap",zIndex:300,boxShadow:C.shadowMd}}>{msg}</div>;}
 
 // ── ImageViewer ───────────────────────────────────────────────────────
 function ImageViewer({src,title,onClose}){return(<div style={{...S.overlay,alignItems:"center",justifyContent:"center",zIndex:400}} onClick={onClose}><div style={{background:C.white,borderRadius:16,padding:16,maxWidth:"90vw",maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:14}}>{title}</div><button style={S.btnG} onClick={onClose}>✕</button></div><img src={src} style={{maxWidth:"80vw",maxHeight:"70vh",borderRadius:10,display:"block"}} alt={title}/></div></div>);}
@@ -1778,6 +1779,201 @@ function DashboardPage({bookings,customers,onExportBookings}){
 }
 
 // ════════════════════════════════════════════════════════════════
+// SETTINGS PAGE
+// ════════════════════════════════════════════════════════════════
+function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast}){
+  const [step,setStep]=useState("idle"); // idle | importing | done
+  const [preview,setPreview]=useState(null);
+  const [dragOver,setDragOver]=useState(false);
+  const fileRef=useRef();
+
+  const processFile=async(file)=>{
+    if(!file) return;
+    setStep("importing");
+    const text=await file.text();
+    const rows=parseCSV(text);
+    if(rows.length===0){setStep("idle");setToast("❌ ไม่พบข้อมูลในไฟล์");return;}
+
+    // Detect type by headers
+    const headers=Object.keys(rows[0]).map(h=>h.toLowerCase());
+    const isBooking=headers.some(h=>h.includes("check-in")||h.includes("checkin")||h.includes("check in")||h.includes("room"));
+    const isCustomer=headers.some(h=>h.includes("name")||h.includes("nickname"));
+
+    if(isBooking){
+      const{newBookings,results}=importBookingsFromCSV(rows,customers);
+      setPreview({type:"bookings",items:newBookings,results,total:rows.length});
+    } else if(isCustomer){
+      const{newCustomers,results}=importCustomersFromCSV(rows,customers);
+      setPreview({type:"customers",items:newCustomers,results,total:rows.length});
+    } else {
+      setToast("❌ ไม่รู้จัก format ของไฟล์นี้");
+      setStep("idle");
+      return;
+    }
+    setStep("preview");
+  };
+
+  const handleFile=e=>{
+    const file=e.target.files[0];
+    if(file) processFile(file);
+  };
+
+  const handleDrop=e=>{
+    e.preventDefault();
+    setDragOver(false);
+    const file=e.dataTransfer.files[0];
+    if(file) processFile(file);
+  };
+
+  const handleConfirm=async()=>{
+    if(!preview) return;
+    if(preview.type==="customers") await onImportCustomers(preview.items);
+    else await onImportBookings(preview.items);
+    setToast(`✅ Import ${preview.items.length} รายการสำเร็จ!`);
+    setStep("done");
+    setTimeout(()=>{setStep("idle");setPreview(null);},3000);
+  };
+
+  const downloadCombinedTemplate=()=>{
+    // Customer template
+    const custH=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat1 Notes","Cat2 Name","Cat2 Breed","Cat2 Notes"];
+    const custEx=[["K.Nong","0812345678","@nong_cat","Bangkok","","Mochi","Scottish Fold","","Luna","Persian",""]];
+    dlCSV([custH,...custEx],"template-customers.csv");
+    setTimeout(()=>{
+      // Booking template
+      const bookH=["Customer Nickname","Cat Names (comma separated)","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Room Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];
+      const bookEx=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""],["K.Joy","Taro, Luna","B-S6","2026-04-05","2026-04-10","S","10","0","Transfer","Yes","Yes",""]];
+      dlCSV([bookH,...bookEx],"template-bookings.csv");
+    },500);
+  };
+
+  return(<div>
+    <div style={S.header}>
+      <div style={S.htitle}>⚙️ Settings</div>
+      <div style={S.hSub}>Import data & manage system</div>
+    </div>
+    <div style={{padding:"16px 16px 40px"}}>
+
+      {/* Import section */}
+      <div style={S.slabel}>📥 Import Data from CSV</div>
+      <div style={{...S.cardPad,marginBottom:16}}>
+        <div style={{fontSize:13,color:C.text2,marginBottom:12,lineHeight:1.6}}>
+          Import ข้อมูลลูกค้าหรือ booking จาก CSV ไฟล์ — ระบบจะตรวจจับ format อัตโนมัติ
+        </div>
+
+        {/* Drop zone */}
+        {step==="idle"&&(
+          <div
+            onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+            onDragLeave={()=>setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={()=>fileRef.current.click()}
+            style={{border:`2px dashed ${dragOver?C.accent:C.border}`,borderRadius:14,padding:"32px 20px",textAlign:"center",cursor:"pointer",background:dragOver?C.accentBg:C.bg,transition:"all 0.2s",marginBottom:12}}
+          >
+            <div style={{fontSize:36,marginBottom:8}}>📂</div>
+            <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:4}}>Drag & Drop CSV ที่นี่</div>
+            <div style={{fontSize:12,color:C.text3}}>หรือคลิกเพื่อเลือกไฟล์</div>
+            <div style={{fontSize:11,color:C.text3,marginTop:8}}>รองรับทั้ง customers.csv และ bookings.csv</div>
+            <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}} onChange={handleFile}/>
+          </div>
+        )}
+
+        {step==="importing"&&(
+          <div style={{textAlign:"center",padding:"32px 20px"}}>
+            <div style={{fontSize:32,marginBottom:8}}>⏳</div>
+            <div style={{fontSize:14,fontWeight:600}}>กำลังอ่านไฟล์...</div>
+          </div>
+        )}
+
+        {step==="preview"&&preview&&(
+          <div>
+            <div style={{padding:"12px 14px",background:C.accentBg,borderRadius:10,marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>
+                {preview.type==="customers"?"👤 Customer Import":"📋 Booking Import"}
+              </div>
+              <div style={{fontSize:12,color:C.text2}}>
+                พบ {preview.total} แถว · Import ได้ {preview.items.length} · ข้าม {preview.results.skipped}
+              </div>
+              {preview.results.errors.length>0&&(
+                <div style={{marginTop:6,fontSize:11,color:C.red}}>
+                  {preview.results.errors.slice(0,3).map((e,i)=><div key={i}>⚠️ {e}</div>)}
+                </div>
+              )}
+            </div>
+            {/* Preview rows */}
+            <div style={{...S.card,overflow:"hidden",marginBottom:12,maxHeight:200,overflowY:"auto"}}>
+              {preview.items.slice(0,5).map((item,i)=>(
+                <div key={i} style={{padding:"10px 14px",borderBottom:i<Math.min(preview.items.length,5)-1?`1px solid ${C.borderLight}`:"none",fontSize:12}}>
+                  {preview.type==="customers"
+                    ?<div><span style={{fontWeight:700}}>{item.nickname}</span> · {item.phone} · {(item.cats||[]).map(c=>c.name).filter(Boolean).join(", ")}</div>
+                    :<div><span style={{fontWeight:700}}>{customers.find(c=>c.id===item.customerId)?.nickname||"?"}</span> · {item.roomId||item.size} · {item.checkin} → {item.checkout}</div>
+                  }
+                </div>
+              ))}
+              {preview.items.length>5&&<div style={{padding:"8px 14px",fontSize:11,color:C.text3}}>...และอีก {preview.items.length-5} รายการ</div>}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button style={{...S.btnP,flex:1}} onClick={handleConfirm}>
+                ✅ Import {preview.items.length} รายการ
+              </button>
+              <button style={S.btnG} onClick={()=>{setStep("idle");setPreview(null);}}>ยกเลิก</button>
+            </div>
+          </div>
+        )}
+
+        {step==="done"&&(
+          <div style={{textAlign:"center",padding:"24px 20px"}}>
+            <div style={{fontSize:36,marginBottom:8}}>🎉</div>
+            <div style={{fontSize:14,fontWeight:700,color:C.green}}>Import สำเร็จ!</div>
+          </div>
+        )}
+      </div>
+
+      {/* Download templates */}
+      <div style={S.slabel}>📄 Download Template CSV</div>
+      <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
+        <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:2}}>👤 Customer Template</div>
+          <div style={{fontSize:11,color:C.text3,marginBottom:10}}>Name, Phone, Line ID, Address, Cat1 Name, Cat1 Breed...</div>
+          <button style={{...S.btnB,fontSize:12,padding:"8px 14px"}} onClick={()=>{const h=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat1 Notes","Cat2 Name","Cat2 Breed","Cat2 Notes"];const ex=[["K.Nong","0812345678","@nong_cat","Bangkok","","Mochi","Scottish Fold","","Luna","Persian",""]];dlCSV([h,...ex],"template-customers.csv");}}>
+            ⬇ Download Customer Template
+          </button>
+        </div>
+        <div style={{padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:2}}>📋 Booking Template</div>
+          <div style={{fontSize:11,color:C.text3,marginBottom:10}}>Customer Name, Room ID, Check-in, Check-out, Size, Discount%, Deposit...</div>
+          <button style={{...S.btnB,fontSize:12,padding:"8px 14px"}} onClick={()=>{const h=["Customer Nickname","Cat Names (comma separated)","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Room Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];const ex=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""]];dlCSV([h,...ex],"template-bookings.csv");}}>
+            ⬇ Download Booking Template
+          </button>
+        </div>
+      </div>
+
+      {/* Export section */}
+      <div style={S.slabel}>📤 Export Data</div>
+      <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
+        <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div><div style={{fontSize:13,fontWeight:700}}>Export Bookings</div><div style={{fontSize:11,color:C.text3}}>{bookings.length} bookings</div></div>
+          <button style={{...S.btnG,fontSize:12}} onClick={()=>exportBookingsCSV(bookings,customers)}>⬇ CSV</button>
+        </div>
+        <div style={{padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div><div style={{fontSize:13,fontWeight:700}}>Export Customers</div><div style={{fontSize:11,color:C.text3}}>{customers.length} customers</div></div>
+          <button style={{...S.btnG,fontSize:12}} onClick={()=>exportCustomersCSV(customers,bookings)}>⬇ CSV</button>
+        </div>
+      </div>
+
+      {/* App info */}
+      <div style={S.slabel}>ℹ️ About</div>
+      <div style={{...S.cardPad,marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
+        <div style={{fontSize:12,color:C.text3}}>v 19 Mar 2026 20:26</div>
+        <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
+      </div>
+
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
 // MAIN APP
 // ════════════════════════════════════════════════════════════════
 function App(){
@@ -1900,28 +2096,42 @@ function App(){
     {sync&&<div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:999,background:sync==="saving"?C.orange:sync==="saved"?C.green:C.red,transition:"background 0.3s"}}/>}
     {/* Version */}
     <div style={{position:"fixed",top:6,right:10,fontSize:9,color:C.text3,fontWeight:500,zIndex:998,pointerEvents:"none",letterSpacing:"0.02em"}}>
-      v 19 Mar 2026 18:27
+      v 20 Mar 2026 18:27
     </div>
-    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast}/>}
-    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings}/>}
-    {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
-    {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
+
+    {/* ── Left Sidebar Nav ── */}
     <div style={S.nav}>
+      <div style={{fontSize:26,marginBottom:16}}>🐱</div>
       {[
         {id:"rooms",    icon:"🏠",label:"Rooms",   badge:freeToday>0?freeToday:0,badgeColor:C.green},
         {id:"bookings", icon:"📋",label:"Bookings",badge:todayActive,badgeColor:C.accent},
-        {id:"customers",icon:"🐱",label:"Customers",badge:0},
-        {id:"dashboard",icon:"📊",label:"Dashboard",badge:0},
+        {id:"customers",icon:"😺",label:"Cats",    badge:0},
+        {id:"dashboard",icon:"📊",label:"Stats",   badge:0},
       ].map(n=>(
-        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)}>
+        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)} title={n.label}>
           <div style={{position:"relative",lineHeight:1}}>
-            <span style={{fontSize:20}}>{n.icon}</span>
+            <span style={{fontSize:22}}>{n.icon}</span>
             {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:16,height:16,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
           </div>
-          <div style={{fontSize:10,fontWeight:700}}>{n.label}</div>
+          <div style={{fontSize:9,fontWeight:700,marginTop:2}}>{n.label}</div>
         </button>
       ))}
+      <div style={{flex:1}}/>
+      <button style={S.navBtn(page==="settings")} onClick={()=>setPage("settings")} title="Settings">
+        <span style={{fontSize:22}}>⚙️</span>
+        <div style={{fontSize:9,fontWeight:700,marginTop:2}}>Settings</div>
+      </button>
     </div>
+
+    {/* ── Main Content ── */}
+    <div style={S.content}>
+      {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast}/>}
+      {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings}/>}
+      {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
+      {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
+      {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast}/>}
+    </div>
+
     <Toast msg={toast} onHide={()=>setToast("")}/>
   </div>);
 }
