@@ -1233,17 +1233,12 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
   const [editCust,setEditCust]=useState(null);
   const [detailCust,setDetailCust]=useState(null);
   const [bookingFor,setBookingFor]=useState(null);
-  const [showImport,setShowImport]=useState(false);
   const filtered=customers.filter(c=>c.nickname.toLowerCase().includes(search.toLowerCase())||(c.cats||[]).some(cat=>cat.name.toLowerCase().includes(search.toLowerCase()))||(c.phone||"").includes(search));
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div><div style={S.htitle}>Customers</div><div style={S.hSub}>{customers.length} registered · {customers.reduce((a,c)=>a+(c.cats||[]).length,0)} cats</div></div>
-        <div style={{display:"flex",gap:6}}>
-          <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={()=>{exportCustomersCSV(customers,bookings);setToast("CSV downloaded!");}}>⬇ CSV</button>
-          <button style={{...S.btnB,fontSize:12,padding:"8px 10px"}} onClick={()=>setShowImport(true)}>📥 Import</button>
-          <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Add</button>
-        </div>
+        <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Add</button>
       </div>
       <input style={{...S.inp,marginTop:12}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>setSearch(e.target.value)}/>
     </div>
@@ -1269,7 +1264,6 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
     {(showForm||editCust)&&<CustomerSheet customer={editCust} onSave={async d=>{await onSaveCustomer(d);setShowForm(false);setEditCust(null);if(detailCust)setDetailCust(d);}} onClose={()=>{setShowForm(false);setEditCust(null);}}/>}
     {detailCust&&<CustomerDetail customer={detailCust} bookings={bookings} onEdit={()=>{setEditCust(detailCust);setDetailCust(null);}} onDelete={async()=>{if(!window.confirm("Delete this customer?"))return;await onDeleteCustomer(detailCust.id);setDetailCust(null);}} onClose={()=>setDetailCust(null)} onNewBooking={()=>{setBookingFor(detailCust);setDetailCust(null);}}/>}
     {bookingFor&&<BookingSheet customers={customers} bookings={bookings} booking={{customerId:bookingFor.id,selectedCatIds:(bookingFor.cats||[]).slice(0,1).map(x=>x.id),checkin:"",checkout:"",size:"S",roomId:"",discount:"0",payMethod:"Cash",paid:false,notes:""}} onSave={async d=>{await onSaveBooking(d);setBookingFor(null);}} onClose={()=>setBookingFor(null)}/>}
-    {showImport&&<ImportSheet mode="customers" customers={customers} onImportCustomers={onImportCustomers} onImportBookings={()=>{}} onClose={()=>setShowImport(false)}/>}
   </div>);
 }
 
@@ -1280,17 +1274,13 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   const [showForm,setShowForm]=useState(false);
   const [editBook,setEditBook]=useState(null);
   const [filter,setFilter]=useState("upcoming");
-  const [showImport,setShowImport]=useState(false);
   const now=today();
   const filtered=bookings.filter(b=>filter==="upcoming"?b.checkout>=now:filter==="past"?b.checkout<now:true).sort((a,b)=>a.checkin.localeCompare(b.checkin));
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>now).length} active now</div></div>
-        <div style={{display:"flex",gap:6}}>
-          <button style={{...S.btnB,fontSize:12,padding:"8px 10px"}} onClick={()=>setShowImport(true)}>📥 Import</button>
-          <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Book</button>
-        </div>
+        <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Book</button>
       </div>
       <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>setFilter(v)}>{l}</button>)}</div>
     </div>
@@ -1340,7 +1330,6 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
       }
     </div></div>
     {(showForm||editBook)&&<BookingSheet booking={editBook} customers={customers} bookings={bookings} onSave={async d=>{await onSaveBooking(d);setShowForm(false);setEditBook(null);}} onClose={()=>{setShowForm(false);setEditBook(null);}}/>}
-    {showImport&&<ImportSheet mode="bookings" customers={customers} onImportCustomers={()=>{}} onImportBookings={onImportBookings} onClose={()=>setShowImport(false)}/>}
   </div>);
 }
 
@@ -1436,7 +1425,6 @@ function DashboardPage({bookings,customers,onExportBookings}){
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div><div style={S.htitle}>Dashboard</div><div style={S.hSub}>Revenue analytics</div></div>
-        <button style={S.btnB} onClick={onExportBookings}>⬇ Export</button>
       </div>
       {/* Main tab: Overview / MoM / YoY */}
       <div style={{display:"flex",gap:8,marginTop:12}}>
@@ -2205,10 +2193,6 @@ function App(){
 
   return(<div style={S.app}>
     {sync&&<div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:999,background:sync==="saving"?C.orange:sync==="saved"?C.green:C.red,transition:"background 0.3s"}}/>}
-    {/* Version */}
-    <div style={{position:"fixed",top:6,right:10,fontSize:9,color:C.text3,fontWeight:500,zIndex:998,pointerEvents:"none",letterSpacing:"0.02em"}}>
-      v 20 Mar 2026 18:27
-    </div>
 
     {/* ── Main Content ── */}
     {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast}/>}
