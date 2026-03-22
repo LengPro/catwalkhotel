@@ -1557,10 +1557,22 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   const [showForm,setShowForm]=useState(false);
   const [editBook,setEditBook]=useState(null);
   const [filter,setFilter]=useState("upcoming");
+  const [search,setSearch]=useState("");
   const [selectMode,setSelectMode]=useState(false);
   const [selected,setSelected]=useState([]);
   const now=today();
-  const filtered=bookings.filter(b=>filter==="upcoming"?b.checkout>=now:filter==="past"?b.checkout<now:true).sort((a,b)=>a.checkin.localeCompare(b.checkin));
+
+  const byFilter=bookings.filter(b=>filter==="upcoming"?b.checkout>=now:filter==="past"?b.checkout<now:true);
+  const filtered=byFilter.filter(b=>{
+    if(!search.trim()) return true;
+    const s=search.toLowerCase();
+    const cust=customers.find(c=>c.id===b.customerId);
+    const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+    const catNames=cats.map(c=>c.name).join(" ").toLowerCase();
+    const nickname=(cust?.nickname||"").toLowerCase();
+    const room=(b.roomIds||[b.roomId]).filter(Boolean).join(" ").toLowerCase();
+    return nickname.includes(s)||catNames.includes(s)||room.includes(s)||b.checkin?.includes(s)||b.checkout?.includes(s);
+  }).sort((a,b)=>a.checkin.localeCompare(b.checkin));
 
   const toggleSelect=id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const toggleSelectAll=()=>setSelected(s=>s.length===filtered.length?[]:filtered.map(b=>b.id));
@@ -1592,7 +1604,8 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
           )}
         </div>
       </div>
-      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();}}>{l}</button>)}</div>
+      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();setSearch("");}}>{l}</button>)}</div>
+      <input style={{...S.inp,marginTop:10}} placeholder="🔍  ค้นหาชื่อลูกค้า, ชื่อแมว, ห้อง, วันที่..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
       {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📋</div>No bookings</div>
