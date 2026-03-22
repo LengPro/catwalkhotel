@@ -393,10 +393,100 @@ function RoomsPage({bookings,customers,setToast}){
     <div style={{...S.sec,marginTop:16}}>
       <div style={S.slabel}>Check Availability</div>
       <div style={{...S.card,padding:14,marginBottom:0}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-          <div><div style={{...S.lbl,marginBottom:4}}>Check-in</div><input type="date" style={S.inp} min="2018-01-01" max="2030-12-31" value={checkAvail.checkin} onChange={e=>setCheckAvail(v=>({...v,checkin:e.target.value}))}/></div>
-          <div><div style={{...S.lbl,marginBottom:4}}>Check-out</div><input type="date" style={S.inp} min="2018-01-01" max="2030-12-31" value={checkAvail.checkout} onChange={e=>setCheckAvail(v=>({...v,checkout:e.target.value}))}/></div>
-        </div>
+        {/* Date Range Picker for availability */}
+        {(()=>{
+          const [showAvailCal,setShowAvailCal]=useState(false);
+          const [availCalMonth,setAvailCalMonth]=useState(()=>{const d=new Date();d.setDate(1);return d;});
+          const [availPicking,setAvailPicking]=useState("checkin");
+
+          const daysInMonth2=(y,m)=>new Date(y,m+1,0).getDate();
+          const firstDay2=(y,m)=>new Date(y,m,1).getDay();
+          const toStr2=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+          const today2=toStr2(new Date());
+
+          const handleAvailDay=(dateStr)=>{
+            if(availPicking==="checkin"){
+              setCheckAvail(v=>({...v,checkin:dateStr,checkout:""}));
+              setAvailPicking("checkout");
+            } else {
+              if(dateStr<=checkAvail.checkin){
+                setCheckAvail(v=>({...v,checkin:dateStr,checkout:""}));
+                setAvailPicking("checkout");
+              } else {
+                setCheckAvail(v=>({...v,checkout:dateStr}));
+                setAvailPicking("checkin");
+                setShowAvailCal(false);
+              }
+            }
+          };
+
+          const y2=availCalMonth.getFullYear(), m2=availCalMonth.getMonth();
+          const dim2=daysInMonth2(y2,m2);
+          const fd2=firstDay2(y2,m2);
+          const calDays2=[];
+          for(let i=0;i<fd2;i++) calDays2.push(null);
+          for(let d=1;d<=dim2;d++) calDays2.push(toStr2(new Date(y2,m2,d)));
+
+          return(
+            <div style={{marginBottom:10}}>
+              {/* Display button */}
+              <div style={{border:`1px solid ${(checkAvail.checkin||checkAvail.checkout)?C.accent:C.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",background:C.white,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}} onClick={()=>{setShowAvailCal(!showAvailCal);setAvailPicking(checkAvail.checkin&&!checkAvail.checkout?"checkout":"checkin");}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
+                  <div style={{textAlign:"center",flex:1}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
+                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkin?C.accent:C.text3}}>{checkAvail.checkin?fmt(checkAvail.checkin):"เลือกวัน"}</div>
+                  </div>
+                  <div style={{fontSize:18,color:C.text3}}>→</div>
+                  <div style={{textAlign:"center",flex:1}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-OUT</div>
+                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkout?C.blue:C.text3}}>{checkAvail.checkout?fmt(checkAvail.checkout):"เลือกวัน"}</div>
+                  </div>
+                </div>
+                {checkAvail.checkin&&checkAvail.checkout&&checkAvail.checkin<checkAvail.checkout&&(
+                  <div style={{...S.chip(C.text),marginLeft:8}}>{nights(checkAvail.checkin,checkAvail.checkout)}คืน</div>
+                )}
+              </div>
+
+              {/* Inline Calendar */}
+              {showAvailCal&&(
+                <div style={{border:`1px solid ${C.borderLight}`,borderRadius:14,background:C.white,boxShadow:C.shadow,overflow:"hidden",marginBottom:8}}>
+                  <div style={{background:C.accentBg,padding:"8px 14px",fontSize:12,fontWeight:700,color:C.accent,textAlign:"center"}}>
+                    {availPicking==="checkin"?"📅 เลือกวัน Check-in":"📅 เลือกวัน Check-out"}{checkAvail.checkin&&availPicking==="checkout"?` (จาก ${fmt(checkAvail.checkin)})`:""}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
+                    <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setAvailCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()-1);return x;})}>‹</button>
+                    <div style={{fontSize:14,fontWeight:800}}>{MONTHS_FULL[m2]} {y2}</div>
+                    <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setAvailCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()+1);return x;})}>›</button>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"6px 8px 0"}}>
+                    {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:C.text3,padding:"2px 0"}}>{d}</div>)}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"4px 8px 10px",gap:2}}>
+                    {calDays2.map((dateStr,i)=>{
+                      if(!dateStr) return <div key={i}/>;
+                      const isCI=dateStr===checkAvail.checkin;
+                      const isCO=dateStr===checkAvail.checkout;
+                      const inRange=checkAvail.checkin&&checkAvail.checkout&&dateStr>checkAvail.checkin&&dateStr<checkAvail.checkout;
+                      const isPast=dateStr<today2;
+                      const isToday3=dateStr===today2;
+                      const isSel=isCI||isCO;
+                      return(
+                        <div key={dateStr} onClick={()=>!isPast&&handleAvailDay(dateStr)} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:isPast?"default":"pointer",background:isSel?C.accent:inRange?C.accentBg:"transparent",color:isSel?"#fff":isPast?C.text3:isToday3?C.accent:C.text,fontWeight:isSel?800:isToday3?700:400,fontSize:13,opacity:isPast?0.35:1,border:isToday3&&!isSel?`1px solid ${C.accent}`:"none"}}>
+                          {new Date(dateStr+"T12:00:00").getDate()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{padding:"0 12px 10px",display:"flex",gap:8}}>
+                    <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{setCheckAvail(v=>({...v,checkin:"",checkout:""}));setAvailPicking("checkin");}}>Clear</button>
+                    <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>setShowAvailCal(false)}>Done</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {["S","M"].map(t=>(
             <button key={t} style={{padding:"10px",background:checkAvail.type===t?C.text:C.bg,color:checkAvail.type===t?"#fff":C.text2,border:`1px solid ${checkAvail.type===t?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}} onClick={()=>setCheckAvail(v=>({...v,type:t}))}>
