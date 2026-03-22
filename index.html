@@ -272,7 +272,7 @@ function ImageViewer({src,title,onClose}){return(<div style={{...S.overlay,align
 // ════════════════════════════════════════════════════════════════
 // ROOMS PAGE — Timeline + Availability
 // ════════════════════════════════════════════════════════════════
-function RoomsPage({bookings,customers,setToast,onSaveBooking}){
+function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking}){
   const [viewDate,setViewDate]=useState(today());
   const [daysShow,setDaysShow]=useState(30); // configurable: 14/30/60/90
   const [detailBooking,setDetailBooking]=useState(null);
@@ -728,7 +728,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking}){
                 <div style={{display:"flex",gap:8}}>
                   <button style={{...S.btnP,flex:1,fontSize:13}} onClick={()=>{setEditBooking(b);setDetailBooking(null);}}>✏️ Edit</button>
                   <button style={{flex:1,padding:"10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{exportICS(b,customers);setToast("iCal downloaded!");}}>📅 iCal</button>
-                  <button style={{flex:1,padding:"10px",background:"#fff4f0",color:"#ea4335",border:"1px solid #ea433525",borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>openGCal(b,customers)}>📆 Google</button>
+                  <button style={{...S.btnD,flex:1,padding:"10px",fontSize:12}} onClick={async()=>{if(window.confirm("ยืนยันยกเลิก/ลบ booking นี้?")){{await onDeleteBooking(b.id);setDetailBooking(null);setToast("Deleted ✓");}}}}>🗑 Delete</button>
                   <button style={S.btnG} onClick={()=>setDetailBooking(null)}>✕</button>
                 </div>
               </>);
@@ -1641,7 +1641,6 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 <button style={{...S.btnG,fontSize:12,padding:"7px 12px"}} onClick={()=>setEditBook(b)}>Edit</button>
                 <button style={S.btnD} onClick={()=>{if(window.confirm("Delete this booking?"))onDeleteBooking(b.id);}}>Delete</button>
                 <button style={{padding:"7px 10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>exportICS(b,customers)}>📅 iCal</button>
-                <button style={{padding:"7px 10px",background:"#fff4f0",color:"#ea4335",border:"1px solid #ea433525",borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>openGCal(b,customers)}>📆 Google</button>
                 {!b.paid&&<button style={{padding:"7px 12px",background:C.greenBg,color:C.green,border:`1px solid ${C.green}30`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer",marginLeft:"auto"}} onClick={()=>onSaveBooking({...b,paid:true})}>Mark Paid ✓</button>}
               </div>}
             </div>
@@ -2520,7 +2519,7 @@ function App(){
     {sync&&<div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:999,background:sync==="saving"?C.orange:sync==="saved"?C.green:C.red,transition:"background 0.3s"}}/>}
 
     {/* ── Main Content ── */}
-    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast} onSaveBooking={onSaveBooking}/>}
+    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking}/>}
     {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings}/>}
     {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
     {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
