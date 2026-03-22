@@ -298,7 +298,7 @@ function RoomsPage({bookings,customers,setToast}){
   function getBookingForRoomDate(roomId,dateStr){
     return bookings.find(b=>
       (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
-      &&b.checkin<=dateStr&&b.checkout>dateStr
+      &&b.checkin<=dateStr&&b.checkout>=dateStr
     );
   }
 
@@ -595,7 +595,7 @@ function RoomsPage({bookings,customers,setToast}){
                     const bk=getBookingForRoomDate(room.id,d);
                     const isToday=d===todayStr;
                     const isStart=bk&&bk.checkin===d;
-                    const isEnd=bk&&addDays(bk.checkout,-1)===d;
+                    const isEnd=bk&&bk.checkout===d;
                     const isWeekend=new Date(d+"T12:00:00").getDay()===0||new Date(d+"T12:00:00").getDay()===6;
                     const isMonth1=new Date(d+"T12:00:00").getDate()===1;
                     if(bk){
