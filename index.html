@@ -352,6 +352,11 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking}){
     ? ROOMS.filter(r=>r.type===checkAvail.type&&isRoomAvailable(r.id,availCheckin,availCheckout,bookings))
     : null;
 
+  // Auto-move timeline to checkin date when availability is selected
+  useEffect(()=>{
+    if(availCheckin) setViewDate(availCheckin);
+  },[availCheckin]);
+
   const zones=["A","B","C"];
 
   // Export ALL bookings as one ICS file
