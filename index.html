@@ -178,8 +178,8 @@ function getRoomBookings(roomId, bookings) {
 function isRoomAvailable(roomId, checkin, checkout, bookings, excludeId=null) {
   const rb = getRoomBookings(roomId, bookings).filter(b => b.id !== excludeId);
   for (const b of rb) {
-    // Overlap: existing booking overlaps if it starts before our checkout AND ends after our checkin
-    if (b.checkin < checkout && b.checkout > checkin) return false;
+    // checkout day is occupied, so new checkin must be after existing checkout
+    if (b.checkin < checkout && b.checkout >= checkin) return false;
   }
   return true;
 }
@@ -342,7 +342,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking}){
   function getBookingForRoomDate(roomId,dateStr){
     return bookings.find(b=>
       (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
-      &&b.checkin<=dateStr&&b.checkout>dateStr
+      &&b.checkin<=dateStr&&b.checkout>=dateStr
     );
   }
 
@@ -431,7 +431,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking}){
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-        <div><div style={S.htitle}>Rooms</div><div style={S.hSub}>{ROOMS.length} rooms · {bookings.filter(b=>b.checkin<=todayStr&&b.checkout>todayStr).length} occupied today · S ฿{PRICES.S} · M ฿{PRICES.M}/night</div></div>
+        <div><div style={S.htitle}>Rooms</div><div style={S.hSub}>{ROOMS.length} rooms · {bookings.filter(b=>b.checkin<=todayStr&&b.checkout>=todayStr).length} occupied today · S ฿{PRICES.S} · M ฿{PRICES.M}/night</div></div>
         <button style={{...S.btnB,fontSize:12,padding:"9px 14px",whiteSpace:"nowrap"}} onClick={exportAllBookingsICS}>
           📅 Download All .ICS
         </button>
@@ -644,7 +644,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking}){
                     const bk=getBookingForRoomDate(room.id,d);
                     const isToday=d===todayStr;
                     const isStart=bk&&bk.checkin===d;
-                    const isEnd=bk&&addDays(bk.checkout,-1)===d;
+                    const isEnd=bk&&bk.checkout===d;
                     const isWeekend=new Date(d+"T12:00:00").getDay()===0||new Date(d+"T12:00:00").getDay()===6;
                     const isMonth1=new Date(d+"T12:00:00").getDate()===1;
                     if(bk){
@@ -989,6 +989,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           const dim=daysInMonth(y,m);
           const fd=firstDay(y,m);
           const today2=toStr(new Date());
+          const isEdit=!!booking; // allow past dates when editing
 
           const calDays=[];
           for(let i=0;i<fd;i++) calDays.push(null);
@@ -1038,7 +1039,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                       const isCheckin=dateStr===form.checkin;
                       const isCheckout=dateStr===form.checkout;
                       const inRange=form.checkin&&form.checkout&&dateStr>form.checkin&&dateStr<form.checkout;
-                      const isPast=dateStr<today2;
+                      const isPast=!isEdit&&dateStr<today2;
                       const isToday3=dateStr===today2;
                       const isSel=isCheckin||isCheckout;
                       return(
@@ -1736,7 +1737,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>now).length} active now</div></div>
+        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>=now).length} active now</div></div>
         <div style={{display:"flex",gap:6}}>
           {!selectMode?(
             <>
@@ -1762,7 +1763,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
         :filtered.map(b=>{
           const cust=customers.find(c=>c.id===b.customerId);
           const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
-          const n=nights(b.checkin,b.checkout); const isActive=b.checkin<=now&&b.checkout>now;
+          const n=nights(b.checkin,b.checkout); const isActive=b.checkin<=now&&b.checkout>=now;
           const room=ROOMS.find(r=>r.id===b.roomId);
           const isSel=selected.includes(b.id);
           return(<div key={b.id} style={{...S.card,marginBottom:10,borderLeft:isActive?`3px solid ${C.accent}`:"",outline:isSel?`2px solid ${C.accent}`:"none",background:isSel?C.accentBg:C.white}} onClick={selectMode?()=>toggleSelect(b.id):undefined}>
@@ -2569,7 +2570,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 20 Mar 2026 18:27</div>
+        <div style={{fontSize:12,color:C.text3}}>v 23 Mar 2026 · 13:45</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
@@ -2692,7 +2693,7 @@ function App(){
     </div>
   );
 
-  const todayActive=bookings.filter(b=>b.checkin<=today()&&b.checkout>today()).length;
+  const todayActive=bookings.filter(b=>b.checkin<=today()&&b.checkout>=today()).length;
   const freeToday=ROOMS.length-todayActive;
 
   return(<div style={S.app}>
@@ -2708,8 +2709,8 @@ function App(){
     {/* ── Bottom Nav ── */}
     <div style={S.nav}>
       {[
-        {id:"rooms",    icon:"🏠", label:"Rooms",    badge:freeToday>0?freeToday:0, badgeColor:C.green},
-        {id:"bookings", icon:"📋", label:"Bookings", badge:todayActive,             badgeColor:C.accent},
+        {id:"rooms",    icon:"🏠", label:"Rooms",    badge:todayActive, badgeColor:C.accent},
+        {id:"bookings", icon:"📋", label:"Bookings", badge:todayActive, badgeColor:C.accent},
         {id:"customers",icon:"😺", label:"Customers",badge:0},
         {id:"dashboard",icon:"📊", label:"Dashboard",badge:0},
         {id:"settings", icon:"⚙️", label:"Settings", badge:0},
