@@ -498,12 +498,12 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
                   <div style={{textAlign:"center",flex:1}}>
                     <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
-                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkin?C.accent:C.text3}}>{checkAvail.checkin?fmt(checkAvail.checkin):"เลือกวัน"}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkin?C.accent:C.text3}}>{checkAvail.checkin?fmt(checkAvail.checkin):"— —"}</div>
                   </div>
                   <div style={{fontSize:18,color:C.text3}}>→</div>
                   <div style={{textAlign:"center",flex:1}}>
                     <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-OUT</div>
-                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkout?C.blue:C.text3}}>{checkAvail.checkout?fmt(checkAvail.checkout):"เลือกวัน"}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkout?C.blue:C.text3}}>{checkAvail.checkout?fmt(checkAvail.checkout):"— —"}</div>
                   </div>
                 </div>
                 {checkAvail.checkin&&checkAvail.checkout&&checkAvail.checkin<checkAvail.checkout&&(
@@ -515,7 +515,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               {showAvailCal&&(
                 <div style={{border:`1px solid ${C.borderLight}`,borderRadius:14,background:C.white,boxShadow:C.shadow,overflow:"hidden",marginBottom:8}}>
                   <div style={{background:C.accentBg,padding:"8px 14px",fontSize:12,fontWeight:700,color:C.accent,textAlign:"center"}}>
-                    {availPicking==="checkin"?"📅 เลือกวัน Check-in":"📅 เลือกวัน Check-out"}{checkAvail.checkin&&availPicking==="checkout"?` (จาก ${fmt(checkAvail.checkin)})`:""}
+                    {availPicking==="checkin"?"📅 Check-in":"📅 Check-out"}{checkAvail.checkin&&availPicking==="checkout"?` (จาก ${fmt(checkAvail.checkin)})`:""}
                   </div>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
                     <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setAvailCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()-1);return x;})}>‹</button>
@@ -553,8 +553,9 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {["S","M"].map(t=>(
-            <button key={t} style={{padding:"10px",background:checkAvail.type===t?C.text:C.bg,color:checkAvail.type===t?"#fff":C.text2,border:`1px solid ${checkAvail.type===t?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}} onClick={()=>setCheckAvail(v=>({...v,type:t}))}>
-              Room {t} — ฿{PRICES[t]}/night
+            <button key={t} style={{padding:"10px",background:checkAvail.type===t?C.text:C.bg,color:checkAvail.type===t?"#fff":C.text2,border:`1px solid ${checkAvail.type===t?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}} onClick={()=>setCheckAvail(v=>({...v,type:t}))}>
+              <span style={{fontSize:14,fontWeight:800}}>Room {t}</span>
+              <span style={{fontSize:12,fontWeight:600,opacity:0.8}}>฿{PRICES[t]}/night</span>
             </button>
           ))}
         </div>
@@ -686,15 +687,15 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                             padding:"0 4px",overflow:"hidden",maxWidth:40,
                           }}>
                             {nickname&&<div style={{
-                              fontSize:8,fontWeight:800,color:getRoomColor(room.id),
+                              fontSize:10,fontWeight:800,color:getRoomColor(room.id),
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                              maxWidth:38,lineHeight:1.2,
+                              maxWidth:38,lineHeight:1.3,
                             }}>{nickname}</div>}
                             <div style={{
-                              fontSize:8,fontWeight:600,
+                              fontSize:9,fontWeight:600,
                               color:getRoomColor(room.id)+"cc",
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                              maxWidth:38,lineHeight:1.2,
+                              maxWidth:38,lineHeight:1.3,
                             }}>{allCatNames}</div>
                           </div>
                         )}
@@ -1219,12 +1220,12 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
                   <div style={{textAlign:"center",flex:1}}>
                     <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
-                    <div style={{fontSize:14,fontWeight:800,color:form.checkin?C.accent:C.text3}}>{form.checkin?fmt(form.checkin):"เลือกวัน"}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:form.checkin?C.accent:C.text3}}>{form.checkin?fmt(form.checkin):"— —"}</div>
                   </div>
                   <div style={{fontSize:18,color:C.text3}}>→</div>
                   <div style={{textAlign:"center",flex:1}}>
                     <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-OUT</div>
-                    <div style={{fontSize:14,fontWeight:800,color:form.checkout?C.blue:C.text3}}>{form.checkout?fmt(form.checkout):"เลือกวัน"}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:form.checkout?C.blue:C.text3}}>{form.checkout?fmt(form.checkout):"— —"}</div>
                   </div>
                 </div>
                 {form.checkin&&form.checkout&&n>0&&(
@@ -1236,7 +1237,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 <div style={{marginTop:8,border:`1px solid ${C.borderLight}`,borderRadius:14,background:C.white,boxShadow:C.shadow,overflow:"hidden"}}>
                   {/* Status bar */}
                   <div style={{background:C.accentBg,padding:"8px 14px",fontSize:12,fontWeight:700,color:C.accent,textAlign:"center"}}>
-                    {picking==="checkin"?"📅 เลือกวัน Check-in":"📅 เลือกวัน Check-out"}{form.checkin&&picking==="checkout"?` (จาก ${fmt(form.checkin)})`:""}
+                    {picking==="checkin"?"📅 Check-in":"📅 Check-out"}{form.checkin&&picking==="checkout"?` (จาก ${fmt(form.checkin)})`:""}
                   </div>
                   {/* Month nav */}
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
@@ -1285,7 +1286,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* Size */}
         <div style={S.fg}><div style={S.lbl}>Room Type</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {["S","M"].map(sz=><button key={sz} style={{padding:"11px",background:form.size===sz?C.text:C.bg,color:form.size===sz?"#fff":C.text2,border:`1px solid ${form.size===sz?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}} onClick={()=>set("size",sz)}>{sz} — ฿{PRICES[sz]}/night</button>)}
+            {["S","M"].map(sz=><button key={sz} style={{padding:"11px",background:form.size===sz?C.text:C.bg,color:form.size===sz?"#fff":C.text2,border:`1px solid ${form.size===sz?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}} onClick={()=>set("size",sz)}>
+              <span style={{fontSize:14,fontWeight:800}}>{sz==="S"?"Room S":"Room M"}</span>
+              <span style={{fontSize:12,fontWeight:600,opacity:0.8}}>฿{PRICES[sz]}/night</span>
+            </button>)}
           </div>
         </div>
         {/* Room selector — multi-select */}
@@ -1375,7 +1379,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue}}/>
             <div style={{flex:1}}>
               <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
-              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/สัปดาห์ · {n>0?`${Math.ceil(n/7)} สัปดาห์ = ฿${Math.ceil(n/7)*LITTER_FEE}`:"เลือกวันก่อน"}</div>
+              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/สัปดาห์ · {n>0?`${Math.ceil(n/7)} สัปดาห์ = ฿${Math.ceil(n/7)*LITTER_FEE}`:"Select dates first"}</div>
             </div>
             {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{litterAmt.toLocaleString()}</span>}
           </label>
@@ -2788,7 +2792,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 23 Mar 2026 · 14:30</div>
+        <div style={{fontSize:12,color:C.text3}}>v 23 Mar 2026 · 14:45</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
@@ -2866,12 +2870,16 @@ function App(){
   const onDeleteBooking=useCallback(async id=>saving(async()=>{await fbDelete("bookings",id);setToast("Deleted ✓");}),[]);
 
   if(loading)return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:C.text3}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1a1a1a"}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:48,marginBottom:12}}>🐱</div>
-        <div style={{fontSize:14,fontWeight:600,marginBottom:4,color:C.text}}>กำลังโหลดข้อมูล...</div>
-        <div style={{fontSize:12}}>Connecting to Firebase</div>
+        <img src={CATWALK_LOGO} style={{width:120,height:120,borderRadius:20,objectFit:"contain",background:"#fff",padding:8,marginBottom:16,boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}} alt="Catwalk Hotel"/>
+        <div style={{fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"0.1em",marginBottom:4}}>CATWALK HOTEL</div>
+        <div style={{fontSize:12,color:"#888",marginBottom:16}}>แคทวอร์ค โฮเท็ล</div>
+        <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+          {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:"#ff383c",animation:`pulse 1.2s ease-in-out ${i*0.2}s infinite`,opacity:0.8}}/>)}
+        </div>
       </div>
+      <style>{`@keyframes pulse{0%,100%{transform:scale(0.6);opacity:0.4}50%{transform:scale(1.2);opacity:1}}`}</style>
     </div>
   );
 
