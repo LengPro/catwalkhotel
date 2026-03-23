@@ -176,8 +176,7 @@ const fmtShort=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); retur
 const nights=(a,b)=>Math.max(1,Math.round((new Date(b)-new Date(a))/(864e5)));
 const addDays=(d,n)=>{ const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
 const calcPrice=(n,size,numCats,discount,litter)=>{
-  const freeCats=size==="M"?2:1; // S=1 free, M=2 free
-  const extraCats=Math.max(0,numCats-freeCats);
+  const extraCats=Math.max(0,numCats-1); // both S and M: 1 cat free, +50/night each extra
   const litterRounds=litter?Math.ceil(n/6):0;
   const litterAmt=litterRounds*LITTER_FEE*numCats;
   const litterWeeks=litterRounds;
@@ -895,8 +894,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 
   // Price breakdown
   const numCats=Math.max(booking.selectedCatIds?.length||1,1);
-  const freeCatsPerRoom=booking.size==="M"?2:1;
-  const extraCatsPerRoom=Math.max(0,numCats-freeCatsPerRoom);
+  const extraCatsPerRoom=Math.max(0,numCats-1);
   const extraCats=extraCatsPerRoom*rooms.length;
   const basePerRoom=n*(PRICES[booking.size]||PRICES.S);
   const baseTotal=basePerRoom*rooms.length;
@@ -1337,7 +1335,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                     <span style={{fontSize:12,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
                     <span style={{fontSize:12,fontWeight:700}}>฿{rn.toLocaleString()}</span>
                   </div>
-                  <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{(()=>{const fc=sz==="M"?2:1;const ec=Math.max(0,numCats-fc);return ec>0?` + ${ec} extra cat (+฿${ec*EXTRA_CAT_FEE}/n)`:""})()}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
+                  <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} extra cat (+฿${(numCats-1)*EXTRA_CAT_FEE}/n)`:""}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
                 </div>
               );
             })}
