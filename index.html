@@ -176,11 +176,14 @@ const fmtShort=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); retur
 const nights=(a,b)=>Math.max(1,Math.round((new Date(b)-new Date(a))/(864e5)));
 const addDays=(d,n)=>{ const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
 const calcPrice=(n,size,numCats,discount,litter)=>{
-  const litterWeeks=litter?Math.ceil(n/6):0;
-  const litterAmt=litterWeeks*LITTER_FEE;
-  const base=n*(PRICES[size]+Math.max(0,numCats-1)*EXTRA_CAT_FEE)+litterAmt;
+  const freeCats=size==="M"?2:1; // S=1 free, M=2 free
+  const extraCats=Math.max(0,numCats-freeCats);
+  const litterRounds=litter?Math.ceil(n/6):0;
+  const litterAmt=litterRounds*LITTER_FEE*numCats;
+  const litterWeeks=litterRounds;
+  const base=n*(PRICES[size]+extraCats*EXTRA_CAT_FEE)+litterAmt;
   const discAmt=Math.round(base*(parseFloat(discount)||0)/100);
-  return{base,discAmt,net:base-discAmt,litterAmt,litterWeeks};
+  return{base,discAmt,net:base-discAmt,litterAmt,litterWeeks,extraCats};
 };
 const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:"",notes:""});
 
@@ -297,7 +300,7 @@ function CatEditor({cat,index,total,onChange,onRemove}){
   const set=(k,v)=>onChange({...cat,[k]:v});
   return(<div style={{border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",marginBottom:12}}>
     <div style={{background:C.accentBg,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      <div style={{fontSize:13,fontWeight:700,color:C.accent}}>🐱 Cat #{index+1}{index>0?` (+฿${EXTRA_CAT_FEE}/night)`:""}</div>
+      <div style={{fontSize:13,fontWeight:700,color:C.accent}}>🐱 Cat #{index+1}{index>0?` (+฿${EXTRA_CAT_FEE}/night if exceed free limit)`:""}</div>
       {total>1&&<button style={S.btnD} onClick={onRemove}>Remove</button>}
     </div>
     <div style={{padding:"14px"}}>
@@ -892,7 +895,9 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 
   // Price breakdown
   const numCats=Math.max(booking.selectedCatIds?.length||1,1);
-  const extraCats=Math.max(numCats-1,0)*rooms.length;
+  const freeCatsPerRoom=booking.size==="M"?2:1;
+  const extraCatsPerRoom=Math.max(0,numCats-freeCatsPerRoom);
+  const extraCats=extraCatsPerRoom*rooms.length;
   const basePerRoom=n*(PRICES[booking.size]||PRICES.S);
   const baseTotal=basePerRoom*rooms.length;
   const extraCatAmt=extraCats*n*EXTRA_CAT_FEE;
@@ -985,7 +990,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
                 <Row key={r} label={`${t.roomRate} ${r} (${n} ${t.night} × ฿${(PRICES[booking.size]||350).toLocaleString()})`} value={`฿${basePerRoom.toLocaleString()}`}/>
               ))}
               {extraCats>0&&<Row label={`${t.extraCat} (${extraCats} × ${n} ${t.night} × ฿${EXTRA_CAT_FEE})`} value={`฿${extraCatAmt.toLocaleString()}`}/>}
-              {litterAmt>0&&<Row label={`${t.litter} (${Math.ceil(n/6)} รอบ × ฿${LITTER_FEE})`} value={`฿${litterAmt.toLocaleString()}`}/>}
+              {litterAmt>0&&<Row label={`${t.litter} (${Math.ceil(n/6)} รอบ × ${numCats} แมว × ฿${LITTER_FEE})`} value={`฿${litterAmt.toLocaleString()}`}/>}
               {discAmt>0&&(
                 <>
                   <Row label={t.subtotal} value={`฿${subtotal.toLocaleString()}`}/>
@@ -1332,7 +1337,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                     <span style={{fontSize:12,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
                     <span style={{fontSize:12,fontWeight:700}}>฿{rn.toLocaleString()}</span>
                   </div>
-                  <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} extra cat`:""}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
+                  <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{(()=>{const fc=sz==="M"?2:1;const ec=Math.max(0,numCats-fc);return ec>0?` + ${ec} extra cat (+฿${ec*EXTRA_CAT_FEE}/n)`:""})()}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
                 </div>
               );
             })}
@@ -1379,7 +1384,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue}}/>
             <div style={{flex:1}}>
               <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
-              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/6คืน · {n>0?`${Math.ceil(n/6)} รอบ = ฿${Math.ceil(n/6)*LITTER_FEE}`:"Select dates first"}</div>
+              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/แมว/6คืน · {n>0?`${Math.ceil(n/6)} รอบ × ${Math.max(numCats,1)} แมว = ฿${Math.ceil(n/6)*LITTER_FEE*Math.max(numCats,1)}`:"Select dates first"}</div>
             </div>
             {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{litterAmt.toLocaleString()}</span>}
           </label>
