@@ -177,14 +177,16 @@ const fmtShort=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); retur
 const nights=(a,b)=>Math.max(1,Math.round((new Date(b)-new Date(a))/(864e5)));
 const addDays=(d,n)=>{ const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
 const calcPrice=(n,size,numCats,discount,litter)=>{
-  const extraCats=Math.max(0,numCats-1); // both S and M: 1 cat free, +50/night each extra
+  const extraCats=Math.max(0,numCats-1);
   const litterRounds=litter?Math.ceil(n/6):0;
   const litterAmt=litterRounds*LITTER_FEE*numCats;
   const litterWeeks=litterRounds;
   const base=n*(PRICES[size]+extraCats*EXTRA_CAT_FEE)+litterAmt;
-  const discAmt=Math.round(base*(parseFloat(discount)||0)/100);
-  return{base,discAmt,net:base-discAmt,litterAmt,litterWeeks,extraCats};
+  const discAmt=parseFloat((base*(parseFloat(discount)||0)/100).toFixed(2));
+  const net=parseFloat((base-discAmt).toFixed(2));
+  return{base,discAmt,net,litterAmt,litterWeeks,extraCats};
 };
+const fmt2=v=>typeof v==="number"?v.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}):v;
 const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:"",notes:""});
 
 // ── Room availability ─────────────────────────────────────────────────
@@ -986,37 +988,37 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
             {/* Price breakdown */}
             <div style={{marginBottom:14}}>
               {rooms.map((r,i)=>(
-                <Row key={r} label={`${t.roomRate} ${r} (${n} ${t.night} × ฿${(PRICES[booking.size]||350).toLocaleString()})`} value={`฿${basePerRoom.toLocaleString()}`}/>
+                <Row key={r} label={`${t.roomRate} ${r} (${n} ${t.night} × ฿${(PRICES[booking.size]||350).toLocaleString()})`} value={`฿${fmt2(basePerRoom)}`}/>
               ))}
-              {extraCats>0&&<Row label={`${t.extraCat} (${extraCats} × ${n} ${t.night} × ฿${EXTRA_CAT_FEE})`} value={`฿${extraCatAmt.toLocaleString()}`}/>}
-              {litterAmt>0&&<Row label={`${t.litter} (${Math.ceil(n/6)} รอบ × ${numCats} แมว × ฿${LITTER_FEE})`} value={`฿${litterAmt.toLocaleString()}`}/>}
+              {extraCats>0&&<Row label={`${t.extraCat} (${extraCats} × ${n} ${t.night} × ฿${EXTRA_CAT_FEE})`} value={`฿${fmt2(extraCatAmt)}`}/>}
+              {litterAmt>0&&<Row label={`${t.litter} (${Math.ceil(n/6)} รอบ × ${numCats} แมว × ฿${LITTER_FEE})`} value={`฿${fmt2(litterAmt)}`}/>}
               {discAmt>0&&(
                 <>
-                  <Row label={t.subtotal} value={`฿${subtotal.toLocaleString()}`}/>
-                  <Row label={`${t.discount} ${booking.discount}%`} value={`-฿${discAmt.toLocaleString()}`} color="#e53935"/>
+                  <Row label={t.subtotal} value={`฿${fmt2(subtotal)}`}/>
+                  <Row label={`${t.discount} ${booking.discount}%`} value={`-฿${fmt2(discAmt)}`} color="#e53935"/>
                 </>
               )}
               {/* Total */}
               <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #1a1a1a",marginTop:4}}>
                 <span style={{fontSize:14,fontWeight:800}}>{t.total}</span>
-                <span style={{fontSize:16,fontWeight:800,color:"#ff383c"}}>฿{net.toLocaleString()}</span>
+                <span style={{fontSize:16,fontWeight:800,color:"#ff383c"}}>฿{fmt2(net)}</span>
               </div>
-              {deposit>0&&<Row label={t.deposit} value={`฿${deposit.toLocaleString()}`} color="#2e7d32"/>}
-              {remaining>0&&<Row label={t.remaining} value={`฿${remaining.toLocaleString()}`} bold color="#e53935"/>}
-              {remaining===0&&<Row label={t.paid} value={`฿${net.toLocaleString()}`} bold color="#2e7d32"/>}
+              {deposit>0&&<Row label={t.deposit} value={`฿${fmt2(deposit)}`} color="#2e7d32"/>}
+              {remaining>0&&<Row label={t.remaining} value={`฿${fmt2(remaining)}`} bold color="#e53935"/>}
+              {remaining===0&&<Row label={t.paid} value={`฿${fmt2(net)}`} bold color="#2e7d32"/>}
               <Row label={t.payMethod} value={booking.payMethod||"—"}/>
               {booking.payMethod==="Credit Card"&&(()=>{
-                const ccFee=Math.round(net*CREDIT_CARD_FEE_PCT/100);
+                const ccFee=parseFloat((net*CREDIT_CARD_FEE_PCT/100).toFixed(2));
                 const netAfterCC=net-ccFee;
                 return(
                   <div style={{background:"#fff8f0",borderRadius:8,padding:"8px 10px",marginTop:6,border:"1px solid #ff950030"}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                       <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{ccFee.toLocaleString()}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{lang==="th"?"รายได้จริงที่ได้รับ":"Actual Revenue"}</span>
-                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{netAfterCC.toLocaleString()}</span>
+                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{fmt2(netAfterCC)}</span>
                     </div>
                   </div>
                 );
@@ -1069,10 +1071,9 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const isCreditCard=form.payMethod==="Credit Card";
   const {base,discAmt,litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
   const depositAmt=Math.max(0,parseFloat(form.deposit)||0);
-  const remaining=Math.max(0,net-depositAmt); // amount customer still owes
-  // CC fee: only on the remaining balance (the portion actually paid by card)
-  const ccFeeAmt=isCreditCard&&remaining>0?Math.round(remaining*CREDIT_CARD_FEE_PCT/100):0;
-  const shopReceives=remaining-ccFeeAmt; // what shop actually gets from card payment
+  const remaining=parseFloat(Math.max(0,net-depositAmt).toFixed(2));
+  const ccFeeAmt=isCreditCard&&remaining>0?parseFloat((remaining*CREDIT_CARD_FEE_PCT/100).toFixed(2)):0;
+  const shopReceives=parseFloat((remaining-ccFeeAmt).toFixed(2));
   const toggleRoom=id=>{
     const ids=form.roomIds||[];
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
@@ -1354,7 +1355,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 <div key={rid} style={{marginBottom:ri<selectedRooms.length-1?10:0,paddingBottom:ri<selectedRooms.length-1?10:0,borderBottom:ri<selectedRooms.length-1?`1px dashed ${C.border}`:"none"}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{fontSize:12,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
-                    <span style={{fontSize:12,fontWeight:700}}>฿{rn.toLocaleString()}</span>
+                    <span style={{fontSize:12,fontWeight:700}}>฿{fmt2(rn)}</span>
                   </div>
                   <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} extra cat (+฿${(numCats-1)*EXTRA_CAT_FEE}/n)`:""}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
                 </div>
@@ -1368,14 +1369,14 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               {/* ยอดรวมที่ลูกค้าต้องจ่ายทั้งหมด */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:depositAmt>0?8:4}}>
                 <span style={{fontSize:15,fontWeight:800}}>ยอดรวม {selectedRooms.length>1&&`(${selectedRooms.length} ห้อง)`}</span>
-                <span style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{net.toLocaleString()}</span>
+                <span style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{fmt2(net)}</span>
               </div>
 
               {/* มัดจำ */}
               {depositAmt>0&&(
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,padding:"7px 12px",background:"#fffbf0",borderRadius:8,border:"1px solid #ffd70040"}}>
                   <span style={{fontSize:13,color:C.orange,fontWeight:600}}>💰 มัดจำชำระแล้ว</span>
-                  <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{depositAmt.toLocaleString()}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(depositAmt)}</span>
                 </div>
               )}
 
@@ -1383,7 +1384,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               {remaining>0?(
                 <div style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:"#fff5f5",borderRadius:8,border:"1px solid #ff3b3020",marginBottom:isCreditCard?6:0}}>
                   <span style={{fontSize:14,fontWeight:800,color:C.red}}>💳 ลูกค้าต้องชำระ</span>
-                  <span style={{fontSize:16,fontWeight:800,color:C.red}}>฿{remaining.toLocaleString()}</span>
+                  <span style={{fontSize:16,fontWeight:800,color:C.red}}>฿{fmt2(remaining)}</span>
                 </div>
               ):(
                 <div style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:C.greenBg,borderRadius:8,border:`1px solid ${C.green}40`,marginBottom:0}}>
@@ -1397,11 +1398,11 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 <div style={{marginTop:6,background:"#fff8f0",borderRadius:8,padding:"8px 12px",border:"1px solid #ff950030"}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:11,color:C.orange}}>💳 หักค่าธรรมเนียม CC {CREDIT_CARD_FEE_PCT}%</span>
-                    <span style={{fontSize:12,fontWeight:700,color:C.orange}}>-฿{ccFeeAmt.toLocaleString()}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeAmt)}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",paddingTop:4,borderTop:"1px dashed #ffd70060"}}>
                     <span style={{fontSize:12,fontWeight:800,color:"#555"}}>ร้านได้รับจริง</span>
-                    <span style={{fontSize:14,fontWeight:800,color:C.green}}>฿{(depositAmt+shopReceives).toLocaleString()}</span>
+                    <span style={{fontSize:14,fontWeight:800,color:C.green}}>฿{fmt2(depositAmt+shopReceives)}</span>
                   </div>
                 </div>
               )}
@@ -1426,8 +1427,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           <input type="number" style={{...S.inp,borderColor:depositAmt>0?C.orange+"80":C.border}} min="0" placeholder="0" value={form.deposit||""} onChange={e=>set("deposit",e.target.value)}/>
           {depositAmt>0&&net>0&&(
             <div style={{marginTop:8,display:"flex",justifyContent:"space-between",fontSize:12,color:C.text2}}>
-              <span>ยอดรวม ฿{net.toLocaleString()}</span>
-              <span style={{color:remaining>0?C.red:C.green,fontWeight:700}}>คงเหลือ ฿{remaining.toLocaleString()}</span>
+              <span>ยอดรวม ฿{fmt2(net)}</span>
+              <span style={{color:remaining>0?C.red:C.green,fontWeight:700}}>คงเหลือ ฿{fmt2(remaining)}</span>
             </div>
           )}
         </div>
@@ -1439,7 +1440,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
               <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/แมว/6คืน · {n>0?`${Math.ceil(n/6)} รอบ × ${Math.max(numCats,1)} แมว = ฿${Math.ceil(n/6)*LITTER_FEE*Math.max(numCats,1)}`:"Select dates first"}</div>
             </div>
-            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{litterAmt.toLocaleString()}</span>}
+            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{fmt2(litterAmt)}</span>}
           </label>
         </div>
         {/* Paid */}
@@ -2171,9 +2172,9 @@ function DashboardPage({bookings,customers,onExportBookings}){
   // Revenue: Day = รวม booking ที่ stay ในวันนั้น, Week/Month/Year = นับตาม checkin เพื่อไม่ให้ซ้ำ
   const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
   // Helper: actual revenue after CC fee (use stored ccFeeAmt if available)
-  const actualNet=b=>b.payMethod==="Credit Card"?(b.net||0)-(b.ccFeeAmt||Math.round((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100)):(b.net||0);
+  const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
   const revenue=revenueBookings.reduce((a,b)=>a+actualNet(b),0);
-  const ccFeeTotal=revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+Math.round((b.net||0)*CREDIT_CARD_FEE_PCT/100),0);
+  const ccFeeTotal=parseFloat(revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0).toFixed(2));
   const unpaid=revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0);
   const totalNights=inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
   const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
@@ -2228,13 +2229,13 @@ function DashboardPage({bookings,customers,onExportBookings}){
           <div style={{fontSize:14,fontWeight:700}}>{label}</div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{revenue.toLocaleString()}</div><div style={S.statLbl}>Revenue (หลังหัก CC)</div></div>
-          <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{unpaid.toLocaleString()}</div><div style={S.statLbl}>Unpaid</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{fmt2(revenue)}</div><div style={S.statLbl}>Revenue (หลังหัก CC)</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{fmt2(unpaid)}</div><div style={S.statLbl}>Unpaid</div></div>
         </div>
         {ccFeeTotal>0&&(
           <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:12,color:C.orange}}>💳 CC Fee หัก ({CREDIT_CARD_FEE_PCT}%)</span>
-            <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{ccFeeTotal.toLocaleString()}</span>
+            <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotal)}</span>
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
