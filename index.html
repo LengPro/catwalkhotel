@@ -164,6 +164,7 @@ const CATWALK_INFO = {
   bankRef: "0140000077510 84",
 };
 const PAY_METHODS = ["Cash","Transfer","Credit Card","QR Code"];
+const CREDIT_CARD_FEE_PCT = 1.07; // % deducted from net revenue when paying by credit card
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS_SHORT=["Su","Mo","Tu","We","Th","Fr","Sa"];
@@ -1004,6 +1005,22 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
               {remaining>0&&<Row label={t.remaining} value={`฿${remaining.toLocaleString()}`} bold color="#e53935"/>}
               {remaining===0&&<Row label={t.paid} value={`฿${net.toLocaleString()}`} bold color="#2e7d32"/>}
               <Row label={t.payMethod} value={booking.payMethod||"—"}/>
+              {booking.payMethod==="Credit Card"&&(()=>{
+                const ccFee=Math.round(net*CREDIT_CARD_FEE_PCT/100);
+                const netAfterCC=net-ccFee;
+                return(
+                  <div style={{background:"#fff8f0",borderRadius:8,padding:"8px 10px",marginTop:6,border:"1px solid #ff950030"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{ccFee.toLocaleString()}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{lang==="th"?"รายได้จริงที่ได้รับ":"Actual Revenue"}</span>
+                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{netAfterCC.toLocaleString()}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* QR Payment */}
@@ -1341,10 +1358,26 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             })}
             {form.litter&&litterAmt>0&&selectedRooms.length===1&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:5,marginTop:5}}><span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว {litterWeeks} รอบ (6คืน/รอบ)</span><span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{litterAmt.toLocaleString()}</span></div>}
             {discAmt>0&&selectedRooms.length===1&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:C.text2}}>Discount ({form.discount}%)</span><span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{discAmt.toLocaleString()}</span></div>}
-            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:8,display:"flex",justifyContent:"space-between",marginBottom:depositAmt>0?8:0}}>
+            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,marginTop:8,display:"flex",justifyContent:"space-between",marginBottom:form.payMethod==="Credit Card"?4:depositAmt>0?8:0}}>
               <span style={{fontSize:15,fontWeight:800}}>Net Total {selectedRooms.length>1&&`(${selectedRooms.length} ห้อง)`}</span>
               <span style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{net.toLocaleString()}</span>
             </div>
+            {form.payMethod==="Credit Card"&&net>0&&(()=>{
+              const ccFee=Math.round(net*CREDIT_CARD_FEE_PCT/100);
+              const netAfterCC=net-ccFee;
+              return(
+                <div style={{background:"#fff8f0",borderRadius:8,padding:"8px 12px",marginBottom:depositAmt>0?8:0,border:"1px solid #ff950030"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:12,color:C.orange}}>💳 Credit Card Fee ({CREDIT_CARD_FEE_PCT}%)</span>
+                    <span style={{fontSize:12,fontWeight:700,color:C.orange}}>-฿{ccFee.toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between"}}>
+                    <span style={{fontSize:12,fontWeight:700,color:C.text2}}>รายได้จริงที่ได้รับ</span>
+                    <span style={{fontSize:13,fontWeight:800,color:C.green}}>฿{netAfterCC.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })()}
             {depositAmt>0&&(<>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,padding:"6px 10px",background:"#fffbf0",borderRadius:8}}>
                 <span style={{fontSize:13,color:C.orange,fontWeight:600}}>💰 มัดจำ (Deposit paid)</span>
@@ -2120,7 +2153,10 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const inRange=bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   // Revenue: Day = รวม booking ที่ stay ในวันนั้น, Week/Month/Year = นับตาม checkin เพื่อไม่ให้ซ้ำ
   const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
-  const revenue=revenueBookings.reduce((a,b)=>a+(b.net||0),0);
+  // Helper: actual revenue after CC fee
+  const actualNet=b=>b.payMethod==="Credit Card"?Math.round((b.net||0)*(1-CREDIT_CARD_FEE_PCT/100)):(b.net||0);
+  const revenue=revenueBookings.reduce((a,b)=>a+actualNet(b),0);
+  const ccFeeTotal=revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+Math.round((b.net||0)*CREDIT_CARD_FEE_PCT/100),0);
   const unpaid=revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0);
   const totalNights=inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
   const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
@@ -2175,9 +2211,15 @@ function DashboardPage({bookings,customers,onExportBookings}){
           <div style={{fontSize:14,fontWeight:700}}>{label}</div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{revenue.toLocaleString()}</div><div style={S.statLbl}>Revenue</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{revenue.toLocaleString()}</div><div style={S.statLbl}>Revenue (หลังหัก CC)</div></div>
           <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{unpaid.toLocaleString()}</div><div style={S.statLbl}>Unpaid</div></div>
         </div>
+        {ccFeeTotal>0&&(
+          <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.orange}}>💳 CC Fee หัก ({CREDIT_CARD_FEE_PCT}%)</span>
+            <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{ccFeeTotal.toLocaleString()}</span>
+          </div>
+        )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
           <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
           <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
