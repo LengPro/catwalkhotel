@@ -762,10 +762,17 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking}){
                   </div>
                   <div style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>
                 </div>
+                {/* Booking notes */}
+                {b.notes&&(
+                  <div style={{background:"#f0f6ff",borderRadius:10,padding:"8px 12px",marginBottom:8,border:"1px solid #0071e320"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.blue,marginBottom:2}}>📋 Booking Note</div>
+                    <NotesText text={b.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
+                  </div>
+                )}
                 {/* Customer notes */}
                 {cust.notes&&(
                   <div style={{background:"#fffbf0",borderRadius:10,padding:"8px 12px",marginBottom:10,border:"1px solid #ffd70040"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Note</div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Note</div>
                     <NotesText text={cust.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
                   </div>
                 )}
@@ -875,8 +882,9 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                     <div style={{display:"flex",alignItems:"center",gap:8,flex:1,padding:"10px 0"}}>
                       <div style={{fontSize:20}}>😺</div>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:14,fontWeight:700,color:C.accent}}>{selectedCust.nickname}</div>
-                        <div style={{fontSize:11,color:C.text3}}>{(selectedCust.cats||[]).map(x=>x.name).join(", ")||"No cats"}</div>
+                        <div style={{fontSize:14,fontWeight:700,color:C.accent}}>
+                          {selectedCust.nickname} <span style={{fontWeight:500,color:C.text2}}>({(selectedCust.cats||[]).map(x=>x.name).join(", ")||"—"})</span>
+                        </div>
                       </div>
                       <button style={{background:"none",border:"none",color:C.text3,fontSize:18,cursor:"pointer",padding:"4px"}} onClick={()=>{set("customerId","");setCustSearch("");setShowCustList(true);}}>✕</button>
                     </div>
@@ -909,8 +917,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                           {(c.cats||[]).length===0&&<div style={{width:32,height:32,borderRadius:8,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>😺</div>}
                         </div>
                         <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:700,color:form.customerId===c.id?C.accent:C.text}}>{c.nickname}</div>
-                          <div style={{fontSize:11,color:C.text3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(c.cats||[]).map(x=>x.name).join(", ")||"No cats"}{c.phone?` · ${c.phone}`:""}</div>
+                          <div style={{fontSize:13,fontWeight:700,color:form.customerId===c.id?C.accent:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {c.nickname} <span style={{fontWeight:500,color:C.text3}}>({(c.cats||[]).map(x=>x.name).join(", ")||"—"})</span>
+                          </div>
+                          {c.phone&&<div style={{fontSize:11,color:C.text3}}>{c.phone}</div>}
                         </div>
                         {form.customerId===c.id&&<span style={{color:C.accent,fontSize:16}}>✓</span>}
                       </div>
@@ -1772,7 +1782,13 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>{b.discount>0&&<div style={{fontSize:11,color:C.red}}>-{b.discount}%</div>}</div>
               </div>
-              {/* Customer notes */}
+              {/* Booking notes + Customer notes */}
+              {b.notes&&!selectMode&&(
+                <div style={{background:"#f0f6ff",borderRadius:8,padding:"6px 10px",marginBottom:6,border:"1px solid #0071e320",display:"flex",gap:6,alignItems:"flex-start"}}>
+                  <span style={{fontSize:11,flexShrink:0}}>📋</span>
+                  <NotesText text={b.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
+                </div>
+              )}
               {cust?.notes&&!selectMode&&(
                 <div style={{background:"#fffbf0",borderRadius:8,padding:"6px 10px",marginBottom:8,border:"1px solid #ffd70040",display:"flex",gap:6,alignItems:"flex-start"}}>
                   <span style={{fontSize:11,flexShrink:0}}>📝</span>
