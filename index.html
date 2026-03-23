@@ -44,8 +44,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
-body { background:#faf9f7; font-family:'Plus Jakarta Sans',-apple-system,sans-serif; }
-input,select,textarea,button { font-family:'Plus Jakarta Sans',-apple-system,sans-serif; }
+body { background:#faf9f7; font-family:'Helvetica Neue',Helvetica,'Sukhumvit Set','SukhumvitSet-Text','Plus Jakarta Sans',-apple-system,sans-serif; }
+input,select,textarea,button { font-family:'Helvetica Neue',Helvetica,'Sukhumvit Set','SukhumvitSet-Text','Plus Jakarta Sans',-apple-system,sans-serif; }
 input[type=date]::-webkit-calendar-picker-indicator { opacity:0.5; }
 ::-webkit-scrollbar { height:4px; width:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
@@ -208,7 +208,7 @@ function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||
 // ── Design ────────────────────────────────────────────────────────────
 const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)"};
 const S={
-  app:{fontFamily:"'Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingTop:64},
+  app:{fontFamily:"'Helvetica Neue',Helvetica,'Sukhumvit Set','SukhumvitSet-Text','Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingTop:64},
   nav:{position:"fixed",top:0,left:0,right:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${C.borderLight}`,display:"flex",zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"},
   navBtn:a=>({flex:1,padding:"10px 4px 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,color:a?C.accent:C.text3,fontFamily:"inherit",minHeight:56,position:"relative"}),
   content:{flex:1},
