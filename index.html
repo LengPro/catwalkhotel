@@ -1347,66 +1347,84 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* Price breakdown */}
         {n>0&&numCats>0&&selectedRooms.length>0&&(
           <div style={{background:C.bg,borderRadius:12,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.border}`}}>
+
+            {/* ── Step-by-step rows ── */}
             {selectedRooms.map((rid,ri)=>{
               const r=ROOMS.find(x=>x.id===rid);
               const sz=r?.type||form.size;
-              const {base:rb,discAmt:rd,net:rn}=calcPrice(n,sz,numCats,form.discount,form.litter);
+              const {net:rn}=calcPrice(n,sz,numCats,form.discount,form.litter);
               return(
-                <div key={rid} style={{marginBottom:ri<selectedRooms.length-1?10:0,paddingBottom:ri<selectedRooms.length-1?10:0,borderBottom:ri<selectedRooms.length-1?`1px dashed ${C.border}`:"none"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{fontSize:12,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
-                    <span style={{fontSize:12,fontWeight:700}}>฿{fmt2(rn)}</span>
+                <div key={rid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div>
+                    <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n} คืน × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} แมวเพิ่ม`:""}</span>
                   </div>
-                  <div style={{fontSize:11,color:C.text3}}>{n}n × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} extra cat (+฿${(numCats-1)*EXTRA_CAT_FEE}/n)`:""}{form.litter?` + ทราย`:""}{ rd>0?` − ${form.discount}%`:""}</div>
+                  <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(n*PRICES[sz]+(numCats-1)*EXTRA_CAT_FEE*n)}</span>
                 </div>
               );
             })}
-            {form.litter&&litterAmt>0&&selectedRooms.length===1&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:5,marginTop:5}}><span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว {litterWeeks} รอบ (6คืน/รอบ)</span><span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{litterAmt.toLocaleString()}</span></div>}
-            {discAmt>0&&selectedRooms.length===1&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:13,color:C.text2}}>Discount ({form.discount}%)</span><span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{discAmt.toLocaleString()}</span></div>}
 
-            {/* ── Summary ── */}
-            <div style={{borderTop:`1px solid ${C.border}`,paddingTop:10,marginTop:8}}>
-              {/* ยอดรวมที่ลูกค้าต้องจ่ายทั้งหมด */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:depositAmt>0?8:4}}>
-                <span style={{fontSize:15,fontWeight:800}}>ยอดรวม {selectedRooms.length>1&&`(${selectedRooms.length} ห้อง)`}</span>
-                <span style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{fmt2(net)}</span>
+            {/* ทรายแมว */}
+            {form.litter&&litterAmt>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({litterWeeks} รอบ × {numCats} แมว)</span>
+                <span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{fmt2(litterAmt)}</span>
               </div>
+            )}
 
-              {/* มัดจำ */}
-              {depositAmt>0&&(
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,padding:"7px 12px",background:"#fffbf0",borderRadius:8,border:"1px solid #ffd70040"}}>
-                  <span style={{fontSize:13,color:C.orange,fontWeight:600}}>💰 มัดจำชำระแล้ว</span>
-                  <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(depositAmt)}</span>
-                </div>
-              )}
+            {/* ส่วนลด */}
+            {discAmt>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}%</span>
+                <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(discAmt)}</span>
+              </div>
+            )}
 
-              {/* ยังค้างชำระ */}
-              {remaining>0?(
-                <div style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:"#fff5f5",borderRadius:8,border:"1px solid #ff3b3020",marginBottom:isCreditCard?6:0}}>
-                  <span style={{fontSize:14,fontWeight:800,color:C.red}}>💳 ลูกค้าต้องชำระ</span>
-                  <span style={{fontSize:16,fontWeight:800,color:C.red}}>฿{fmt2(remaining)}</span>
-                </div>
-              ):(
-                <div style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:C.greenBg,borderRadius:8,border:`1px solid ${C.green}40`,marginBottom:0}}>
-                  <span style={{fontSize:14,fontWeight:800,color:C.green}}>✅ ชำระครบแล้ว</span>
-                  <span style={{fontSize:16,fontWeight:800,color:C.green}}>✓</span>
-                </div>
-              )}
-
-              {/* CC fee — internal info for shop */}
-              {isCreditCard&&remaining>0&&ccFeeAmt>0&&(
-                <div style={{marginTop:6,background:"#fff8f0",borderRadius:8,padding:"8px 12px",border:"1px solid #ff950030"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:11,color:C.orange}}>💳 หักค่าธรรมเนียม CC {CREDIT_CARD_FEE_PCT}%</span>
-                    <span style={{fontSize:12,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeAmt)}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",paddingTop:4,borderTop:"1px dashed #ffd70060"}}>
-                    <span style={{fontSize:12,fontWeight:800,color:"#555"}}>ร้านได้รับจริง</span>
-                    <span style={{fontSize:14,fontWeight:800,color:C.green}}>฿{fmt2(depositAmt+shopReceives)}</span>
-                  </div>
-                </div>
-              )}
+            {/* ── ยอดรวม ── */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`2px solid ${C.text}`,paddingTop:8,marginTop:4,marginBottom:depositAmt>0?8:0}}>
+              <span style={{fontSize:15,fontWeight:800}}>ยอดรวมทั้งหมด</span>
+              <span style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{fmt2(net)}</span>
             </div>
+
+            {/* มัดจำ */}
+            {depositAmt>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 12px",background:"#fffbf0",borderRadius:8,border:"1px solid #ffd70040",marginBottom:6}}>
+                <span style={{fontSize:13,color:C.orange,fontWeight:600}}>💰 มัดจำชำระแล้ว</span>
+                <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(depositAmt)}</span>
+              </div>
+            )}
+
+            {/* ยังต้องชำระ / ครบแล้ว */}
+            {remaining>0?(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#fff5f5",borderRadius:8,border:"1px solid #ff3b3020",marginBottom:isCreditCard?0:0}}>
+                <span style={{fontSize:14,fontWeight:800,color:C.red}}>ยังต้องชำระ</span>
+                <span style={{fontSize:16,fontWeight:800,color:C.red}}>฿{fmt2(remaining)}</span>
+              </div>
+            ):(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:C.greenBg,borderRadius:8,border:`1px solid ${C.green}40`}}>
+                <span style={{fontSize:14,fontWeight:800,color:C.green}}>✅ ชำระครบแล้ว</span>
+                <span style={{fontSize:16,fontWeight:800,color:C.green}}>✓</span>
+              </div>
+            )}
+
+            {/* ── CC fee section (internal) ── */}
+            {isCreditCard&&ccFeeAmt>0&&(
+              <div style={{marginTop:10,padding:"10px 12px",background:"#fff8f0",borderRadius:8,border:"1px solid #ff950030"}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:6}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,color:C.text2}}>ยอดที่จ่ายบัตร</span>
+                  <span style={{fontSize:12,fontWeight:600}}>฿{fmt2(remaining)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontSize:12,color:C.orange}}>หัก CC fee {CREDIT_CARD_FEE_PCT}%</span>
+                  <span style={{fontSize:12,fontWeight:600,color:C.orange}}>-฿{fmt2(ccFeeAmt)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:`1px dashed ${C.border}`}}>
+                  <span style={{fontSize:13,fontWeight:800}}>ร้านได้รับสุทธิ</span>
+                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(depositAmt+shopReceives)}</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
