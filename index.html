@@ -193,8 +193,8 @@ function getRoomBookings(roomId, bookings) {
 function isRoomAvailable(roomId, checkin, checkout, bookings, excludeId=null) {
   const rb = getRoomBookings(roomId, bookings).filter(b => b.id !== excludeId);
   for (const b of rb) {
-    // checkout day is occupied, so new checkin must be after existing checkout
-    if (b.checkin < checkout && b.checkout >= checkin) return false;
+    // Allow same-day checkout+checkin (staying on = checkout of prev == checkin of next)
+    if (b.checkin < checkout && b.checkout > checkin) return false;
   }
   return true;
 }
@@ -1358,7 +1358,11 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           </div>
         )}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div style={S.fg}><div style={S.lbl}>Discount %</div><input type="number" style={S.inp} min="0" max="100" value={form.discount} onChange={e=>set("discount",e.target.value)}/></div>
+          <div style={S.fg}><div style={S.lbl}>Discount %</div>
+            <select style={S.sel} value={form.discount} onChange={e=>set("discount",e.target.value)}>
+              {["0","5","10","15","20","25","30","40","50"].map(v=><option key={v} value={v}>{v}%{v==="0"?" (ไม่มีส่วนลด)":""}</option>)}
+            </select>
+          </div>
           <div style={S.fg}><div style={S.lbl}>Payment Method</div><select style={S.sel} value={form.payMethod} onChange={e=>set("payMethod",e.target.value)}>{PAY_METHODS.map(m=><option key={m}>{m}</option>)}</select></div>
         </div>
         {/* Deposit */}
