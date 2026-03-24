@@ -163,7 +163,7 @@ const CATWALK_INFO = {
   bankName: "ลลิตา กุลดังวัฒนา",
   bankRef: "0140000077510 84",
 };
-const PAY_METHODS = ["Cash","Transfer","Credit Card","QR Code"];
+const PAY_METHODS = ["Transfer","Cash","Credit Card"];
 const CREDIT_CARD_FEE_PCT = 1.07; // % deducted from net revenue when paying by credit card
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const MONTHS_FULL=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -1050,7 +1050,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Cash",paid:false,litter:false,notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:true,litterAmt2:0,petTaxi:0,notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1058,16 +1058,17 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const n=form.checkin&&form.checkout&&form.checkin<form.checkout?nights(form.checkin,form.checkout):0;
   const selectedRooms=form.roomIds||[];
   const numRooms=Math.max(selectedRooms.length,1);
-  // Price = sum of each room separately
+  const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
+  // Price = sum of each room separately + pet taxi
   const totalNet=selectedRooms.length>0
     ? selectedRooms.reduce((sum,rid)=>{
         const r=ROOMS.find(x=>x.id===rid);
         const sz=r?.type||form.size;
         const {net:rNet}=calcPrice(n,sz,numCats,form.discount,form.litter);
         return sum+rNet;
-      },0)
-    : (n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter).net:0);
-  const net=totalNet; // full price after discount (what customer owes total)
+      },0)+petTaxiAmt
+    : (n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter).net:0)+petTaxiAmt;
+  const net=parseFloat(totalNet.toFixed(2));
   const isCreditCard=form.payMethod==="Credit Card";
   const {base,discAmt,litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
   const depositAmt=Math.max(0,parseFloat(form.deposit)||0);
@@ -1372,6 +1373,14 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               </div>
             )}
 
+            {/* Pet Taxi */}
+            {petTaxiAmt>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:13,color:C.text2}}>🚕 Pet Taxi</span>
+                <span style={{fontSize:13,fontWeight:600,color:C.text}}>+฿{fmt2(petTaxiAmt)}</span>
+              </div>
+            )}
+
             {/* ส่วนลด */}
             {discAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
@@ -1427,15 +1436,57 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
           </div>
         )}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div style={S.fg}><div style={S.lbl}>Discount %</div>
-            <select style={S.sel} value={form.discount} onChange={e=>set("discount",e.target.value)}>
-              {["0","5","10","15","20","25","30","40","50"].map(v=><option key={v} value={v}>{v}%{v==="0"?" (ไม่มีส่วนลด)":""}</option>)}
-            </select>
+        {/* 1. Cat Litter */}
+        <div style={{...S.fg,padding:"12px 14px",background:form.litter?"#f0f6ff":C.bg,borderRadius:12,border:`1px solid ${form.litter?C.blue+"40":C.border}`,marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:form.litter?10:0}}>
+            <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue,flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
+              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/แมว/6คืน · {n>0?`${Math.ceil(n/6)} รอบ × ${Math.max(numCats,1)} แมว = ฿${Math.ceil(n/6)*LITTER_FEE*Math.max(numCats,1)}`:"เลือกวันก่อน"}</div>
+            </div>
+            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{fmt2(litterAmt)}</span>}
           </div>
-          <div style={S.fg}><div style={S.lbl}>Payment Method</div><select style={S.sel} value={form.payMethod} onChange={e=>set("payMethod",e.target.value)}>{PAY_METHODS.map(m=><option key={m}>{m}</option>)}</select></div>
+          {form.litter&&(
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>ราคาทรายแมว (฿)</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[60,120,180,240,300].map(v=>{
+                  const selected=parseFloat(form.litterCustom||LITTER_FEE)===v||(v===60&&!form.litterCustom);
+                  return <button key={v} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${selected?C.blue:C.border}`,background:selected?C.blue:"transparent",color:selected?"#fff":C.text2,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>set("litterCustom",v)}>฿{v}</button>;
+                })}
+              </div>
+            </div>
+          )}
         </div>
-        {/* Deposit */}
+
+        {/* 2. Pet Taxi */}
+        <div style={{...S.fg,padding:"12px 14px",background:petTaxiAmt>0?"#f5f0ff":C.bg,borderRadius:12,border:`1px solid ${petTaxiAmt>0?"#9c27b040":C.border}`,marginBottom:10}}>
+          <div style={{fontSize:14,fontWeight:700,color:petTaxiAmt>0?"#7b1fa2":C.text,marginBottom:8}}>🚕 Pet Taxi</div>
+          <input type="number" style={{...S.inp,borderColor:petTaxiAmt>0?"#9c27b060":C.border}} min="0" placeholder="0 (ไม่มี)" value={form.petTaxi||""} onChange={e=>set("petTaxi",e.target.value)}/>
+          {petTaxiAmt>0&&<div style={{fontSize:11,color:"#7b1fa2",marginTop:4}}>+฿{fmt2(petTaxiAmt)} รวมในยอด</div>}
+        </div>
+
+        {/* 3. Discount */}
+        <div style={S.fg}>
+          <div style={S.lbl}>ส่วนลด (Discount %)</div>
+          <select style={S.sel} value={form.discount} onChange={e=>set("discount",e.target.value)}>
+            {["0","5","10","15","20","25","30","40","50"].map(v=><option key={v} value={v}>{v}%{v==="0"?" — ไม่มีส่วนลด":""}</option>)}
+          </select>
+        </div>
+
+        {/* 4. Payment Method */}
+        <div style={S.fg}>
+          <div style={S.lbl}>รูปแบบชำระเงิน</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+            {PAY_METHODS.map(m=>(
+              <button key={m} style={{padding:"10px 6px",background:form.payMethod===m?C.text:C.bg,color:form.payMethod===m?"#fff":C.text2,border:`1px solid ${form.payMethod===m?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>set("payMethod",m)}>
+                {m==="Transfer"?"💸 Transfer":m==="Cash"?"💵 Cash":"💳 Credit"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 5. Deposit */}
         <div style={{...S.fg,padding:"14px",background:"#fffbf0",borderRadius:12,border:`1px solid ${depositAmt>0?C.orange+"60":"#ffd70050"}`,marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
             <span style={{fontSize:16}}>💰</span>
@@ -1450,21 +1501,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             </div>
           )}
         </div>
-        {/* Cat Litter */}
-        <div style={{...S.fg,padding:"12px 14px",background:form.litter?"#f0f6ff":C.bg,borderRadius:12,border:`1px solid ${form.litter?C.blue+"40":C.border}`,marginBottom:10}}>
-          <label style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer"}}>
-            <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue}}/>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
-              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/แมว/6คืน · {n>0?`${Math.ceil(n/6)} รอบ × ${Math.max(numCats,1)} แมว = ฿${Math.ceil(n/6)*LITTER_FEE*Math.max(numCats,1)}`:"Select dates first"}</div>
-            </div>
-            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{fmt2(litterAmt)}</span>}
-          </label>
-        </div>
         {/* Paid */}
         <div style={S.fg}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={form.paid} onChange={e=>set("paid",e.target.checked)} style={{width:18,height:18,accentColor:C.green}}/><span style={{fontSize:14,fontWeight:600}}>ชำระเงินครบแล้ว (Fully Paid)</span></label></div>
         <div style={S.fg}><div style={S.lbl}>Notes</div><textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Special requests..."/></div>
-        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||""})}>          {booking?"Save Changes":"Add Booking"}
+        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||""})}>          {booking?"Save Changes":"Add Booking"}
         </button>
       </div>
     </div>
