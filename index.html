@@ -2187,13 +2187,35 @@ function DashboardPage({bookings,customers,onExportBookings}){
   // นับ booking ที่ overlap กับช่วงวัน (checkin ≤ end AND checkout ≥ start)
   const startStr=ds(start), endStr=ds(end);
   const inRange=bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
-  // Revenue: Day = รวม booking ที่ stay ในวันนั้น, Week/Month/Year = นับตาม checkin เพื่อไม่ให้ซ้ำ
+
+  // Revenue per night for a booking (net / total nights)
+  const netPerNight=b=>{
+    const n=Math.max(1,nights(b.checkin,b.checkout));
+    const fullNet=b.payMethod==="Credit Card"
+      ?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2))
+      :(b.net||0);
+    return parseFloat((fullNet/n).toFixed(2));
+  };
+
+  // For Day: sum net-per-night of all staying bookings
+  // For Week/Month/Year: sum full net of bookings whose checkin falls in range (no double-counting)
   const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
-  // Helper: actual revenue after CC fee (use stored ccFeeAmt if available)
   const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
-  const revenue=revenueBookings.reduce((a,b)=>a+actualNet(b),0);
-  const ccFeeTotal=parseFloat(revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0).toFixed(2));
-  const unpaid=revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0);
+
+  const revenue=period==="day"
+    ?parseFloat(inRange.reduce((a,b)=>a+netPerNight(b),0).toFixed(2))
+    :parseFloat(revenueBookings.reduce((a,b)=>a+actualNet(b),0).toFixed(2));
+  const ccFeeTotal=parseFloat((period==="day"
+    ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
+        const n=Math.max(1,nights(b.checkin,b.checkout));
+        return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/n;
+      },0)
+    :revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0)
+  ).toFixed(2));
+  const unpaid=parseFloat((period==="day"
+    ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerNight(b),0)
+    :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0)
+  ).toFixed(2));
   const totalNights=inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
   const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
   let bars=[];
