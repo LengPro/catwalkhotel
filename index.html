@@ -1060,20 +1060,28 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
   const homePricePerNight=Math.max(0,parseFloat(form.homePrice)||0);
   const getPriceForSize=sz=>sz==="H"?homePricePerNight:(PRICES[sz]||PRICES.S);
-  // Price = sum of each room separately + pet taxi
+  // catPerRoom: {roomId: numCats} — default spread cats evenly, user can adjust
+  const catPerRoom=form.catPerRoom||{};
+  const getCatsForRoom=rid=>Math.max(1,parseInt(catPerRoom[rid])||1);
+  // Price = sum of each room with its own cat count + pet taxi
+  const calcRoomNet=(rid)=>{
+    const r=ROOMS.find(x=>x.id===rid);
+    const sz=r?.type||form.size;
+    const pricePerNight=getPriceForSize(sz==="S"||sz==="M"?sz:form.size);
+    const roomCats=getCatsForRoom(rid);
+    const extraCats=Math.max(0,roomCats-1);
+    const litterRounds=form.litter?Math.ceil(n/6):0;
+    const la=litterRounds*LITTER_FEE*roomCats;
+    const base=n*(pricePerNight+extraCats*EXTRA_CAT_FEE)+la;
+    const discAmt2=parseFloat((base*(parseFloat(form.discount)||0)/100).toFixed(2));
+    return{net:parseFloat((base-discAmt2).toFixed(2)),base,extraCats,roomCats,la,pricePerNight};
+  };
   const totalNet=selectedRooms.length>0
-    ? selectedRooms.reduce((sum,rid)=>{
-        const r=ROOMS.find(x=>x.id===rid);
-        const sz=r?.type||form.size;
-        const pricePerNight=getPriceForSize(sz==="S"||sz==="M"?sz:form.size);
-        const extraCats=Math.max(0,numCats-1);
-        const litterRounds=form.litter?Math.ceil(n/6):0;
-        const la=litterRounds*LITTER_FEE*numCats;
-        const base=n*(pricePerNight+extraCats*EXTRA_CAT_FEE)+la;
-        const discAmt2=parseFloat((base*(parseFloat(form.discount)||0)/100).toFixed(2));
-        return sum+parseFloat((base-discAmt2).toFixed(2));
-      },0)+petTaxiAmt
-    : (n>0&&numCats>0?calcPrice(n,form.size==="H"?"S":form.size,numCats,form.discount,form.litter).net*(form.size==="H"?homePricePerNight/PRICES.S:1):0)+petTaxiAmt;
+    ? selectedRooms.reduce((sum,rid)=>sum+calcRoomNet(rid).net,0)+petTaxiAmt
+    : (n>0&&numCats>0?calcPrice(n,form.size==="H"?"S":form.size,numCats,form.discount,form.litter).net*(form.size==="H"&&PRICES.S>0?homePricePerNight/PRICES.S:1):0)+petTaxiAmt;
+  const totalLitterAmt=selectedRooms.length>0
+    ? selectedRooms.reduce((sum,rid)=>sum+calcRoomNet(rid).la,0)
+    : litterAmt;
   const net=parseFloat(totalNet.toFixed(2));
   const isCreditCard=form.payMethod==="Credit Card";
   const {base,discAmt,litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
@@ -1359,9 +1367,30 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               </div>
             ):<div style={{padding:"12px 14px",background:C.accentBg,borderRadius:10,fontSize:13,fontWeight:600,color:C.accent}}>❌ No {form.size} rooms available for these dates</div>
           ):<div style={{padding:"12px 14px",background:C.bg,borderRadius:10,fontSize:13,color:C.text3}}>Enter dates to see available rooms</div>}
-          {selectedRooms.length>1&&(
-            <div style={{marginTop:8,padding:"8px 12px",background:C.blueBg,borderRadius:8,fontSize:12,color:C.blue,fontWeight:600}}>
-              ✓ {selectedRooms.length} ห้อง: {selectedRooms.join(", ")} · ราคาคำนวณแยกต่อห้อง
+          {selectedRooms.length>0&&numCats>0&&(
+            <div style={{marginTop:8,background:C.bg,borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+              <div style={{padding:"8px 12px",background:C.blueBg,fontSize:11,fontWeight:700,color:C.blue}}>
+                🐱 จำนวนแมวต่อห้อง (ห้อง S รับสูงสุด 2 ตัว, ห้อง M รับสูงสุด 3 ตัว)
+              </div>
+              {selectedRooms.map(rid=>{
+                const r=ROOMS.find(x=>x.id===rid);
+                const sz=r?.type||form.size;
+                const maxCats=sz==="M"?3:2;
+                const cur=getCatsForRoom(rid);
+                return(
+                  <div key={rid} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderTop:`1px solid ${C.borderLight}`}}>
+                    <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
+                    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      {Array.from({length:maxCats},(_,i)=>i+1).map(v=>(
+                        <button key={v} style={{width:32,height:32,borderRadius:8,border:`1px solid ${cur===v?getRoomColor(rid):C.border}`,background:cur===v?getRoomColor(rid):"transparent",color:cur===v?"#fff":C.text2,fontFamily:"inherit",fontSize:13,fontWeight:800,cursor:"pointer"}} onClick={()=>set("catPerRoom",{...(form.catPerRoom||{}),[rid]:v})}>
+                          {v}
+                        </button>
+                      ))}
+                      <span style={{fontSize:11,color:C.text3,marginLeft:4}}>แมว</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1442,23 +1471,23 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {selectedRooms.map((rid,ri)=>{
               const r=ROOMS.find(x=>x.id===rid);
               const sz=r?.type||form.size;
-              const {net:rn}=calcPrice(n,sz,numCats,form.discount,form.litter);
+              const {net:rn,pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid);
               return(
                 <div key={rid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
                     <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
-                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n} คืน × ฿{PRICES[sz]}{numCats>1?` + ${numCats-1} แมวเพิ่ม`:""}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n}คืน × ฿{pricePerNight}{ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · {rc} แมว</span>
                   </div>
-                  <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(n*PRICES[sz]+(numCats-1)*EXTRA_CAT_FEE*n)}</span>
+                  <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(n*(pricePerNight+ec*EXTRA_CAT_FEE))}</span>
                 </div>
               );
             })}
 
             {/* ทรายแมว */}
-            {form.litter&&litterAmt>0&&(
+            {form.litter&&totalLitterAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({litterWeeks} รอบ × {numCats} แมว)</span>
-                <span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{fmt2(litterAmt)}</span>
+                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({Math.ceil(n/6)} รอบ × {selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0)} แมวรวม)</span>
+                <span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{fmt2(totalLitterAmt)}</span>
               </div>
             )}
 
@@ -1471,12 +1500,25 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
 
             {/* ส่วนลด */}
-            {discAmt>0&&(
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}%</span>
-                <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(discAmt)}</span>
-              </div>
-            )}
+            {parseFloat(form.discount)>0&&(()=>{
+              const preDisc=selectedRooms.reduce((s,rid)=>{
+                const {base:rb}=calcRoomNet(rid);
+                // base before discount
+                const r2=ROOMS.find(x=>x.id===rid);
+                const sz2=r2?.type||form.size;
+                const pp=getPriceForSize(sz2==="S"||sz2==="M"?sz2:form.size);
+                const ec=Math.max(0,getCatsForRoom(rid)-1);
+                const la=form.litter?Math.ceil(n/6)*LITTER_FEE*getCatsForRoom(rid):0;
+                return s+n*(pp+ec*EXTRA_CAT_FEE)+la;
+              },0);
+              const totalDisc=parseFloat((preDisc*(parseFloat(form.discount)||0)/100).toFixed(2));
+              return totalDisc>0?(
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}%</span>
+                  <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(totalDisc)}</span>
+                </div>
+              ):null;
+            })()}
 
             {/* ── ยอดรวม ── */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`2px solid ${C.text}`,paddingTop:8,marginTop:4,marginBottom:depositAmt>0?8:0}}>
@@ -2958,7 +3000,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 23 Mar 2026 · 14:45</div>
+        <div style={{fontSize:12,color:C.text3}}>v 25 Mar 2026 · 14:00</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
