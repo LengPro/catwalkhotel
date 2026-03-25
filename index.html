@@ -920,48 +920,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
         @media print{body{padding:0;}}
         @page{size:A5;margin:10mm;}
       </style>
-      </head><body>${printArea.innerHTML}
-<script>
-function formatDateICS(date){
-  const d=new Date(date);
-  return d.toISOString().slice(0,10).replace(/-/g,'');
-}
-
-function generateICS_AllDay(booking){
-  const start=formatDateICS(booking.checkIn);
-  const endDate=new Date(booking.checkOut);
-  endDate.setDate(endDate.getDate()+1);
-  const end=formatDateICS(endDate);
-
-  return `BEGIN:VCALENDAR
-VERSION:2.0
-BEGIN:VEVENT
-SUMMARY:${booking.title||'Room Booking'}
-DTSTART;VALUE=DATE:${start}
-DTEND;VALUE=DATE:${end}
-END:VEVENT
-END:VCALENDAR`;
-}
-
-function downloadICS_AllDay(booking){
-  const ics=generateICS_AllDay(booking);
-  const blob=new Blob([ics],{type:'text/calendar;charset=utf-8;'});
-  const link=document.createElement('a');
-  link.href=URL.createObjectURL(blob);
-  link.download='booking.ics';
-  link.click();
-}
-
-// auto bind example (adjust selector if needed)
-document.addEventListener('click',function(e){
-  const el=e.target.closest('[data-booking]');
-  if(!el) return;
-  const booking=JSON.parse(el.getAttribute('data-booking'));
-  downloadICS_AllDay(booking);
-});
-</script>
-
-</body></html>`);
+      </head><body>${printArea.innerHTML}</body></html>`);
     win.document.close();
     setTimeout(()=>{win.print();},400);
   };
@@ -3218,46 +3177,5 @@ function App(){
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
-
-<script>
-function formatDateICS(date){
-  const d=new Date(date);
-  return d.toISOString().slice(0,10).replace(/-/g,'');
-}
-
-function generateICS_AllDay(booking){
-  const start=formatDateICS(booking.checkIn);
-  const endDate=new Date(booking.checkOut);
-  endDate.setDate(endDate.getDate()+1);
-  const end=formatDateICS(endDate);
-
-  return `BEGIN:VCALENDAR
-VERSION:2.0
-BEGIN:VEVENT
-SUMMARY:${booking.title||'Room Booking'}
-DTSTART;VALUE=DATE:${start}
-DTEND;VALUE=DATE:${end}
-END:VEVENT
-END:VCALENDAR`;
-}
-
-function downloadICS_AllDay(booking){
-  const ics=generateICS_AllDay(booking);
-  const blob=new Blob([ics],{type:'text/calendar;charset=utf-8;'});
-  const link=document.createElement('a');
-  link.href=URL.createObjectURL(blob);
-  link.download='booking.ics';
-  link.click();
-}
-
-// auto bind example (adjust selector if needed)
-document.addEventListener('click',function(e){
-  const el=e.target.closest('[data-booking]');
-  if(!el) return;
-  const booking=JSON.parse(el.getAttribute('data-booking'));
-  downloadICS_AllDay(booking);
-});
-</script>
-
 </body>
 </html>
