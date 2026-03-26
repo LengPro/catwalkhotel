@@ -794,32 +794,39 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       const cats=(cust?.cats||[]).filter(c=>(bk.selectedCatIds||[]).includes(c.id));
                       const allCatNames=cats.map(c=>c.name).join(", ")||bk.catName||"Cat";
                       const nickname=cust?.nickname||"";
-                      // Display label: "Leng: Tofu, โชคดี"
-                      const displayLabel=nickname?`${nickname}: ${allCatNames}`:allCatNames;
-                      const tooltipText=`${nickname?nickname+": ":""}${allCatNames} (${bk.checkin}→${bk.checkout})`;
+                      const isHome=bk.size==="H";
+                      const hasTaxi=bk.petTaxiAmt>0;
+                      const extras=[isHome?"@Home":"",hasTaxi?"🚕":""].filter(Boolean).join(" ");
+                      const tooltipParts=[
+                        nickname?`${nickname}: ${allCatNames}`:allCatNames,
+                        `${bk.checkin}→${bk.checkout}`,
+                        isHome?`@Home ฿${bk.homePricePerNight||"??"}/คืน`:"",
+                        hasTaxi?`🚕 Pet Taxi ฿${fmt2(bk.petTaxiAmt)}`:"",
+                        bk.notes?`📝 ${bk.notes}`:"",
+                      ].filter(Boolean).join(" · ");
                       return(<div key={d} style={{
                         width:44,flexShrink:0,height:38,
-                        background:getRoomColor(room.id)+"25",
+                        background:isHome?"#f3e5f5":getRoomColor(room.id)+"25",
                         borderRight:`1px solid ${isMonth1?"#bbb":getRoomColor(room.id)+"30"}`,
-                        borderLeft:isStart?`3px solid ${getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":"none"),
+                        borderLeft:isStart?`3px solid ${isHome?"#7b1fa2":getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":"none"),
                         cursor:"pointer",
                         display:"flex",alignItems:"center",justifyContent:"center",
                         position:"relative",
                         borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
-                      }} onClick={()=>setDetailBooking(bk)} title={tooltipText}>
+                      }} onClick={()=>setDetailBooking(bk)} title={tooltipParts}>
                         {(isStart||di===0)&&(
                           <div style={{
                             display:"flex",flexDirection:"column",alignItems:"flex-start",
                             padding:"0 4px",overflow:"hidden",maxWidth:40,
                           }}>
                             {nickname&&<div style={{
-                              fontSize:10,fontWeight:800,color:getRoomColor(room.id),
+                              fontSize:10,fontWeight:800,color:isHome?"#7b1fa2":getRoomColor(room.id),
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                               maxWidth:38,lineHeight:1.3,
-                            }}>{nickname}</div>}
+                            }}>{nickname}{extras?` ${extras}`:""}</div>}
                             <div style={{
                               fontSize:9,fontWeight:600,
-                              color:getRoomColor(room.id)+"cc",
+                              color:isHome?"#9c27b0aa":getRoomColor(room.id)+"cc",
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                               maxWidth:38,lineHeight:1.3,
                             }}>{allCatNames}</div>
@@ -857,12 +864,14 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               const cats=b?(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id)):[];
               const allCatNames=cats.map(c=>c.name).join(", ")||b?.catName||null;
               const nickname=cust?.nickname||null;
-              return(<div key={room.id} style={{borderRadius:10,padding:"8px 10px",background:b?getRoomColor(room.id)+"18":C.bg,border:`1px solid ${b?getRoomColor(room.id)+"40":C.border}`,textAlign:"center",cursor:b?"pointer":"default"}} onClick={()=>b&&setDetailBooking(b)}>
-                <div style={{fontSize:12,fontWeight:800,color:b?getRoomColor(room.id):C.text2}}>{room.label}</div>
+              const isHome=b?.size==="H";
+              const hasTaxi=b?.petTaxiAmt>0;
+              return(<div key={room.id} style={{borderRadius:10,padding:"8px 10px",background:b?(isHome?"#f3e5f5":getRoomColor(room.id)+"18"):C.bg,border:`1px solid ${b?(isHome?"#9c27b040":getRoomColor(room.id)+"40"):C.border}`,textAlign:"center",cursor:b?"pointer":"default"}} onClick={()=>b&&setDetailBooking(b)}>
+                <div style={{fontSize:12,fontWeight:800,color:b?(isHome?"#7b1fa2":getRoomColor(room.id)):C.text2}}>{room.label}</div>
                 {b?(
                   <>
-                    {nickname&&<div style={{fontSize:10,marginTop:2,color:getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}</div>}
-                    <div style={{fontSize:9,color:getRoomColor(room.id)+"aa",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{allCatNames||"Occupied"}</div>
+                    {nickname&&<div style={{fontSize:10,marginTop:2,color:isHome?"#7b1fa2":getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}{isHome?" 🏡":""}{hasTaxi?" 🚕":""}</div>}
+                    <div style={{fontSize:9,color:(isHome?"#9c27b0":getRoomColor(room.id))+"aa",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{allCatNames||"Occupied"}</div>
                   </>
                 ):<div style={{fontSize:10,marginTop:2,color:C.text3,fontWeight:600}}>Free</div>}
               </div>);
@@ -3146,7 +3155,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 26 Mar 2026 · 10:06 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 26 Mar 2026 · 10:30 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
