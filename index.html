@@ -307,25 +307,33 @@ function exportAllCSV(customers,bookings){
 const toICS=d=>d.replace(/-/g,"");
 function exportICS(b,customers){
   const c=customers.find(x=>x.id===b.customerId)||{};
-  const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id));
-  const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat";
+  const selCats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id));
+  const names=selCats.map(x=>x.name).join(", ")||b.catName||"Cat";
+  const catDetails=selCats.map(x=>`  • ${x.name}${x.breed?` (${x.breed})`:""}`).join("\\n");
   const n=nights(b.checkin,b.checkout);
   const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
   const checkoutPlusOne=addDays(b.checkout,1);
   const descParts=[
-    `👤 เจ้าของ: ${c.nickname||""}`,
+    `━━ ข้อมูลลูกค้า ━━`,
+    `👤 ${c.nickname||""}${c.fullname?` (${c.fullname})`:""}`,
     c.phone?`📞 ${c.phone}`:"",
-    `🐱 แมว: ${names}`,
+    c.line?`💬 Line: ${c.line}`:"",
+    c.notes?`📝 Customer Note: ${c.notes}`:"",
+    `━━ แมว ━━`,
+    catDetails||`🐱 ${names}`,
+    `━━ การจอง ━━`,
     `🏠 ห้อง: ${rooms}`,
     `📅 ${b.checkin} → ${b.checkout} · ${n} คืน`,
+    `━━ ราคา ━━`,
     `💰 ฿${fmt2(b.net||0)} · ${b.payMethod}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
     b.depositAmt>0?`💳 มัดจำ: ฿${fmt2(b.depositAmt)}`:"",
+    b.remaining>0?`⚠️ ค้างชำระ: ฿${fmt2(b.remaining)}`:"",
     b.litter?`🪣 ทรายแมว: ฿${fmt2(b.litterAmt||0)}`:"",
     b.petTaxiAmt>0?`🚕 Pet Taxi: ฿${fmt2(b.petTaxiAmt)}`:"",
     b.discount>0?`🏷 ส่วนลด: ${b.discount}%`:"",
-    b.notes?`📝 ${b.notes}`:"",
+    b.notes?`━━ หมายเหตุ ━━\\n📝 ${b.notes}`:"",
   ].filter(Boolean);
-  const desc=descParts.join("\n");
+  const desc=descParts.join("\\n");
   const summary=`🐱 ${names} — ${rooms} (${n}คืน)`;
   const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
   const ics=[
@@ -513,21 +521,29 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
       const cust=customers.find(c=>c.id===b.customerId)||{};
       const cats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
       const catNames=cats.map(c=>c.name).join(", ")||b.catName||"Cat";
+      const catDetails=cats.map(c=>`  • ${c.name}${c.breed?` (${c.breed})`:""}`).join("\\n");
       const n=nights(b.checkin,b.checkout);
       const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
       const checkoutPlusOne=addDays(b.checkout,1);
       const descParts=[
-        `👤 เจ้าของ: ${cust.nickname||""}`,
+        `━━ ข้อมูลลูกค้า ━━`,
+        `👤 ${cust.nickname||""}${cust.fullname?` (${cust.fullname})`:""}`,
         cust.phone?`📞 ${cust.phone}`:"",
-        `🐱 แมว: ${catNames}`,
+        cust.line?`💬 Line: ${cust.line}`:"",
+        cust.notes?`📝 Customer Note: ${cust.notes}`:"",
+        `━━ แมว ━━`,
+        catDetails||`🐱 ${catNames}`,
+        `━━ การจอง ━━`,
         `🏠 ห้อง: ${rooms}`,
         `📅 ${b.checkin} → ${b.checkout} · ${n} คืน`,
+        `━━ ราคา ━━`,
         `💰 ฿${fmt2(b.net||0)} · ${b.payMethod}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
         b.depositAmt>0?`💳 มัดจำ: ฿${fmt2(b.depositAmt)}`:"",
+        b.remaining>0?`⚠️ ค้างชำระ: ฿${fmt2(b.remaining)}`:"",
         b.litter?`🪣 ทรายแมว: ฿${fmt2(b.litterAmt||0)}`:"",
         b.petTaxiAmt>0?`🚕 Pet Taxi: ฿${fmt2(b.petTaxiAmt)}`:"",
         b.discount>0?`🏷 ส่วนลด: ${b.discount}%`:"",
-        b.notes?`📝 ${b.notes}`:"",
+        b.notes?`━━ หมายเหตุ ━━\\n📝 ${b.notes}`:"",
       ].filter(Boolean);
       const desc=descParts.join("\\n");
       const summary=`🐱 ${catNames} — ${rooms} (${n}คืน)`;
@@ -3297,14 +3313,14 @@ function App(){
         {id:"dashboard",icon:"📊", label:"Dashboard",badge:0},
         {id:"settings", icon:"⚙️", label:"Settings", badge:0},
       ].map(n=>(
-        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>navTo(n.id)}>
+        <a key={n.id} href={`#${n.id}`} onClick={e=>{e.preventDefault();navTo(n.id);}} style={{...S.navBtn(page===n.id),textDecoration:"none"}}>
           {page===n.id&&<div style={{position:"absolute",bottom:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"4px 4px 0 0"}}/>}
           <div style={{position:"relative",lineHeight:1}}>
             <span style={{fontSize:24}}>{n.icon}</span>
             {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
           </div>
           <div style={{fontSize:10,fontWeight:page===n.id?800:600,letterSpacing:"0.01em"}}>{n.label}</div>
-        </button>
+        </a>
       ))}
     </div>
 
