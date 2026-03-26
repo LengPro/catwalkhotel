@@ -208,14 +208,99 @@ function getAvailableRooms(type, checkin, checkout, bookings, excludeId=null) {
 // ── CSV helpers ───────────────────────────────────────────────────────
 function dlCSV(rows,fn){ const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"})); a.download=fn; a.click(); }
 function exportBookingsCSV(bookings,customers){
-  const h=["Booking ID","Owner","Phone","Cats","Room","Check-in","Check-out","Nights","Size","Num Cats","Base","Disc%","Disc Amt","Litter Amt","Net Total","Deposit","Remaining","Payment","Paid","Created"];
-  const rows=bookings.map(b=>{ const c=customers.find(x=>x.id===b.customerId)||{}; const n=nights(b.checkin,b.checkout); const nc=b.selectedCatIds?.length||1; const{base,discAmt,net,litterAmt}=calcPrice(n,b.size,nc,b.discount,b.litter); const cats=(b.selectedCatIds||[]).map(id=>(c.cats||[]).find(cat=>cat.id===id)?.name||"").filter(Boolean).join(", ")||b.catName||""; const dep=b.depositAmt||0; const rem=b.paid?0:(b.remaining||Math.max(0,net-dep)); return[b.id,c.nickname||"",c.phone||"",cats,b.roomId||"",b.checkin,b.checkout,n,b.size,nc,base,b.discount||0,discAmt,b.litter?litterAmt:0,net,dep,rem,b.payMethod,b.paid?"Yes":"No",b.createdAt?.split("T")[0]||""]; });
-  dlCSV([h,...rows],`cat-hotel-bookings-${today()}.csv`);
+  const h=[
+    // Customer info
+    "Customer Nickname","Full Name","Phone","Line ID",
+    // Cats
+    "Cat Names","Num Cats",
+    // Booking
+    "Booking ID","Check-in","Check-out","Nights",
+    // Rooms
+    "Room ID","Room IDs (multi)","Room Size","Num Rooms",
+    // Pricing
+    "Price/Night","Base Price","Cat Litter","Pet Taxi","Discount %","Discount Amt","Net Total","CC Fee","Shop Receives",
+    // Payment
+    "Payment Method","Deposit","Remaining","Fully Paid",
+    // Meta
+    "Notes","Created"
+  ];
+  const rows=bookings.map(b=>{
+    const c=customers.find(x=>x.id===b.customerId)||{};
+    const n=nights(b.checkin,b.checkout);
+    const cats=(b.selectedCatIds||[]).map(id=>(c.cats||[]).find(cat=>cat.id===id)?.name||"").filter(Boolean).join(", ")||b.catName||"";
+    const nc=b.numCats||b.selectedCatIds?.length||1;
+    const rooms=b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean);
+    const sz=b.size||"S";
+    const pricePerNight=sz==="H"?(b.homePricePerNight||0):(PRICES[sz]||350);
+    const net=b.net||0;
+    const dep=b.depositAmt||0;
+    const rem=b.remaining||Math.max(0,net-dep);
+    const ccFee=b.ccFeeAmt||0;
+    return[
+      c.nickname||"", c.fullname||"", c.phone||"", c.line||"",
+      cats, nc,
+      b.id, b.checkin, b.checkout, n,
+      b.roomId||rooms[0]||"", rooms.join("|"), sz, rooms.length,
+      pricePerNight, b.base||0, b.litter?"Yes":"No", b.petTaxiAmt||0,
+      b.discount||0, b.discAmt||0, fmt2(net), fmt2(ccFee), fmt2(dep+(rem-ccFee)),
+      b.payMethod||"", fmt2(dep), fmt2(rem), b.paid?"Yes":"No",
+      b.notes||"", b.createdAt?.split("T")[0]||""
+    ];
+  });
+  dlCSV([h,...rows],`catwalk-bookings-${today()}.csv`);
 }
 function exportCustomersCSV(customers,bookings){
-  const h=["ID","Nickname","Full Name","Phone","Line","Address","ID Card","Registered","Cat1","Breed1","Vax1","Cat2","Breed2","Vax2","Cat3","Breed3","Vax3","Bookings","Spent"];
-  const rows=customers.map(c=>{ const cb=bookings.filter(b=>b.customerId===c.id); const spent=cb.reduce((a,b)=>a+(b.net||0),0); const cats=c.cats||[]; const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",cats[i]?.vaccinePassport?"Yes":"No"]); return[c.id,c.nickname||"",c.fullname||"",c.phone||"",c.line||"",c.address||"",c.idCard?"Yes":"No",c.createdAt?.split("T")[0]||"",...cc,cb.length,spent]; });
-  dlCSV([h,...rows],`cat-hotel-customers-${today()}.csv`);
+  const h=[
+    "Customer ID","Nickname","Full Name","Phone","Line ID","Address","ID Card","Registered","Notes",
+    "Cat1 Name","Cat1 Breed","Cat1 Vaccine",
+    "Cat2 Name","Cat2 Breed","Cat2 Vaccine",
+    "Cat3 Name","Cat3 Breed","Cat3 Vaccine",
+    "Total Bookings","Total Spent (Net)","Last Visit"
+  ];
+  const rows=customers.map(c=>{
+    const cb=bookings.filter(b=>b.customerId===c.id);
+    const spent=cb.reduce((a,b)=>a+(b.net||0),0);
+    const lastVisit=cb.length>0?cb.sort((a,b)=>b.checkin>a.checkin?1:-1)[0].checkin:"";
+    const cats=c.cats||[];
+    const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",cats[i]?.vaccinePassport?"Yes":"No"]);
+    return[c.id,c.nickname||"",c.fullname||"",c.phone||"",c.line||"",c.address||"",c.idCard?"Yes":"No",c.createdAt?.split("T")[0]||"",c.notes||"",...cc,cb.length,fmt2(spent),lastVisit];
+  });
+  dlCSV([h,...rows],`catwalk-customers-${today()}.csv`);
+}
+function exportAllCSV(customers,bookings){
+  // Combined: one row per booking with full customer + booking details
+  const h=[
+    "Customer Nickname","Full Name","Phone","Line ID","Customer Notes",
+    "Cat Names","Num Cats","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed",
+    "Room ID","Room IDs","Room Size","Num Rooms",
+    "Check-in","Check-out","Nights",
+    "Price/Night","Base Price","Cat Litter","Pet Taxi","Discount %","Discount Amt","Net Total","CC Fee","Shop Receives",
+    "Payment Method","Deposit","Remaining","Fully Paid",
+    "Booking Notes","Created"
+  ];
+  const rows=bookings.map(b=>{
+    const c=customers.find(x=>x.id===b.customerId)||{};
+    const n=nights(b.checkin,b.checkout);
+    const cats=(c.cats||[]);
+    const selCats=(b.selectedCatIds||[]).map(id=>cats.find(cat=>cat.id===id)?.name||"").filter(Boolean).join(", ")||b.catName||"";
+    const nc=b.numCats||b.selectedCatIds?.length||1;
+    const rooms=b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean);
+    const sz=b.size||"S";
+    const pricePerNight=sz==="H"?(b.homePricePerNight||0):(PRICES[sz]||350);
+    const net=b.net||0; const dep=b.depositAmt||0; const rem=b.remaining||Math.max(0,net-dep); const ccFee=b.ccFeeAmt||0;
+    return[
+      c.nickname||"", c.fullname||"", c.phone||"", c.line||"", c.notes||"",
+      selCats, nc,
+      cats[0]?.name||"", cats[0]?.breed||"", cats[1]?.name||"", cats[1]?.breed||"", cats[2]?.name||"", cats[2]?.breed||"",
+      b.roomId||rooms[0]||"", rooms.join("|"), sz, rooms.length,
+      b.checkin, b.checkout, n,
+      pricePerNight, b.base||0, b.litter?"Yes":"No", b.petTaxiAmt||0,
+      b.discount||0, b.discAmt||0, fmt2(net), fmt2(ccFee), fmt2(dep+(rem-ccFee)),
+      b.payMethod||"", fmt2(dep), fmt2(rem), b.paid?"Yes":"No",
+      b.notes||"", b.createdAt?.split("T")[0]||""
+    ];
+  });
+  dlCSV([h,...rows],`catwalk-all-${today()}.csv`);
 }
 
 // ── ICS / Calendar ────────────────────────────────────────────────────
@@ -1719,25 +1804,30 @@ function parseCSV(text){
 }
 
 function downloadTemplateCustCSV(){
-  const h=[
-  "Name","Phone","Line ID",
-  "Cat1 Name","Cat1 Breed",
-  "Cat2 Name","Cat2 Breed",
-  "Cat3 Name","Cat3 Breed",
-  "Cat4 Name","Cat4 Breed",
-  "Room",
-  "Check-in (YYYY-MM-DD)",
-  "Check-out (YYYY-MM-DD)",
-  "Size (S/M)",
-  "Discount %",
-  "Deposit",
-  "Payment Method",
-  "Paid (Yes/No)",
-  "Cat Litter (Yes/No)",
-  "Notes"
-];
-  const ex=[["K.Nong","Mochi,Luna","A-S1","2026-04-01","2026-04-07","S","10","500","Transfer","No","Yes","ให้อาหาร 2 ครั้งต่อวัน"],["K.Joy","Taro","B-S6","2026-04-05","2026-04-10","S","0","0","Cash","Yes","No",""]];
-  dlCSV([h,...ex],"cathotel-bookings-template.csv");
+  const h=["Customer Nickname","Full Name","Phone","Line ID","Address","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed"];
+  const ex=[
+    ["K.Nong","คุณน้อง สมใจ","0812345678","@nong_cat","10/5 ถ.สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","",""],
+    ["K.Joy","คุณจอย","0898765432","@joy123","","","Taro","Maine Coon","","","",""]
+  ];
+  dlCSV([h,...ex],"catwalk-customers-template.csv");
+}
+
+function downloadTemplateBookingCSV(){
+  const h=["Customer Nickname","Cat Names","Room ID","Room IDs","Room Size","Check-in","Check-out","Discount %","Deposit","Payment Method","Fully Paid","Cat Litter","Pet Taxi","Booking Notes"];
+  const ex=[
+    ["K.Nong","Mochi,Luna","A-S1","A-S1","S","2026-04-01","2026-04-07","10","500","Transfer","No","Yes","0","ให้อาหาร 2 ครั้งต่อวัน"],
+    ["K.Joy","Taro","B-S6","B-S6","S","2026-04-05","2026-04-10","0","0","Cash","Yes","No","0",""]
+  ];
+  dlCSV([h,...ex],"catwalk-bookings-template.csv");
+}
+
+function downloadTemplateCombinedCSV(){
+  const h=["Customer Nickname","Full Name","Phone","Line ID","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Discount %","Deposit","Payment Method","Fully Paid","Cat Litter","Pet Taxi","Booking Notes"];
+  const ex=[
+    ["K.Nong","คุณน้อง","0812345678","@nong","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","A-S1","A-S1","S","2026-04-01","2026-04-07","10","500","Transfer","No","Yes","0",""],
+    ["K.Joy","คุณจอย","0898765432","","","Taro","Maine Coon","","","B-S6","B-S6","S","2026-04-05","2026-04-10","0","0","Cash","Yes","No","0",""]
+  ];
+  dlCSV([h,...ex],"catwalk-combined-template.csv");
 }
 
 function importCustomersFromCSV(rows, existingCustomers){
@@ -1751,17 +1841,1013 @@ function importCustomersFromCSV(rows, existingCustomers){
     const dup=existingCustomers.find(c=>c.nickname.toLowerCase()===nickname.toLowerCase()&&(!phone||c.phone===phone));
     if(dup){ results.skipped++; return; }
     // Parse cats — Cat1 Name, Cat1 Breed ... Cat3
-    const cats = catNames.map((name, i) => ({
-  id: uid(),
-  name,
-  breed: catBreeds[i] || "",
-  notes: "",
-  photo: "",
-  vaccinePassport: ""
-}));
+    const cats=[];
+    for(let ci=1;ci<=5;ci++){
+      const catName=(r[`cat${ci} name`]||r[`cat${ci}name`]||r[`cat${ci}_name`]||r[`cat ${ci} name`]||"").trim();
+      const catBreed=(r[`cat${ci} breed`]||r[`cat${ci}breed`]||r[`cat${ci}_breed`]||r[`cat ${ci} breed`]||"").trim();
+      const catNotes=(r[`cat${ci} notes`]||r[`cat${ci}notes`]||"").trim();
+      if(catName) cats.push({id:uid(),name:catName,breed:catBreed,notes:catNotes,photo:"",vaccinePassport:""});
+    }
+    // Also handle single "cat name" column
+    if(cats.length===0){
+      const singleCat=(r["cat name"]||r["cat"]||r["ชื่อแมว"]||"").trim();
+      const singleBreed=(r["breed"]||r["สายพันธุ์"]||"").trim();
+      if(singleCat) cats.push({id:uid(),name:singleCat,breed:singleBreed,notes:"",photo:"",vaccinePassport:""});
+    }
+    newCustomers.push({
+      id:uid(),
+      nickname,
+      phone,
+      line:(r["line id"]||r["line"]||r["line_id"]||"").trim(),
+      address:(r["address"]||r["ที่อยู่"]||"").trim(),
+      notes:(r["notes"]||r["หมายเหตุ"]||"").trim(),
+      cats:cats.length>0?cats:[{id:uid(),name:"",breed:"",notes:"",photo:"",vaccinePassport:""}],
+      idCard:"",
+      createdAt:new Date().toISOString(),
+    });
+    results.imported++;
+  });
+  return{newCustomers,results};
+}
+
+function importBookingsFromCSV(rows, customers){
+  const results={imported:0,skipped:0,errors:[]};
+  const newBookings=[];
+  rows.forEach((r,i)=>{
+    const nick=(r["customer nickname"]||r["nickname"]||r["customer"]||"").trim();
+    const checkin=(r["check-in (yyyy-mm-dd)"]||r["check-in"]||r["checkin"]||r["check in"]||"").trim();
+    const checkout=(r["check-out (yyyy-mm-dd)"]||r["check-out"]||r["checkout"]||r["check out"]||"").trim();
+    const roomId=(r["room id"]||r["room"]||r["roomid"]||"").trim().toUpperCase();
+    if(!nick||!checkin||!checkout){ results.errors.push(`Row ${i+2}: Missing nickname/dates`); results.skipped++; return; }
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(checkin)||!/^\d{4}-\d{2}-\d{2}$/.test(checkout)){ results.errors.push(`Row ${i+2}: Date format must be YYYY-MM-DD`); results.skipped++; return; }
+    const cust=customers.find(c=>c.nickname.toLowerCase()===nick.toLowerCase());
+    if(!cust){ results.errors.push(`Row ${i+2}: Customer "${nick}" not found — add them first`); results.skipped++; return; }
+    const size=(r["room size (s/m)"]||r["size"]||r["room size"]||"S").trim().toUpperCase()==="M"?"M":"S";
+    const validRoom=ROOMS.find(rm=>rm.id===roomId);
+    const discount=parseFloat(r["discount %"]||r["discount"]||"0")||0;
+    const depositAmt=parseFloat(r["deposit"]||"0")||0;
+    const payMethod=r["payment method"]||r["payment"]||"Cash";
+    const paid=(r["paid (yes/no)"]||r["paid"]||"").toLowerCase()==="yes";
+    const litter=(r["cat litter (yes/no)"]||r["cat litter"]||r["litter"]||"").toLowerCase()==="yes";
+    const notes=(r["notes"]||r["หมายเหตุ"]||"").trim();
+    const n=nights(checkin,checkout);
+    const selectedCatIds=(cust.cats||[]).filter(c=>c.name).map(c=>c.id);
+    // Parse specific cat names if provided
+    const catNamesStr=(r["cat names (comma separated)"]||r["cat names"]||"").trim();
+    let selCatIds=selectedCatIds;
+    if(catNamesStr){
+      const catNames=catNamesStr.split(",").map(x=>x.trim().toLowerCase());
+      const matched=(cust.cats||[]).filter(c=>catNames.includes(c.name.toLowerCase())).map(c=>c.id);
+      if(matched.length>0) selCatIds=matched;
+    }
+    const numCats=selCatIds.length||1;
+    const{base,discAmt,net,litterAmt,litterWeeks}=calcPrice(n,size,numCats,discount,litter);
+    const remaining=Math.max(0,net-depositAmt);
+    newBookings.push({
+      id:uid(), customerId:cust.id, selectedCatIds:selCatIds,
+      checkin, checkout, size, roomId:validRoom?roomId:"",
+      discount:String(discount), payMethod, paid, litter, notes,
+      base, discAmt, net, litterAmt, litterWeeks,
+      depositAmt, remaining,
+      numCats, createdAt:new Date().toISOString(),
+    });
+    results.imported++;
+  });
+  return{newBookings,results};
+}
+
+// ── Import Sheet Modal ────────────────────────────────────────────
+function ImportSheet({mode, customers, onImportCustomers, onImportBookings, onClose}){
+  const [step,setStep]=useState("upload"); // upload | preview | done
+  const [rows,setRows]=useState([]);
+  const [preview,setPreview]=useState(null); // {newItems, results}
+  const [error,setError]=useState("");
+  const fileRef=useRef();
+
+  const handleFile=e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const parsed=parseCSV(ev.target.result);
+        if(!parsed.length){setError("ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง"); return;}
+        setRows(parsed); setError("");
+        if(mode==="customers"){
+          const{newCustomers,results}=importCustomersFromCSV(parsed,customers);
+          setPreview({items:newCustomers,results});
+        } else {
+          const{newBookings,results}=importBookingsFromCSV(parsed,customers);
+          setPreview({items:newBookings,results});
+        }
+        setStep("preview");
+      }catch(err){setError("ไม่สามารถอ่านไฟล์ได้: "+err.message);}
+    };
+    reader.readAsText(f,"UTF-8");
+  };
+
+  const handleConfirm=async()=>{
+    if(!preview) return;
+    if(mode==="customers") await onImportCustomers(preview.items);
+    else await onImportBookings(preview.items);
+    setStep("done");
+  };
+
+  const isCustomer=mode==="customers";
+
+  return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <div style={S.sheet}>
+      <div style={S.sheetHandle}/>
+      <div style={{padding:"16px 20px 0",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <div style={S.sheetTitle}>📥 Import {isCustomer?"Customers":"Bookings"}</div>
+        <button style={S.btnG} onClick={onClose}>✕</button>
+      </div>
+
+      <div style={{padding:"0 20px 20px"}}>
+        {/* Step indicator */}
+        <div style={{display:"flex",gap:4,alignItems:"center",margin:"12px 0 20px"}}>
+          {["upload","preview","done"].map((s,i)=>{
+            const steps=["upload","preview","done"];
+            const curIdx=steps.indexOf(step);
+            return(
+              <div key={s} style={{display:"flex",flex:i<2?"1 1 auto":"0 0 auto",alignItems:"center",gap:4}}>
+                <div style={{width:24,height:24,borderRadius:"50%",background:step===s?C.accent:curIdx>i?C.green:C.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:curIdx>=i?"#fff":C.text3,flexShrink:0}}>
+                  {curIdx>i?"✓":i+1}
+                </div>
+                {i<2&&<div style={{flex:1,height:2,background:curIdx>i?C.green:C.borderLight,minWidth:16}}/>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* STEP 1: Upload */}
+        {step==="upload"&&(<>
+          {/* Download template */}
+          <div style={{background:C.blueBg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:8}}>
+              📄 ขั้นตอนที่ 1 — ดาวน์โหลด Template
+            </div>
+            <div style={{fontSize:12,color:C.text2,marginBottom:12,lineHeight:1.7}}>
+              {isCustomer?(
+                <div>{"Download template CSV → เปิดใน Numbers/Excel → กรอกข้อมูล → Export เป็น CSV → Import กลับมา"}
+                  <div style={{marginTop:4,fontWeight:600,color:C.blue}}>คอลัมน์: Name, Phone, Line ID, Address, Notes, Cat1 Name, Cat1 Breed, Cat1 Notes, Cat2 Name...</div>
+                </div>
+              ):(
+                <div>{"Download template CSV → กรอกข้อมูล Booking → Import"}
+                  <div style={{marginTop:4,color:C.orange,fontWeight:600}}>⚠️ ต้องมีชื่อลูกค้าในระบบก่อน (Nickname ต้องตรง)</div>
+                  <div style={{marginTop:4,fontWeight:600,color:C.blue}}>คอลัมน์: Customer Nickname, Cat Names, Room ID, Check-in, Check-out, Size, Discount%, Deposit, Payment...</div>
+                </div>
+              )}
+            </div>
+            <button style={{...S.btnB,width:"100%",fontSize:13}} onClick={isCustomer?downloadTemplateCustCSV:downloadTemplateBookingCSV}>
+              ⬇ Download Template CSV
+            </button>
+          </div>
+
+          {/* Tips */}
+          <div style={{background:C.bg,borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:12,color:C.text2,lineHeight:1.8}}>
+            <div style={{fontWeight:700,marginBottom:6,color:C.text}}>💡 วิธีใช้ใน Numbers (Mac)</div>
+            <div>{"1. เปิดไฟล์ template ใน Numbers"}</div>
+            <div>{"2. กรอกข้อมูลลูกค้า"}{ isCustomer?" แมวหลายตัวใส่ Cat2, Cat3":""}{" ให้ครบ"}</div>
+            <div>{"3. File → Export To → CSV..."}</div>
+            <div>{"4. กลับมากด Upload CSV ด้านล่าง"}</div>
+          </div>
+
+          {/* Upload area */}
+          <div style={{border:`2px dashed ${C.border}`,borderRadius:14,padding:"24px 20px",textAlign:"center",cursor:"pointer",background:C.bg}} onClick={()=>fileRef.current.click()}>
+            <div style={{fontSize:32,marginBottom:8}}>📂</div>
+            <div style={{fontSize:14,fontWeight:700,color:C.text,marginBottom:4}}>Tap to select CSV file</div>
+            <div style={{fontSize:12,color:C.text3}}>รองรับ .csv (UTF-8) จาก Numbers, Excel, Google Sheets</div>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleFile}/>
+          </div>
+          {error&&<div style={{marginTop:10,padding:"10px 14px",background:"#fff5f5",borderRadius:10,fontSize:13,color:C.red,fontWeight:600}}>{"⚠️ "}{error}</div>}
+        </>)}
+
+        {/* STEP 2: Preview */}
+        {step==="preview"&&preview&&(<>
+          {/* Summary */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+            <div style={{...S.statCard,textAlign:"center"}}>
+              <div style={{...S.statVal,fontSize:28,color:C.green}}>{preview.results.imported}</div>
+              <div style={S.statLbl}>✅ พร้อม Import</div>
+            </div>
+            <div style={{...S.statCard,textAlign:"center"}}>
+              <div style={{...S.statVal,fontSize:28,color:preview.results.skipped>0?C.orange:C.text3}}>{preview.results.skipped}</div>
+              <div style={S.statLbl}>⏭ ข้าม (ซ้ำ/ผิด)</div>
+            </div>
+          </div>
+
+          {/* Errors */}
+          {preview.results.errors.length>0&&(
+            <div style={{background:"#fff5f5",borderRadius:10,padding:"10px 14px",marginBottom:14,border:"1px solid #ff3b3030"}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.red,marginBottom:6}}>⚠️ ข้อผิดพลาด</div>
+              {preview.results.errors.map((e,i)=><div key={i} style={{fontSize:11,color:C.red,marginBottom:2}}>• {e}</div>)}
+            </div>
+          )}
+
+          {/* Preview items */}
+          {preview.items.length>0?(
+            <>
+              <div style={S.slabel}>ตัวอย่างข้อมูลที่จะ Import</div>
+              <div style={{maxHeight:280,overflowY:"auto",marginBottom:16}}>
+                {preview.items.slice(0,20).map((item,i)=>(
+                  <div key={i} style={{...S.card,padding:"11px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:28,height:28,borderRadius:8,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>
+                      {isCustomer?"🐱":"📋"}
+                    </div>
+                    {isCustomer?(
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700}}>{item.nickname}</div>
+                        <div style={{fontSize:11,color:C.text2}}>{item.phone||"—"} · {(item.cats||[]).map(c=>c.name).filter(Boolean).join(", ")||"No cat"}</div>
+                      </div>
+                    ):(
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700}}>{customers.find(c=>c.id===item.customerId)?.nickname||"?"} → {item.roomId||item.size}</div>
+                        <div style={{fontSize:11,color:C.text2}}>{item.checkin} → {item.checkout} · ฿{(item.net||0).toLocaleString()}</div>
+                      </div>
+                    )}
+                    <span style={S.chip(C.green)}>New</span>
+                  </div>
+                ))}
+                {preview.items.length>20&&<div style={{textAlign:"center",fontSize:12,color:C.text3,padding:"8px"}}>...และอีก {preview.items.length-20} รายการ</div>}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button style={{...S.btnG,flex:1}} onClick={()=>setStep("upload")}>← กลับ</button>
+                <button style={{...S.btnP,flex:2}} onClick={handleConfirm}>
+                  ✅ Import {preview.items.length} รายการ
+                </button>
+              </div>
+            </>
+          ):(
+            <div style={{textAlign:"center",padding:"20px",color:C.text3}}>
+              <div style={{fontSize:28,marginBottom:8}}>😕</div>
+              <div style={{fontSize:13}}>ไม่มีข้อมูลใหม่ที่จะ import</div>
+              <button style={{...S.btnG,marginTop:12}} onClick={()=>setStep("upload")}>← ลองใหม่</button>
+            </div>
+          )}
+        </>)}
+
+        {/* STEP 3: Done */}
+        {step==="done"&&(
+          <div style={{textAlign:"center",padding:"20px 0"}}>
+            <div style={{fontSize:52,marginBottom:12}}>🎉</div>
+            <div style={{fontSize:18,fontWeight:800,marginBottom:8}}>Import สำเร็จ!</div>
+            <div style={{fontSize:14,color:C.text2,marginBottom:20}}>
+              เพิ่ม {preview?.items.length||0} {isCustomer?"ลูกค้า":"booking"} เข้าระบบแล้ว
+            </div>
+            <button style={{...S.btnP,width:"100%"}} onClick={onClose}>เสร็จสิ้น ✓</button>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// CUSTOMERS PAGE
+// ════════════════════════════════════════════════════════════════
+function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSaveBooking,onImportCustomers,setToast}){
+  const [search,setSearch]=useState("");
+  const [showForm,setShowForm]=useState(false);
+  const [editCust,setEditCust]=useState(null);
+  const [detailCust,setDetailCust]=useState(null);
+  const [bookingFor,setBookingFor]=useState(null);
+  const [selectMode,setSelectMode]=useState(false);
+  const [selected,setSelected]=useState([]);
+  const filtered=customers.filter(c=>c.nickname.toLowerCase().includes(search.toLowerCase())||(c.cats||[]).some(cat=>cat.name.toLowerCase().includes(search.toLowerCase()))||(c.phone||"").includes(search));
+
+  const toggleSelect=id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
+  const toggleSelectAll=()=>setSelected(s=>s.length===filtered.length?[]:filtered.map(c=>c.id));
+  const exitSelect=()=>{setSelectMode(false);setSelected([]);};
+  const bulkDelete=async()=>{
+    if(!window.confirm(`ลบ ${selected.length} ลูกค้าที่เลือก?`)) return;
+    for(const id of selected) await onDeleteCustomer(id);
+    exitSelect();
+  };
+
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={S.htitle}>Customers</div><div style={S.hSub}>{customers.length} registered · {customers.reduce((a,c)=>a+(c.cats||[]).length,0)} cats</div></div>
+        <div style={{display:"flex",gap:6}}>
+          {!selectMode?(
+            <>
+              <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={()=>setSelectMode(true)}>☑ Select</button>
+              <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Add</button>
+            </>
+          ):(
+            <>
+              <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={toggleSelectAll}>
+                {selected.length===filtered.length?"✕ Clear All":"✓ All"}
+              </button>
+              {selected.length>0&&<button style={{...S.btnD,padding:"8px 12px",fontSize:12}} onClick={bulkDelete}>🗑 Delete {selected.length}</button>}
+              <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={exitSelect}>Cancel</button>
+            </>
+          )}
+        </div>
+      </div>
+      <input style={{...S.inp,marginTop:12}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+    </div>
+    <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
+      {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>🐱</div>No customers found</div>
+        :filtered.map(c=>{
+          const cats=c.cats||[]; const cb=bookings.filter(b=>b.customerId===c.id); const last=cb.sort((a,b)=>b.checkin.localeCompare(a.checkin))[0];
+          const isSel=selected.includes(c.id);
+          return(<div key={c.id} style={{...S.card,marginBottom:10,cursor:"pointer",outline:isSel?`2px solid ${C.accent}`:"none",background:isSel?C.accentBg:C.white}} onClick={selectMode?()=>toggleSelect(c.id):()=>setDetailCust(c)}>
+            <div style={{padding:"13px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:cats.length>1?8:0}}>
+                {selectMode&&(
+                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${isSel?C.accent:C.border}`,background:isSel?C.accent:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {isSel&&<span style={{color:"#fff",fontSize:13,fontWeight:800}}>✓</span>}
+                  </div>
+                )}
+                <div style={{display:"flex",position:"relative",flexShrink:0}}>
+                  {cats.slice(0,3).map((cat,i)=>(
+                    <div key={cat.id} style={{width:40,height:40,borderRadius:10,marginLeft:i>0?-12:0,border:`2px solid ${C.white}`,zIndex:cats.length-i,overflow:"hidden",flexShrink:0,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
+                      {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+                    </div>
+                  ))}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700,color:C.text}}>{c.nickname} <span style={{fontWeight:600,color:C.text2}}>({cats.map(x=>x.name).join(", ")||"—"})</span></div>
+                  <div style={{fontSize:12,color:C.text2}}>{c.phone||""}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:12,fontWeight:600,color:C.accent}}>{cb.length} booking{cb.length!==1?"s":""}</div>{last&&<div style={{fontSize:11,color:C.text3}}>{fmt(last.checkin)}</div>}</div>
+              </div>
+              {cats.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{cats.map((cat,i)=><span key={cat.id} style={S.chip(i===0?C.text2:C.orange)}>{cat.name}{i>0?" +฿50":""}</span>)}</div>}
+            </div>
+          </div>);
+        })
+      }
+    </div></div>
+    {(showForm||editCust)&&<CustomerSheet customer={editCust} onSave={async d=>{await onSaveCustomer(d);setShowForm(false);setEditCust(null);if(detailCust)setDetailCust(d);}} onClose={()=>{setShowForm(false);setEditCust(null);}}/>}
+    {detailCust&&<CustomerDetail customer={detailCust} bookings={bookings} onEdit={()=>{setEditCust(detailCust);setDetailCust(null);}} onDelete={async()=>{if(!window.confirm("Delete this customer?"))return;await onDeleteCustomer(detailCust.id);setDetailCust(null);}} onClose={()=>setDetailCust(null)} onNewBooking={()=>{setBookingFor(detailCust);setDetailCust(null);}}/>}
+    {bookingFor&&<BookingSheet customers={customers} bookings={bookings} booking={{customerId:bookingFor.id,selectedCatIds:(bookingFor.cats||[]).slice(0,1).map(x=>x.id),checkin:"",checkout:"",size:"S",roomId:"",discount:"0",payMethod:"Cash",paid:false,notes:""}} onSave={async d=>{await onSaveBooking(d);setBookingFor(null);}} onClose={()=>setBookingFor(null)}/>}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// BOOKINGS PAGE
+// ════════════════════════════════════════════════════════════════
+function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings,onShowReceipt}){
+  const [showForm,setShowForm]=useState(false);
+  const [editBook,setEditBook]=useState(null);
+  const [filter,setFilter]=useState("upcoming");
+  const [search,setSearch]=useState("");
+  const [selectMode,setSelectMode]=useState(false);
+  const [selected,setSelected]=useState([]);
+  const now=today();
+
+  const byFilter=bookings.filter(b=>filter==="upcoming"?b.checkout>=now:filter==="past"?b.checkout<now:true);
+  const filtered=byFilter.filter(b=>{
+    if(!search.trim()) return true;
+    const s=search.toLowerCase().trim();
+    const cust=customers.find(c=>c.id===b.customerId);
+    const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+    const catNames=cats.map(c=>c.name).join(" ").toLowerCase();
+    const nickname=(cust?.nickname||"").toLowerCase();
+    const phone=(cust?.phone||"").toLowerCase();
+    const room=(b.roomIds||[b.roomId]).filter(Boolean).join(" ").toLowerCase();
+    // Date search — support multiple formats
+    const checkinFmt=b.checkin?fmt(b.checkin).toLowerCase():""; // "1 Mar 2026"
+    const checkoutFmt=b.checkout?fmt(b.checkout).toLowerCase():"";
+    const checkinRaw=b.checkin||""; // "2026-03-01"
+    const checkoutRaw=b.checkout||"";
+    // Month name search (mar, april, etc.)
+    const MONTH_MAP={jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",january:"01",february:"02",march:"03",april:"04",june:"06",july:"07",august:"08",september:"09",october:"10",november:"11",december:"12"};
+    let matchDate=checkinFmt.includes(s)||checkoutFmt.includes(s)||checkinRaw.includes(s)||checkoutRaw.includes(s);
+    // Try month name matching
+    for(const [mname,mnum] of Object.entries(MONTH_MAP)){
+      if(s.includes(mname)){
+        if(checkinRaw.includes("-"+mnum+"-")||checkoutRaw.includes("-"+mnum+"-")) matchDate=true;
+      }
+    }
+    return nickname.includes(s)||catNames.includes(s)||room.includes(s)||phone.includes(s)||matchDate;
+  }).sort((a,b)=>a.checkin.localeCompare(b.checkin));
+
+  const toggleSelect=id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
+  const toggleSelectAll=()=>setSelected(s=>s.length===filtered.length?[]:filtered.map(b=>b.id));
+  const exitSelect=()=>{setSelectMode(false);setSelected([]);};
+  const bulkDelete=async()=>{
+    if(!window.confirm(`ลบ ${selected.length} booking ที่เลือก?`)) return;
+    for(const id of selected) await onDeleteBooking(id);
+    exitSelect();
+  };
+
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>=now).length} active now</div></div>
+        <div style={{display:"flex",gap:6}}>
+          {!selectMode?(
+            <>
+              <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={()=>setSelectMode(true)}>☑ Select</button>
+              <button style={S.btnP} onClick={()=>setShowForm(true)}>+ Book</button>
+            </>
+          ):(
+            <>
+              <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={toggleSelectAll}>
+                {selected.length===filtered.length?"✕ Clear All":"✓ All"}
+              </button>
+              {selected.length>0&&<button style={{...S.btnD,padding:"8px 12px",fontSize:12}} onClick={bulkDelete}>🗑 Delete {selected.length}</button>}
+              <button style={{...S.btnG,fontSize:12,padding:"8px 10px"}} onClick={exitSelect}>Cancel</button>
+            </>
+          )}
+        </div>
+      </div>
+      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();setSearch("");}}>{l}</button>)}</div>
+      <input style={{...S.inp,marginTop:10}} placeholder="🔍  Search by name, cat, room, date (e.g. Mar, Apr 2026)..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+    </div>
+    <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
+      {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📋</div>No bookings</div>
+        :filtered.map(b=>{
+          const cust=customers.find(c=>c.id===b.customerId);
+          const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+          const n=nights(b.checkin,b.checkout); const isActive=b.checkin<=now&&b.checkout>=now;
+          const room=ROOMS.find(r=>r.id===b.roomId);
+          const isSel=selected.includes(b.id);
+          return(<div key={b.id} style={{...S.card,marginBottom:10,borderLeft:isActive?`3px solid ${C.accent}`:"",outline:isSel?`2px solid ${C.accent}`:"none",background:isSel?C.accentBg:C.white}} onClick={selectMode?()=>toggleSelect(b.id):undefined}>
+            <div style={{padding:"14px 16px"}}>
+              <div style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}>
+                {selectMode&&(
+                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${isSel?C.accent:C.border}`,background:isSel?C.accent:"none",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
+                    {isSel&&<span style={{color:"#fff",fontSize:13,fontWeight:800}}>✓</span>}
+                  </div>
+                )}
+                <div style={{display:"flex",flexShrink:0}}>
+                  {cats.slice(0,2).map((cat,i)=>(
+                    <div key={cat.id} style={{width:38,height:38,borderRadius:9,overflow:"hidden",flexShrink:0,marginLeft:i>0?-10:0,border:`2px solid ${C.white}`,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>
+                      {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+                    </div>
+                  ))}
+                  {cats.length===0&&<div style={{...S.av(""),width:38,height:38,borderRadius:9,fontSize:17}}>🐱</div>}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700}}>{cust?.nickname||"?"} <span style={{fontWeight:600,color:C.text2}}>({cats.length>0?cats.map(c=>c.name).join(", "):(b.catName||"Cat")})</span></div>
+                  <div style={{fontSize:12,color:C.text2}}>{fmt(b.checkin)} → {fmt(b.checkout)} · {n} night{n>1?"s":""}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>{b.discount>0&&<div style={{fontSize:11,color:C.red}}>-{b.discount}%</div>}</div>
+              </div>
+              {/* Booking notes + Customer notes */}
+              {b.notes&&!selectMode&&(
+                <div style={{background:"#f0f6ff",borderRadius:8,padding:"6px 10px",marginBottom:6,border:"1px solid #0071e320",display:"flex",gap:6,alignItems:"flex-start"}}>
+                  <span style={{fontSize:11,flexShrink:0}}>📋</span>
+                  <NotesText text={b.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
+                </div>
+              )}
+              {cust?.notes&&!selectMode&&(
+                <div style={{background:"#fffbf0",borderRadius:8,padding:"6px 10px",marginBottom:8,border:"1px solid #ffd70040",display:"flex",gap:6,alignItems:"flex-start"}}>
+                  <span style={{fontSize:11,flexShrink:0}}>📝</span>
+                  <NotesText text={cust.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
+                </div>
+              )}
+              <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:selectMode?0:10}}>
+                {isActive&&<span style={S.chip(C.accent)}>🐾 Active</span>}
+                {(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId]).filter(Boolean).map(rid=>{
+                  const rr=ROOMS.find(x=>x.id===rid);
+                  return rid?<span key={rid} style={S.chip(getRoomColor(rid))}>{rid}</span>:null;
+                })}
+                <span style={S.chip(b.paid?C.green:C.orange)}>{b.paid?"✓ Paid Full":"Unpaid"}</span>
+                {!b.paid&&b.depositAmt>0&&<span style={S.chip(C.orange)}>💰 มัดจำ ฿{b.depositAmt.toLocaleString()}</span>}
+                {!b.paid&&b.remaining>0&&<span style={S.chip(C.red)}>คงเหลือ ฿{b.remaining.toLocaleString()}</span>}
+                <span style={S.chip(C.blue)}>{b.payMethod}</span>
+                {(b.selectedCatIds?.length||0)>1&&<span style={S.chip(C.purple)}>{b.selectedCatIds.length} cats</span>}
+                {b.litter&&<span style={S.chip(C.blue)}>🪣 ทราย</span>}
+              </div>
+              {!selectMode&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button style={{...S.btnG,fontSize:12,padding:"7px 12px"}} onClick={()=>setEditBook(b)}>Edit</button>
+                <button style={S.btnD} onClick={()=>{if(window.confirm("Delete this booking?"))onDeleteBooking(b.id);}}>Delete</button>
+                <button style={{padding:"7px 10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>exportICS(b,customers)}>📅 iCal</button>
+                {!b.paid&&<button style={{padding:"7px 12px",background:C.greenBg,color:C.green,border:`1px solid ${C.green}30`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer",marginLeft:"auto"}} onClick={()=>onSaveBooking({...b,paid:true})}>Mark Paid ✓</button>}
+              </div>}
+            </div>
+          </div>);
+        })
+      }
+    </div></div>
+    {(showForm||editBook)&&<BookingSheet booking={editBook} customers={customers} bookings={bookings} onSave={async d=>{await onSaveBooking(d);setShowForm(false);setEditBook(null);}} onClose={()=>{setShowForm(false);setEditBook(null);}}/>}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// DASHBOARD PAGE — Revenue + MoM + YoY
+// ════════════════════════════════════════════════════════════════
+
+// Color palette for multi-year lines
+const YEAR_COLORS=["#ff6b9d","#0071e3","#34c759","#ff9500","#af52de"];
+
+function getMonthRevenue(bookings, year, month){
+  // month: 0-11
+  const s=new Date(year,month,1);
+  const e=new Date(year,month+1,0);
+  const ds=d=>d.toISOString().split("T")[0];
+  return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).reduce((a,b)=>a+(b.net||0),0);
+}
+function getMonthBookings(bookings, year, month){
+  const s=new Date(year,month,1);
+  const e=new Date(year,month+1,0);
+  const ds=d=>d.toISOString().split("T")[0];
+  return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).length;
+}
+function pct(a,b){ if(!b) return null; return Math.round((a-b)/b*100); }
+function PctBadge({val}){
+  if(val===null) return <span style={{fontSize:11,color:"#bbb"}}>—</span>;
+  const up=val>=0;
+  return <span style={{fontSize:11,fontWeight:700,color:up?C.green:C.red,background:up?"#f0fdf4":"#fff5f5",padding:"2px 7px",borderRadius:100,border:`1px solid ${up?C.green+"40":C.red+"40"}`}}>{up?"+":""}{val}%</span>;
+}
+
+function DashboardPage({bookings,customers,onExportBookings}){
+  const [dashTab,setDashTab]=useState("overview"); // overview | mom | yoy
+  const [period,setPeriod]=useState("month");
+  const [offset,setOffset]=useState(0);
+  // MoM: pick a month, show 12 months trend
+  const [momYears,setMomYears]=useState([new Date().getFullYear(),new Date().getFullYear()-1]);
+  const toggleMomYear=yr=>{
+    if(momYears.includes(yr)){ if(momYears.length>1) setMomYears(y=>y.filter(x=>x!==yr)); }
+    else setMomYears(y=>[...y,yr]);
+  };
+  // YoY: pick years (up to 5)
+  const curYear=new Date().getFullYear();
+  const [yoyYears,setYoyYears]=useState([curYear,curYear-1]);
+  const toggleYear=yr=>{
+    if(yoyYears.includes(yr)) { if(yoyYears.length>1) setYoyYears(y=>y.filter(x=>x!==yr)); }
+    else setYoyYears(y=>[...y,yr].sort((a,b)=>b-a));
+  };
+
+  useEffect(()=>setOffset(0),[period]);
+  const ds=d=>d.toISOString().split("T")[0];
+
+  // ── Overview helpers ──
+  const getRange=()=>{
+    const now=new Date();now.setHours(0,0,0,0);
+    if(period==="day"){const d=new Date(now);d.setDate(now.getDate()+offset);return{start:d,end:d,label:`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`};}
+    if(period==="week"){const m=new Date(now);m.setDate(now.getDate()-((now.getDay()+6)%7)+offset*7);const s=new Date(m);s.setDate(m.getDate()+6);return{start:m,end:s,label:`${m.getDate()} ${MONTHS[m.getMonth()]} – ${s.getDate()} ${MONTHS[s.getMonth()]} ${s.getFullYear()}`};}
+    if(period==="month"){const s=new Date(now.getFullYear(),now.getMonth()+offset,1);const e=new Date(now.getFullYear(),now.getMonth()+offset+1,0);return{start:s,end:e,label:`${MONTHS_FULL[s.getMonth()]} ${s.getFullYear()}`};}
+    const y=new Date().getFullYear()+offset;return{start:new Date(y,0,1),end:new Date(y,11,31),label:`${y}`};
+  };
+  const{start,end,label}=getRange();
+  // นับ booking ที่ overlap กับช่วงวัน (checkin ≤ end AND checkout ≥ start)
+  const startStr=ds(start), endStr=ds(end);
+  const inRange=bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
+
+  // Revenue per night for a booking (net / total nights)
+  const netPerNight=b=>{
+    const n=Math.max(1,nights(b.checkin,b.checkout));
+    const fullNet=b.payMethod==="Credit Card"
+      ?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2))
+      :(b.net||0);
+    return parseFloat((fullNet/n).toFixed(2));
+  };
+
+  // For Day: sum net-per-night of all staying bookings
+  // For Week/Month/Year: sum full net of bookings whose checkin falls in range (no double-counting)
+  const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
+  const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
+
+  const revenue=period==="day"
+    ?parseFloat(inRange.reduce((a,b)=>a+netPerNight(b),0).toFixed(2))
+    :parseFloat(revenueBookings.reduce((a,b)=>a+actualNet(b),0).toFixed(2));
+  const ccFeeTotal=parseFloat((period==="day"
+    ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
+        const n=Math.max(1,nights(b.checkin,b.checkout));
+        return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/n;
+      },0)
+    :revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0)
+  ).toFixed(2));
+  const unpaid=parseFloat((period==="day"
+    ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerNight(b),0)
+    :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0)
+  ).toFixed(2));
+  const totalNights=inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
+  const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
+  let bars=[];
+  if(period==="week"){for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);const ds2=ds(d);const v=bookings.filter(b=>b.checkin===ds2).reduce((a,b)=>a+(b.net||0),0);bars.push({label:["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()],val:v});}}
+  else if(period==="month"){let ws=new Date(start);while(ws<=end){const we=new Date(ws);we.setDate(ws.getDate()+6);const ae=we>end?end:we;const v=bookings.filter(b=>b.checkin>=ds(ws)&&b.checkin<=ds(ae)).reduce((a,b)=>a+(b.net||0),0);bars.push({label:`${ws.getDate()}/${ws.getMonth()+1}`,val:v});ws=new Date(we);ws.setDate(we.getDate()+1);}}
+  else if(period==="year"){for(let m=0;m<12;m++){const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);const v=bookings.filter(b=>b.checkin>=ds(ms)&&b.checkin<=ds(me)).reduce((a,b)=>a+(b.net||0),0);bars.push({label:MONTHS[m],val:v});}}
+  else{bars=[{label:"Today",val:revenue}];}
+  const maxBar=Math.max(...bars.map(r=>r.val),1);
+  const pmMap={};revenueBookings.forEach(b=>{pmMap[b.payMethod]=(pmMap[b.payMethod]||0)+(b.net||0);});
+  const pmEntries=Object.entries(pmMap).sort((a,b)=>b[1]-a[1]);
+  const maxPm=Math.max(...pmEntries.map(e=>e[1]),1);
+  const roomStats=ROOMS.map(r=>({room:r,count:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).length,revenue:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).reduce((a,b)=>a+(b.net||0),0)})).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
+
+  // ── MoM: 12 months in a year, with MoM % change ──
+  // momYears data computed inline in render
+
+  // ── YoY: all 12 months, multiple years side by side ──
+  const yoyData=Array.from({length:12},(_,m)=>{
+    const entry={month:MONTHS[m],monthFull:MONTHS_FULL[m]};
+    yoyYears.forEach(yr=>{ entry[yr]=getMonthRevenue(bookings,yr,m); });
+    return entry;
+  });
+  const maxYoy=Math.max(...yoyData.flatMap(d=>yoyYears.map(yr=>d[yr]||0)),1);
+  // Year totals
+  const yearTotals=yoyYears.map(yr=>({yr,total:Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0),bkgs:Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0)}));
+
+  const availYears=Array.from({length:13},(_,i)=>2030-i); // 2030 down to 2018
+
+  return(<div>
+    <div style={S.header}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div><div style={S.htitle}>Dashboard</div><div style={S.hSub}>Revenue analytics</div></div>
+      </div>
+      {/* Main tab: Overview / MoM / YoY */}
+      <div style={{display:"flex",gap:8,marginTop:12}}>
+        {[["overview","📊 Overview"],["mom","📈 MoM"],["yoy","📅 YoY"]].map(([v,l])=>(
+          <button key={v} style={{flex:1,padding:"10px 4px",background:dashTab===v?C.text:C.white,color:dashTab===v?"#fff":C.text2,border:`1px solid ${dashTab===v?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>setDashTab(v)}>{l}</button>
+        ))}
+      </div>
+    </div>
+
+    {/* ══ OVERVIEW TAB ══════════════════════════════════════════ */}
+    {dashTab==="overview"&&(
+      <div style={{padding:"14px 16px 0"}}>
+        <div style={{...S.tabs,marginBottom:12}}>{[["day","Day"],["week","Week"],["month","Month"],["year","Year"]].map(([v,l])=><button key={v} style={S.tab(period===v)} onClick={()=>setPeriod(v)}>{l}</button>)}</div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+          <div style={{display:"flex",gap:8}}>
+            <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14}} onClick={()=>setOffset(o=>o-1)}>‹</button>
+            <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14}} onClick={()=>setOffset(o=>o+1)}>›</button>
+          </div>
+          <div style={{fontSize:14,fontWeight:700}}>{label}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{fmt2(revenue)}</div><div style={S.statLbl}>Revenue (หลังหัก CC)</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{fmt2(unpaid)}</div><div style={S.statLbl}>Unpaid</div></div>
+        </div>
+        {ccFeeTotal>0&&(
+          <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.orange}}>💳 CC Fee หัก ({CREDIT_CARD_FEE_PCT}%)</span>
+            <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotal)}</span>
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
+          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalCats}</div><div style={S.statLbl}>Cats</div></div>
+        </div>
+        {period!=="day"&&bars.length>0&&(<><div style={S.slabel}>Revenue Chart</div>
+          <div style={{...S.cardPad,marginBottom:14}}>{bars.map((r,i)=>{const pct2=r.val/maxBar*100;const inside=pct2>30;return(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <div style={{fontSize:10,fontWeight:600,color:C.text3,width:46,textAlign:"right",flexShrink:0}}>{r.label}</div>
+            <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+              <div style={{height:"100%",borderRadius:6,background:C.accent,width:`${pct2}%`,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8,minWidth:0}}>{inside&&r.val>0&&<span style={{fontSize:10,fontWeight:700,color:"#fff"}}>฿{r.val.toLocaleString()}</span>}</div>
+              {!inside&&r.val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 4px)`,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:C.text2}}>฿{r.val.toLocaleString()}</span>}
+              {r.val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.text3}}>—</span>}
+            </div>
+          </div>);})}
+          </div>
+        </>)}
+        {pmEntries.length>0&&(<><div style={S.slabel}>By Payment</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{pmEntries.map(([pm,v],i,arr)=>(<div key={pm} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{flex:1,fontSize:13,fontWeight:600}}>{pm}</div><div style={{width:70,height:4,background:C.bg,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:C.accent,width:`${v/maxPm*100}%`}}/></div><div style={{fontSize:13,fontWeight:700,minWidth:65,textAlign:"right"}}>฿{v.toLocaleString()}</div></div>))}</div></>)}
+        {roomStats.length>0&&(<><div style={S.slabel}>Top Rooms</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{roomStats.slice(0,8).map(({room,count,revenue:rv},i,arr)=>(<div key={room.id} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{...S.chip(getRoomColor(room.id)),marginRight:4}}>{room.label}</div><div style={{flex:1,fontSize:13,color:C.text2}}>{count} booking{count>1?"s":""}</div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{rv.toLocaleString()}</div></div>))}</div></>)}
+        {inRange.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📊</div>No data for this period</div>}
+      </div>
+    )}
+
+    {/* ══ MoM TAB ═══════════════════════════════════════════════ */}
+    {dashTab==="mom"&&(
+      <div style={{padding:"14px 16px 0"}}>
+
+        {/* Multi-year picker */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>
+            Month-over-Month — เลือกได้ทุกปี 2018–2030
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
+            {availYears.map(yr=>{
+              const sel=momYears.includes(yr);
+              const colIdx=momYears.indexOf(yr);
+              return(
+                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleMomYear(yr)}>
+                  {yr}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11,color:C.text3}}>{momYears.length} ปีที่เลือก — {[...momYears].sort((a,b)=>b-a).join(", ")}</div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setMomYears(availYears)}>เลือกทั้งหมด</button>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setMomYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
+          </div>
+        </div>
+
+        {/* Year summary cards */}
+        <div style={S.slabel}>สรุปรายปี</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(momYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
+          {[...momYears].sort((a,b)=>b-a).map(yr=>{
+            const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
+            const totalPrev=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr-1,m)).reduce((a,b)=>a+b,0);
+            const bkgsTotal=Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0);
+            const colIdx=momYears.indexOf(yr);
+            return(
+              <div key={yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[colIdx]}`}}>
+                <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[colIdx],marginBottom:4}}>{yr}</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{total.toLocaleString()}</div>
+                <div style={{fontSize:11,color:C.text3,marginBottom:5}}>{bkgsTotal} bookings</div>
+                <PctBadge val={pct(total,totalPrev)}/>
+                <span style={{fontSize:10,color:C.text3,marginLeft:4}}>vs {yr-1}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Monthly grouped bar chart */}
+        <div style={S.slabel}>
+          รายได้รายเดือน — {[...momYears].sort((a,b)=>b-a).join(" vs ")}
+        </div>
+        <div style={{...S.cardPad,marginBottom:14}}>
+          {/* Legend */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+            {[...momYears].sort((a,b)=>b-a).map(yr=>(
+              <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
+                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}/>
+                {yr}
+              </div>
+            ))}
+          </div>
+          {/* Bars per month */}
+          {Array.from({length:12},(_,mi)=>{
+            const isCurrentMonth=new Date().getMonth()===mi;
+            const sortedYrs=[...momYears].sort((a,b)=>b-a);
+            const maxVal=Math.max(...sortedYrs.map(yr=>getMonthRevenue(bookings,yr,mi)),1);
+            return(
+              <div key={mi} style={{marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:isCurrentMonth?800:600,color:isCurrentMonth?C.accent:C.text2,marginBottom:4}}>
+                  {MONTHS_FULL[mi]}{isCurrentMonth?" ◀":""}
+                </div>
+                {sortedYrs.map((yr,yi)=>{
+                  const val=getMonthRevenue(bookings,yr,mi);
+                  const bk=getMonthBookings(bookings,yr,mi);
+                  const globalMax=Math.max(...Array.from({length:12},(_,m2)=>Math.max(...sortedYrs.map(y=>getMonthRevenue(bookings,y,m2)))),1);
+                  const pct2=val/globalMax*100;
+                  const inside=pct2>32;
+                  const color=YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length];
+                  // MoM: compare same month, this year vs prev year in selection
+                  const prevYrInSel=sortedYrs[yi+1];
+                  const prevVal=prevYrInSel!==undefined?getMonthRevenue(bookings,prevYrInSel,mi):null;
+                  return(
+                    <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <div style={{fontSize:10,fontWeight:700,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
+                      <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${pct2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                          {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
+                        </div>
+                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                        {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
+                      </div>
+                      <div style={{width:20,flexShrink:0,textAlign:"center",fontSize:10,color:C.text3}}>{bk>0?bk:""}</div>
+                      <div style={{width:50,flexShrink:0,textAlign:"right"}}>
+                        {prevVal!==null&&<PctBadge val={pct(val,prevVal)}/>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* MoM Detail Table — months as rows, years as columns */}
+        <div style={S.slabel}>ตารางเปรียบเทียบ MoM</div>
+        <div style={{overflowX:"auto",marginBottom:24}}>
+          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+momYears.length*110)}}>
+            {/* Header */}
+            <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
+              <div style={{width:44,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
+              {[...momYears].sort((a,b)=>b-a).map((yr,i)=>(
+                <div key={yr} style={{flex:1,textAlign:"right",fontSize:10,fontWeight:800,color:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}>
+                  {yr}
+                  {i>0&&<div style={{fontSize:9,fontWeight:500,color:C.text3}}>vs {[...momYears].sort((a,b)=>b-a)[i-1]}</div>}
+                </div>
+              ))}
+            </div>
+            {/* Rows */}
+            {Array.from({length:12},(_,mi)=>{
+              const isCurrentMonth=new Date().getMonth()===mi;
+              const sortedYrs=[...momYears].sort((a,b)=>b-a);
+              return(
+                <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
+                  <div style={{width:44,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>
+                    {MONTHS[mi]}{isCurrentMonth&&" ◀"}
+                  </div>
+                  {sortedYrs.map((yr,i)=>{
+                    const val=getMonthRevenue(bookings,yr,mi);
+                    const prevYr=sortedYrs[i+1];
+                    const prevVal=prevYr!==undefined?getMonthRevenue(bookings,prevYr,mi):null;
+                    return(
+                      <div key={yr} style={{flex:1,textAlign:"right"}}>
+                        <div style={{fontSize:12,fontWeight:700,color:val>0?YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]:C.text3}}>
+                          {val>0?`฿${val.toLocaleString()}`:"—"}
+                        </div>
+                        {prevVal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(val,prevVal)}/></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            {/* Total row */}
+            <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{width:44,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
+              {[...momYears].sort((a,b)=>b-a).map((yr,i)=>{
+                const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
+                const sortedYrs=[...momYears].sort((a,b)=>b-a);
+                const prevYr=sortedYrs[i+1];
+                const prevTotal=prevYr!==undefined?Array.from({length:12},(_,m)=>getMonthRevenue(bookings,prevYr,m)).reduce((a,b)=>a+b,0):null;
+                return(
+                  <div key={yr} style={{flex:1,textAlign:"right"}}>
+                    <div style={{fontSize:12,fontWeight:800,color:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}>฿{total.toLocaleString()}</div>
+                    {prevTotal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(total,prevTotal)}/></div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ══ YoY TAB ═══════════════════════════════════════════════ */}
+    {dashTab==="yoy"&&(
+      <div style={{padding:"14px 16px 0"}}>
+        {/* Year picker */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>Year-over-Year — เลือกได้ทุกปี 2018–2030</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {availYears.map((yr,i)=>{
+              const sel=yoyYears.includes(yr);
+              const colorIdx=yoyYears.indexOf(yr);
+              return(
+                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleYear(yr)}>
+                  {yr}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11,color:C.text3,marginTop:6}}>{yoyYears.length} ปีที่เลือก — {yoyYears.sort((a,b)=>b-a).join(", ")}</div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([...availYears])}>เลือกทั้งหมด</button>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
+          </div>
+        </div>
+
+        {/* Year total summary cards */}
+        <div style={S.slabel}>สรุปรายปี</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(yoyYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
+          {yearTotals.sort((a,b)=>b.yr-a.yr).map((yt,i)=>{
+            const prevYr=yearTotals.find(x=>x.yr===yt.yr-1);
+            return(
+              <div key={yt.yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[yoyYears.indexOf(yt.yr)%YEAR_COLORS.length]||C.accent}`}}>
+                <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yt.yr)%YEAR_COLORS.length]||C.accent,marginBottom:4}}>{yt.yr}</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{yt.total.toLocaleString()}</div>
+                <div style={{fontSize:11,color:C.text3,marginBottom:4}}>{yt.bkgs} bookings</div>
+                {prevYr&&<PctBadge val={pct(yt.total,prevYr.total)}/>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* YoY bar chart — grouped by month */}
+        <div style={S.slabel}>รายได้รายเดือน เปรียบเทียบ {yoyYears.sort((a,b)=>b-a).join(" vs ")}</div>
+        <div style={{...S.cardPad,marginBottom:14}}>
+          {/* Legend */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+            {yoyYears.sort((a,b)=>b-a).map((yr,i)=>(
+              <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
+                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]}}/>
+                {yr}
+              </div>
+            ))}
+          </div>
+          {yoyData.map((d,mi)=>(
+            <div key={mi} style={{marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:4}}>{d.monthFull}</div>
+              {yoyYears.sort((a,b)=>b-a).map((yr,yi)=>{
+                const val=d[yr]||0;
+                const pct2=val/maxYoy*100;
+                const inside=pct2>30;
+                const colIdx=yoyYears.indexOf(yr);
+                const color=YEAR_COLORS[colIdx]||C.accent;
+                const prevYrVal=yoyYears.includes(yr-1)?d[yr-1]||0:null;
+                return(
+                  <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <div style={{fontSize:10,fontWeight:600,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
+                    <div style={{flex:1,height:22,background:C.bg,borderRadius:5,overflow:"hidden",position:"relative"}}>
+                      <div style={{height:"100%",borderRadius:5,background:color,width:`${pct2}%`,opacity:0.85,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                        {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
+                      </div>
+                      {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                      {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
+                    </div>
+                    {prevYrVal!==null&&<div style={{width:44,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(val,prevYrVal)}/></div>}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* YoY table — month by month comparison */}
+        <div style={S.slabel}>ตารางเปรียบเทียบ YoY</div>
+        <div style={{overflowX:"auto",marginBottom:14}}>
+          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,180+yoyYears.length*100)}}>
+            {/* Header */}
+            <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
+              <div style={{width:52,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
+              {yoyYears.sort((a,b)=>b-a).map(yr=>(
+                <div key={yr} style={{flex:1,fontSize:10,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent,textAlign:"right"}}>{yr}</div>
+              ))}
+              {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3,textAlign:"right"}}>YoY %</div>}
+            </div>
+            {yoyData.map((d,mi)=>{
+              const sortedYrs=yoyYears.sort((a,b)=>b-a);
+              const latestYr=sortedYrs[0];
+              const prevYr=sortedYrs[1];
+              const yoyChange=prevYr?pct(d[latestYr]||0,d[prevYr]||0):null;
+              const isCurrentMonth=new Date().getMonth()===mi;
+              return(
+                <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
+                  <div style={{width:52,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>{d.month}</div>
+                  {sortedYrs.map(yr=>(
+                    <div key={yr} style={{flex:1,fontSize:12,fontWeight:700,textAlign:"right",color:(d[yr]||0)>0?C.text:C.text3}}>
+                      {(d[yr]||0)>0?`฿${(d[yr]).toLocaleString()}`:"—"}
+                    </div>
+                  ))}
+                  {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={yoyChange}/></div>}
+                </div>
+              );
+            })}
+            {/* Year total row */}
+            <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{width:52,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
+              {yoyYears.sort((a,b)=>b-a).map(yr=>(
+                <div key={yr} style={{flex:1,fontSize:12,fontWeight:800,textAlign:"right",color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent}}>
+                  ฿{yearTotals.find(y=>y.yr===yr)?.total.toLocaleString()||"0"}
+                </div>
+              ))}
+              {yoyYears.length>=2&&(()=>{
+                const s=yoyYears.sort((a,b)=>b-a);
+                const t0=yearTotals.find(y=>y.yr===s[0])?.total||0;
+                const t1=yearTotals.find(y=>y.yr===s[1])?.total||0;
+                return <div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(t0,t1)}/></div>;
+              })()}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
+// SETTINGS PAGE
+// ════════════════════════════════════════════════════════════════
+function importCombinedCSV(rows, existingCustomers, existingBookings){
+  const newCustomers=[];
+  const newBookings=[];
+  const errors=[];
+  const custMap={};
+  existingCustomers.forEach(c=>{ custMap[c.nickname.toLowerCase()]=c; });
+
+  rows.forEach((r,i)=>{
+    const rowNum=i+2;
+    // ── Customer fields (flexible column names) ──
+    const name=(r["customer nickname"]||r["nickname"]||r["name"]||r["ชื่อ"]||r["ชื่อเล่น"]||r["owner"]||"").trim();
+    const fullname=(r["full name"]||r["fullname"]||r["ชื่อเต็ม"]||"").trim();
+    const phone=(r["phone"]||r["tel"]||r["mobile"]||r["เบอร์โทร"]||"").trim();
+    const lineId=(r["line id"]||r["line"]||r["line_id"]||"").trim();
+    const address=(r["address"]||r["ที่อยู่"]||"").trim();
+    const custNotes=(r["customer notes"]||r["owner notes"]||"").trim();
+    // ── Cat fields ──
+    const cat1Name=(r["cat1 name"]||r["cat name"]||r["cat"]||r["ชื่อแมว"]||"").trim();
+    const cat1Breed=(r["cat1 breed"]||r["breed"]||r["สายพันธุ์"]||"").trim();
+    const cat2Name=(r["cat2 name"]||r["cat 2"]||"").trim();
+    const cat2Breed=(r["cat2 breed"]||"").trim();
+    const cat3Name=(r["cat3 name"]||r["cat 3"]||"").trim();
+    const cat3Breed=(r["cat3 breed"]||"").trim();
+    // ── Booking fields ──
+    const checkin=(r["check-in"]||r["checkin"]||r["check in"]||r["วันเข้า"]||"").trim();
+    const checkout=(r["check-out"]||r["checkout"]||r["check out"]||r["วันออก"]||"").trim();
+    const roomId=(r["room id"]||r["room"]||r["ห้อง"]||r["roomid"]||"").trim().toUpperCase();
+    const roomIdsStr=(r["room ids"]||r["room ids (multi)"]||"").trim();
+    const size=(r["room size"]||r["size"]||r["type"]||"S").trim().toUpperCase()||"S";
+    const discount=parseFloat(r["discount %"]||r["discount"]||r["ส่วนลด"]||"0")||0;
+    const deposit=parseFloat(r["deposit"]||r["มัดจำ"]||"0")||0;
+    const payMethod=(r["payment method"]||r["payment"]||r["การชำระ"]||"Transfer").trim()||"Transfer";
+    const paid=(r["fully paid"]||r["paid"]||r["ชำระแล้ว"]||"").toLowerCase()==="yes";
+    const litter=(r["cat litter"]||r["litter"]||r["ทราย"]||"").toLowerCase()==="yes";
+    const petTaxi=parseFloat(r["pet taxi"]||"0")||0;
+    const notes=(r["booking notes"]||r["notes"]||r["หมายเหตุ"]||"").trim();
+
+    if(!name){ errors.push(`Row ${rowNum}: ไม่มีชื่อลูกค้า`); return; }
+
+    // ── Create or find customer ──
+    const nameKey=name.toLowerCase();
+    if(!custMap[nameKey]){
+      const cats=[];
+      if(cat1Name) cats.push({id:uid(),name:cat1Name,breed:cat1Breed,notes:"",photo:"",vaccinePassport:""});
+      if(cat2Name) cats.push({id:uid(),name:cat2Name,breed:cat2Breed,notes:"",photo:"",vaccinePassport:""});
+      if(cat3Name) cats.push({id:uid(),name:cat3Name,breed:cat3Breed,notes:"",photo:"",vaccinePassport:""});
       const newCust={
-        id:uid(),nickname:name,phone,line:lineId,address,notes:ownerNotes,idCard:"",
-        cats:cats.length>0?cats:[{id:uid(),name:catName||"",breed:catBreed,notes:"",photo:"",vaccinePassport:""}],
+        id:uid(),nickname:name,fullname,phone,line:lineId,address,notes:custNotes,idCard:"",
+        cats:cats.length>0?cats:[{id:uid(),name:cat1Name||"",breed:cat1Breed,notes:"",photo:"",vaccinePassport:""}],
         createdAt:new Date().toISOString(),
       };
       newCustomers.push(newCust);
@@ -1770,38 +2856,35 @@ function importCustomersFromCSV(rows, existingCustomers){
 
     // ── Create booking if dates present ──
     if(checkin&&checkout){
-      // Validate date format YYYY-MM-DD
       if(!/^\d{4}-\d{2}-\d{2}$/.test(checkin)||!/^\d{4}-\d{2}-\d{2}$/.test(checkout)){
-        errors.push(`Row ${rowNum}: วันที่ format ผิด (ต้องเป็น YYYY-MM-DD) → "${checkin}" / "${checkout}"`);
-        return;
+        errors.push(`Row ${rowNum}: วันที่ format ผิด (YYYY-MM-DD) → "${checkin}" / "${checkout}"`); return;
       }
       const cust=custMap[nameKey];
       const cats=cust.cats||[];
       const selectedCatIds=cats.filter(c=>c.name).map(c=>c.id);
       const numCats=Math.max(selectedCatIds.length,1);
-      const roomSize=roomId?(ROOMS.find(r=>r.id===roomId)?.type||size):size;
+      // Parse multi-room IDs if provided
+      const roomIds=roomIdsStr?roomIdsStr.split("|").map(x=>x.trim().toUpperCase()).filter(x=>ROOMS.find(rm=>rm.id===x))
+        :roomId&&ROOMS.find(rm=>rm.id===roomId)?[roomId]:[];
+      const roomSize=roomIds.length>0?(ROOMS.find(rm=>rm.id===roomIds[0])?.type||size):size;
       const n=nights(checkin,checkout);
       const {base,discAmt,net,litterAmt,litterWeeks}=n>0?calcPrice(n,roomSize,numCats,discount,litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
-      const remaining=Math.max(0,net-deposit);
-
-      // Check duplicate booking
+      const remaining=parseFloat(Math.max(0,net-deposit).toFixed(2));
       const dupBook=existingBookings.find(b=>b.customerId===cust.id&&b.checkin===checkin&&b.checkout===checkout);
       if(dupBook){ errors.push(`Row ${rowNum}: booking ซ้ำ (${name} ${checkin})`); return; }
-
       newBookings.push({
         id:uid(),customerId:cust.id,
-        roomId:roomId||"",roomIds:roomId?[roomId]:[],
+        roomId:roomIds[0]||"",roomIds,
         size:roomSize,checkin,checkout,
         selectedCatIds,numCats,
-        discount,base,discAmt,net,
-        litter,litterAmt,litterWeeks,
+        discount:String(discount),base,discAmt,net,
+        litter,litterAmt,litterWeeks,petTaxiAmt:petTaxi,
         depositAmt:deposit,remaining,paid,
         payMethod,notes,
         createdAt:new Date().toISOString(),
       });
     }
   });
-
   return{newCustomers,newBookings,errors,totalRows:rows.length};
 }
 
@@ -1979,23 +3062,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           คอลัมน์: Name, Phone, Cat Name, Breed, Room, Check-in, Check-out, Size, Discount%, Deposit, Payment, Paid
         </div>
         <button style={{...S.btnP,width:"100%"}} onClick={()=>{
-          const h=[
-  "Name","Phone","Line ID",
-  "Cat1 Name","Cat1 Breed",
-  "Cat2 Name","Cat2 Breed",
-  "Cat3 Name","Cat3 Breed",
-  "Cat4 Name","Cat4 Breed",
-  "Room",
-  "Check-in (YYYY-MM-DD)",
-  "Check-out (YYYY-MM-DD)",
-  "Size (S/M)",
-  "Discount %",
-  "Deposit",
-  "Payment Method",
-  "Paid (Yes/No)",
-  "Cat Litter (Yes/No)",
-  "Notes"
-];
+          const h=["Name","Phone","Line ID","Cat Name","Breed","Cat2 Name","Cat2 Breed","Room","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];
           const ex=[
             ["K.Nong","0812345678","@nong","Mochi","Scottish Fold","Luna","Persian","A-S2","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""],
             ["K.Nong","0812345678","@nong","Mochi","Scottish Fold","Luna","Persian","A-S2","2026-05-10","2026-05-15","S","10","0","Transfer","Yes","No",""],
@@ -2007,23 +3074,10 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           ⬇ Download Combined Template
         </button>
         <div style={{marginTop:10,display:"flex",gap:8}}>
-          <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{const h=[
-  "Name","Phone","Line ID",
-  "Cat1 Name","Cat1 Breed",
-  "Cat2 Name","Cat2 Breed",
-  "Cat3 Name","Cat3 Breed",
-  "Cat4 Name","Cat4 Breed",
-  "Room",
-  "Check-in (YYYY-MM-DD)",
-  "Check-out (YYYY-MM-DD)",
-  "Size (S/M)",
-  "Discount %",
-  "Deposit",
-  "Payment Method",
-  "Paid (Yes/No)",
-  "Cat Litter (Yes/No)",
-  "Notes"
-];const ex=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""]];dlCSV([h,...ex],"template-bookings.csv");}}>
+          <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{const h=["Name","Phone","Line ID","Address","Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed"];const ex=[["K.Nong","0812345678","@nong","Bangkok","","Mochi","Scottish Fold","Luna","Persian","",""]];dlCSV([h,...ex],"template-customers.csv");}}>
+            ⬇ Customers only
+          </button>
+          <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{const h=["Customer Nickname","Cat Names","Room ID","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];const ex=[["K.Nong","Mochi","A-S1","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""]];dlCSV([h,...ex],"template-bookings.csv");}}>
             ⬇ Bookings only
           </button>
         </div>
@@ -2033,12 +3087,19 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>📤 Export Data</div>
       <div style={{...S.card,overflow:"hidden",marginBottom:16}}>
         <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div><div style={{fontSize:13,fontWeight:700}}>Export Bookings</div><div style={{fontSize:11,color:C.text3}}>{bookings.length} bookings</div></div>
-          <button style={{...S.btnG,fontSize:12}} onClick={()=>exportBookingsCSV(bookings,customers)}>⬇ CSV</button>
+          <div>
+            <div style={{fontSize:13,fontWeight:700}}>Export All (Bookings + Customers)</div>
+            <div style={{fontSize:11,color:C.text3}}>ข้อมูลครบทุกอย่าง — นำเข้ากลับได้</div>
+          </div>
+          <button style={{...S.btnP,fontSize:12,padding:"8px 14px"}} onClick={()=>{exportAllCSV(customers,bookings);setToast("✅ Exported all data!");}}>⬇ CSV</button>
+        </div>
+        <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div><div style={{fontSize:13,fontWeight:700}}>Export Bookings</div><div style={{fontSize:11,color:C.text3}}>{bookings.length} bookings · รายละเอียดการจองและราคา</div></div>
+          <button style={{...S.btnG,fontSize:12}} onClick={()=>{exportBookingsCSV(bookings,customers);setToast("✅ Bookings exported!");}}>⬇ CSV</button>
         </div>
         <div style={{padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div><div style={{fontSize:13,fontWeight:700}}>Export Customers</div><div style={{fontSize:11,color:C.text3}}>{customers.length} customers</div></div>
-          <button style={{...S.btnG,fontSize:12}} onClick={()=>exportCustomersCSV(customers,bookings)}>⬇ CSV</button>
+          <div><div style={{fontSize:13,fontWeight:700}}>Export Customers</div><div style={{fontSize:11,color:C.text3}}>{customers.length} customers · ข้อมูลลูกค้าและแมว</div></div>
+          <button style={{...S.btnG,fontSize:12}} onClick={()=>{exportCustomersCSV(customers,bookings);setToast("✅ Customers exported!");}}>⬇ CSV</button>
         </div>
       </div>
 
@@ -2046,7 +3107,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 25 Mar 2026 · 14:00</div>
+        <div style={{fontSize:12,color:C.text3}}>v 26 Mar 2026 · 13:00</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
