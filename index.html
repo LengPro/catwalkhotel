@@ -305,7 +305,47 @@ function exportAllCSV(customers,bookings){
 
 // ── ICS / Calendar ────────────────────────────────────────────────────
 const toICS=d=>d.replace(/-/g,"");
-function exportICS(b,customers){ const c=customers.find(x=>x.id===b.customerId)||{}; const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id)); const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat"; const n=nights(b.checkin,b.checkout); const desc=`Owner: ${c.nickname||""}\\nRoom: ${b.roomId||b.size}\\nCats: ${names}\\n${n} nights · ฿${(b.net||0).toLocaleString()}\\nPayment: ${b.payMethod}${b.paid?" ✓":" (unpaid)"}`; const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z"; const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Cat Hotel//EN","METHOD:PUBLISH","BEGIN:VEVENT",`UID:ci-${b.id}@cathotel`,`DTSTAMP:${ts}`,`DTSTART;VALUE=DATE:${toICS(b.checkin)}`,`DTEND;VALUE=DATE:${toICS(b.checkin)}`,`SUMMARY:🐱 ${names} – Check-in (${b.roomId||b.size})`,`DESCRIPTION:${desc}`,"END:VEVENT","BEGIN:VEVENT",`UID:co-${b.id}@cathotel`,`DTSTAMP:${ts}`,`DTSTART;VALUE=DATE:${toICS(b.checkout)}`,`DTEND;VALUE=DATE:${toICS(b.checkout)}`,`SUMMARY:🐱 ${names} – Check-out (${b.roomId||b.size})`,`DESCRIPTION:${desc}`,"END:VEVENT","END:VCALENDAR"].join("\r\n"); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"})); a.download=`booking-${names.replace(/\s+/g,"-")}-${b.checkin}.ics`; a.click(); }
+function exportICS(b,customers){
+  const c=customers.find(x=>x.id===b.customerId)||{};
+  const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id));
+  const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat";
+  const n=nights(b.checkin,b.checkout);
+  const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
+  const checkoutPlusOne=addDays(b.checkout,1);
+  const descParts=[
+    `👤 เจ้าของ: ${c.nickname||""}`,
+    c.phone?`📞 ${c.phone}`:"",
+    `🐱 แมว: ${names}`,
+    `🏠 ห้อง: ${rooms}`,
+    `📅 ${b.checkin} → ${b.checkout} · ${n} คืน`,
+    `💰 ฿${fmt2(b.net||0)} · ${b.payMethod}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
+    b.depositAmt>0?`💳 มัดจำ: ฿${fmt2(b.depositAmt)}`:"",
+    b.litter?`🪣 ทรายแมว: ฿${fmt2(b.litterAmt||0)}`:"",
+    b.petTaxiAmt>0?`🚕 Pet Taxi: ฿${fmt2(b.petTaxiAmt)}`:"",
+    b.discount>0?`🏷 ส่วนลด: ${b.discount}%`:"",
+    b.notes?`📝 ${b.notes}`:"",
+  ].filter(Boolean);
+  const desc=descParts.join("\n");
+  const summary=`🐱 ${names} — ${rooms} (${n}คืน)`;
+  const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
+  const ics=[
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Catwalk Hotel//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:stay-${b.id}@catwalkhotel`,
+    `DTSTAMP:${ts}`,
+    `DTSTART;VALUE=DATE:${toICS(b.checkin)}`,
+    `DTEND;VALUE=DATE:${toICS(checkoutPlusOne)}`,
+    `SUMMARY:${summary}`,
+    `DESCRIPTION:${desc}`,
+    `LOCATION:Catwalk Hotel — ${rooms}`,
+    "END:VEVENT",
+    "END:VCALENDAR"
+  ].join("\r\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar;charset=utf-8"}));
+  a.download=`catwalk-${names.replace(/[\s,]+/g,"-")}-${b.checkin}.ics`;
+  a.click();
+}
 function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||{}; const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id)); const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat"; const n=nights(b.checkin,b.checkout); const title=encodeURIComponent(`🐱 ${names} – ${b.roomId||b.size} Cat Hotel`); const details=encodeURIComponent(`Owner: ${c.nickname||""}\nRoom: ${b.roomId||b.size}\nCats: ${names}\n${n} nights · ฿${(b.net||0).toLocaleString()}\nPayment: ${b.payMethod}${b.paid?" ✓":" (pending)"}`); window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${toICS(b.checkin)}/${toICS(b.checkout)}&details=${details}`,"_blank"); }
 
 // ── Design ────────────────────────────────────────────────────────────
@@ -467,60 +507,40 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   // Export ALL bookings as one ICS file
   function exportAllBookingsICS(){
     if(!bookings.length){ setToast("No bookings to export"); return; }
-    const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Cat Hotel Rooms//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+    const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Catwalk Hotel//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
     const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
     bookings.forEach(b=>{
       const cust=customers.find(c=>c.id===b.customerId)||{};
       const cats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
       const catNames=cats.map(c=>c.name).join(", ")||b.catName||"Cat";
       const n=nights(b.checkin,b.checkout);
-      const room=ROOMS.find(r=>r.id===b.roomId);
-      const desc=[
-        `Owner: ${cust.nickname||""}`,
-        `Phone: ${cust.phone||""}`,
-        `Cats: ${catNames}`,
-        `Room: ${b.roomId||b.size} (Zone ${room?.zone||"?"})`,
-        `${n} nights · ฿${(b.net||0).toLocaleString()}`,
-        b.litter?`Cat Litter: ฿${b.litterAmt||0}`:"",
-        `Payment: ${b.payMethod}${b.paid?" ✓":" (unpaid)"}`,
-        b.notes?`Notes: ${b.notes}`:"",
-      ].filter(Boolean).join("\\n");
-      const summary=`🐱 ${catNames} — ${b.roomId||b.size} Cat Hotel`;
-      // Check-in event
-      lines.push(
-        "BEGIN:VEVENT",
-        `UID:checkin-${b.id}@cathotel`,
-        `DTSTAMP:${ts}`,
-        `DTSTART;VALUE=DATE:${toICS(b.checkin)}`,
-        `DTEND;VALUE=DATE:${toICS(b.checkin)}`,
-        `SUMMARY:📥 Check-in: ${summary}`,
-        `DESCRIPTION:${desc}`,
-        `LOCATION:${b.roomId||b.size} — Cat Hotel`,
-        "END:VEVENT"
-      );
-      // Check-out event
-      lines.push(
-        "BEGIN:VEVENT",
-        `UID:checkout-${b.id}@cathotel`,
-        `DTSTAMP:${ts}`,
-        `DTSTART;VALUE=DATE:${toICS(b.checkout)}`,
-        `DTEND;VALUE=DATE:${toICS(b.checkout)}`,
-        `SUMMARY:📤 Check-out: ${summary}`,
-        `DESCRIPTION:${desc}`,
-        `LOCATION:${b.roomId||b.size} — Cat Hotel`,
-        "END:VEVENT"
-      );
-      // Full stay block event
+      const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
       const checkoutPlusOne=addDays(b.checkout,1);
+      const descParts=[
+        `👤 เจ้าของ: ${cust.nickname||""}`,
+        cust.phone?`📞 ${cust.phone}`:"",
+        `🐱 แมว: ${catNames}`,
+        `🏠 ห้อง: ${rooms}`,
+        `📅 ${b.checkin} → ${b.checkout} · ${n} คืน`,
+        `💰 ฿${fmt2(b.net||0)} · ${b.payMethod}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
+        b.depositAmt>0?`💳 มัดจำ: ฿${fmt2(b.depositAmt)}`:"",
+        b.litter?`🪣 ทรายแมว: ฿${fmt2(b.litterAmt||0)}`:"",
+        b.petTaxiAmt>0?`🚕 Pet Taxi: ฿${fmt2(b.petTaxiAmt)}`:"",
+        b.discount>0?`🏷 ส่วนลด: ${b.discount}%`:"",
+        b.notes?`📝 ${b.notes}`:"",
+      ].filter(Boolean);
+      const desc=descParts.join("\\n");
+      const summary=`🐱 ${catNames} — ${rooms} (${n}คืน)`;
+      // Single all-day event covering full stay
       lines.push(
         "BEGIN:VEVENT",
-        `UID:stay-${b.id}@cathotel`,
+        `UID:stay-${b.id}@catwalkhotel`,
         `DTSTAMP:${ts}`,
         `DTSTART;VALUE=DATE:${toICS(b.checkin)}`,
         `DTEND;VALUE=DATE:${toICS(checkoutPlusOne)}`,
-        `SUMMARY:🏠 ${summary}`,
+        `SUMMARY:${summary}`,
         `DESCRIPTION:${desc}`,
-        `LOCATION:${b.roomId||b.size} — Cat Hotel`,
+        `LOCATION:Catwalk Hotel — ${rooms}`,
         "END:VEVENT"
       );
     });
@@ -891,6 +911,9 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                   <span style={S.chip(b.paid?C.green:C.orange)}>{b.paid?"✓ Paid":"Unpaid"}</span>
                   <span style={S.chip(C.blue)}>{b.payMethod}</span>
                   {b.discount>0&&<span style={S.chip(C.red)}>-{b.discount}%</span>}
+                  {b.size==="H"&&<span style={S.chip("#7b1fa2")}>@Home</span>}
+                  {b.litter&&<span style={S.chip(C.blue)}>🪣 ทราย</span>}
+                  {b.petTaxiAmt>0&&<span style={S.chip("#7b1fa2")}>🚕 ฿{fmt2(b.petTaxiAmt)}</span>}
                 </div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   <button style={{...S.btnP,flex:1,fontSize:13}} onClick={()=>{setEditBooking(b);setDetailBooking(null);}}>✏️ Edit</button>
@@ -3107,7 +3130,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 26 Mar 2026 · 13:00</div>
+        <div style={{fontSize:12,color:C.text3}}>v 26 Mar 2026 · 10:06 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
@@ -3118,7 +3141,14 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
 // MAIN APP
 // ════════════════════════════════════════════════════════════════
 function App(){
-  const [page,setPage]=useState("rooms");
+  const getHashPage=()=>{const h=window.location.hash.replace("#","");return["rooms","bookings","customers","dashboard","settings"].includes(h)?h:"rooms";};
+  const [page,setPage]=useState(getHashPage);
+  const navTo=p=>{setPage(p);window.location.hash=p;};
+  useEffect(()=>{
+    const onHash=()=>setPage(getHashPage());
+    window.addEventListener("hashchange",onHash);
+    return()=>window.removeEventListener("hashchange",onHash);
+  },[]);
   const [customers,setCustomers]=useState([]);
   const [bookings,setBookings]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -3267,7 +3297,7 @@ function App(){
         {id:"dashboard",icon:"📊", label:"Dashboard",badge:0},
         {id:"settings", icon:"⚙️", label:"Settings", badge:0},
       ].map(n=>(
-        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>setPage(n.id)}>
+        <button key={n.id} style={S.navBtn(page===n.id)} onClick={()=>navTo(n.id)}>
           {page===n.id&&<div style={{position:"absolute",bottom:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"4px 4px 0 0"}}/>}
           <div style={{position:"relative",lineHeight:1}}>
             <span style={{fontSize:24}}>{n.icon}</span>
