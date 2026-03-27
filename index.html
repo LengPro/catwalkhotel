@@ -1050,7 +1050,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 {/* Booking notes */}
                 {b.notes&&(
                   <div style={{background:"#f0f6ff",borderRadius:10,padding:"8px 12px",marginBottom:8,border:"1px solid #0071e320"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.blue,marginBottom:2}}>📋 Booking Note</div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.blue,marginBottom:2}}>📋 Booking Notes</div>
                     <NotesText text={b.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
                   </div>
                 )}
@@ -1647,7 +1647,18 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         </div>
         {/* Paid */}
         <div style={S.fg}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={form.paid} onChange={e=>set("paid",e.target.checked)} style={{width:18,height:18,accentColor:C.green}}/><span style={{fontSize:14,fontWeight:600}}>ชำระเงินครบแล้ว (Fully Paid)</span></label></div>
-        <div style={S.fg}><div style={S.lbl}>Notes</div><textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Special requests..."/></div>
+        {/* Customer Notes — read-only, pulled from customer profile */}
+        {cust?.notes&&(
+          <div style={{...S.fg,padding:"12px 14px",background:"#fffbf0",borderRadius:12,border:"1px solid #ffd70040",marginBottom:6}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:4}}>📝 Customer Notes (จากข้อมูลลูกค้า)</div>
+            <div style={{fontSize:13,color:C.text2,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{cust.notes}</div>
+          </div>
+        )}
+        {/* Booking Notes */}
+        <div style={S.fg}>
+          <div style={S.lbl}>Booking Notes</div>
+          <textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Special requests, หมายเหตุเพิ่มเติมสำหรับการจองนี้..."/>
+        </div>
         {/* Price breakdown */}
         {n>0&&numCats>0&&selectedRooms.length>0&&(
           <div style={{background:C.bg,borderRadius:12,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.border}`}}>
@@ -3213,7 +3224,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 12:48 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 13:05 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
