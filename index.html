@@ -2576,7 +2576,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
     ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerNight(b),0)
     :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0)
   ).toFixed(2));
-  const totalNights=inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
+  const totalNights=period==="day"?inRange.length:inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
   const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
   let bars=[];
   if(period==="week"){for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);const ds2=ds(d);const v=bookings.filter(b=>b.checkin===ds2).reduce((a,b)=>a+actualNet(b),0);bars.push({label:["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()],val:v});}}
@@ -2584,7 +2584,9 @@ function DashboardPage({bookings,customers,onExportBookings}){
   else if(period==="year"){for(let m=0;m<12;m++){const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);const v=bookings.filter(b=>b.checkin>=ds(ms)&&b.checkin<=ds(me)).reduce((a,b)=>a+actualNet(b),0);bars.push({label:MONTHS[m],val:v});}}
   else{bars=[{label:"Today",val:revenue}];}
   const maxBar=Math.max(...bars.map(r=>r.val),1);
-  const pmMap={};revenueBookings.forEach(b=>{pmMap[b.payMethod]=(pmMap[b.payMethod]||0)+actualNet(b);});
+  // pmMap: Day = staying bookings, Week/Month/Year = checkin in range
+  const pmSource=period==="day"?inRange:revenueBookings;
+  const pmMap={};pmSource.forEach(b=>{pmMap[b.payMethod]=(pmMap[b.payMethod]||0)+actualNet(b);});
   const pmEntries=Object.entries(pmMap).sort((a,b)=>b[1]-a[1]);
   const maxPm=Math.max(...pmEntries.map(e=>e[1]),1);
   const roomStats=ROOMS.map(r=>({room:r,count:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).length,revenue:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).reduce((a,b)=>a+actualNet(b),0)})).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
@@ -2661,13 +2663,15 @@ function DashboardPage({bookings,customers,onExportBookings}){
           <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
             {inRange.map((b,i,arr)=>{
               const cust=customers.find(c=>c.id===b.customerId)||{};
+              const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+              const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
               const n=Math.max(1,nights(b.checkin,b.checkout));
               const npn=netPerNight(b);
               const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
               return(
                 <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}</div>
+                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
                     <div style={{fontSize:11,color:C.text3}}>{rooms} · {n}คืน · ฿{fmt2(b.net||0)} รวม</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
@@ -2688,12 +2692,14 @@ function DashboardPage({bookings,customers,onExportBookings}){
           <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
             {revenueBookings.sort((a,b)=>a.checkin>b.checkin?1:-1).map((b,i,arr)=>{
               const cust=customers.find(c=>c.id===b.customerId)||{};
+              const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+              const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
               const n=Math.max(1,nights(b.checkin,b.checkout));
               const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
               return(
                 <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}</div>
+                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
                     <div style={{fontSize:11,color:C.text3}}>{rooms} · {fmt(b.checkin)}→{fmt(b.checkout)} · {n}คืน</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
@@ -3319,7 +3325,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 22:00 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 23:00 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
@@ -3524,7 +3530,7 @@ function App(){
         <a key={n.id} href={`#${n.id}`} onClick={e=>{e.preventDefault();navTo(n.id);}} style={{...S.navBtn(page===n.id),textDecoration:"none"}}>
           {page===n.id&&<div style={{position:"absolute",bottom:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"4px 4px 0 0"}}/>}
           <div style={{position:"relative",lineHeight:1}}>
-            <img src={n.icon} style={{width:26,height:26,objectFit:"contain",filter:page===n.id?"invert(40%) sepia(80%) saturate(500%) hue-rotate(300deg) brightness(1.1)":"invert(60%)"}} alt={n.label}/>
+            <img src={n.icon} style={{width:26,height:26,objectFit:"contain",filter:page===n.id?"brightness(0)":"brightness(0) opacity(0.35)"}} alt={n.label}/>
             {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
           </div>
           <div style={{fontSize:10,fontWeight:page===n.id?800:600,letterSpacing:"0.01em"}}>{n.label}</div>
