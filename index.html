@@ -571,7 +571,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
     const blob=new Blob([lines.join("\r\n")],{type:"text/calendar;charset=utf-8"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
-    a.download=`cat-hotel-all-rooms-${today()}.ics`;
+    a.download=`catwalk-all-bookings-${today()}.ics`;
     a.click();
     setToast(`✅ Downloaded ${bookings.length} bookings as .ics`);
   }
@@ -805,7 +805,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       const nickname=cust?.nickname||"";
                       const isHome=bk.size==="H";
                       const hasTaxi=bk.petTaxiAmt>0;
-                      const extras=[isHome?"@Home":"",hasTaxi?"🚕":""].filter(Boolean).join(" ");
+                      const extras=[isHome?"@Home":"",hasTaxi?"Taxi":""].filter(Boolean).join(" ");
                       const tooltipParts=[
                         nickname?`${nickname}: ${allCatNames}`:allCatNames,
                         `${bk.checkin}→${bk.checkout}`,
@@ -872,7 +872,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               <div style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"6px 8px",borderRight:`1px solid ${C.border}`,background:C.white,display:"flex",flexDirection:"column",justifyContent:"center",position:"sticky",left:0,zIndex:5}}>
                   <div style={{fontSize:11,fontWeight:800,color:vr.color}}>{vr.label}</div>
-                  <div style={{fontSize:9,color:C.text3}}>{vr.type==="H"?"@Home":"🚕"}</div>
+                  <div style={{fontSize:9,color:C.text3}}>{vr.type==="H"?"@Home":"Taxi"}</div>
                 </div>
                 {dateArr.map((d,di)=>{
                   const bk=getVRBookingForDate(d);
@@ -939,7 +939,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 <div style={{fontSize:12,fontWeight:800,color:b?(isHome?"#7b1fa2":getRoomColor(room.id)):C.text2}}>{room.label}</div>
                 {b?(
                   <>
-                    {nickname&&<div style={{fontSize:10,marginTop:2,color:isHome?"#7b1fa2":getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}{isHome?" 🏡":""}{hasTaxi?" 🚕":""}</div>}
+                    {nickname&&<div style={{fontSize:10,marginTop:2,color:isHome?"#7b1fa2":getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}{isHome?" 🏡":""}{hasTaxi?" Taxi":""}</div>}
                     <div style={{fontSize:9,color:(isHome?"#9c27b0":getRoomColor(room.id))+"aa",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{allCatNames||"Occupied"}</div>
                   </>
                 ):<div style={{fontSize:10,marginTop:2,color:C.text3,fontWeight:600}}>Free</div>}
@@ -1251,7 +1251,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:true,litterAmt2:0,petTaxi:0,notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1265,6 +1265,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   // catPerRoom: {roomId: numCats} — default spread cats evenly, user can adjust
   const catPerRoom=form.catPerRoom||{};
   const getCatsForRoom=rid=>Math.max(1,parseInt(catPerRoom[rid])||1);
+  // Litter fee per round (user can override, default = ceil(n/6)*60 auto-set)
+  const litterFeePerRound=Math.max(LITTER_FEE,parseFloat(form.litterCustom)||LITTER_FEE);
   // Price = sum of each room with its own cat count + pet taxi
   const calcRoomNet=(rid)=>{
     const r=ROOMS.find(x=>x.id===rid);
@@ -1273,7 +1275,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const roomCats=getCatsForRoom(rid);
     const extraCats=Math.max(0,roomCats-1);
     const litterRounds=form.litter?Math.ceil(n/6):0;
-    const la=litterRounds*LITTER_FEE*roomCats;
+    const la=form.litter?(litterRounds*litterFeePerRound):0;
     const base=n*(pricePerNight+extraCats*EXTRA_CAT_FEE)+la;
     const discAmt2=parseFloat((base*(parseFloat(form.discount)||0)/100).toFixed(2));
     return{net:parseFloat((base-discAmt2).toFixed(2)),base,extraCats,roomCats,la,pricePerNight};
@@ -1317,6 +1319,17 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   useEffect(()=>{
     if(form.size==="H"&&form.checkin&&form.checkout) set("roomIds",["@HOME"]);
   },[form.size,form.checkin,form.checkout]);
+
+  // Auto-set litter price based on number of rounds (ceil(n/6) × 60) when litter toggled on or dates change
+  useEffect(()=>{
+    if(form.litter&&n>0){
+      const rounds=Math.ceil(n/6);
+      const autoPrice=rounds*LITTER_FEE; // e.g. 1rnd=60, 2rnd=120, 3rnd=180...
+      const capped=Math.min(autoPrice,300); // max option is 300
+      // Only auto-set if user hasn't manually picked a value yet, or dates just changed
+      set("litterCustom",capped);
+    }
+  },[form.litter,form.checkin,form.checkout]);
 
   // backward compat: if old booking has roomId (string), convert
   useEffect(()=>{
@@ -1610,17 +1623,25 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue,flexShrink:0}}/>
             <div style={{flex:1}}>
               <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
-              <div style={{fontSize:11,color:C.text3,marginTop:2}}>฿{LITTER_FEE}/แมว/6คืน · {n>0?`${Math.ceil(n/6)} รอบ × ${Math.max(numCats,1)} แมว = ฿${Math.ceil(n/6)*LITTER_FEE*Math.max(numCats,1)}`:"เลือกวันก่อน"}</div>
+              <div style={{fontSize:11,color:C.text3,marginTop:2}}>
+                {n>0
+                  ?`${Math.ceil(n/6)} รอบ × ฿${litterFeePerRound} = ฿${Math.ceil(n/6)*litterFeePerRound}`
+                  :"เลือกวันก่อน"}
+              </div>
             </div>
-            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{fmt2(litterAmt)}</span>}
+            {form.litter&&n>0&&<span style={S.chip(C.blue)}>+฿{fmt2(Math.ceil(n/6)*litterFeePerRound)}</span>}
           </div>
           {form.litter&&(
             <div>
-              <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>ราคาทรายแมว (฿)</div>
+              <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>
+                ราคาทรายแมว / รอบ (฿)
+                {n>0&&<span style={{color:C.blue,marginLeft:6}}>— แนะนำ ฿{Math.min(Math.ceil(n/6)*LITTER_FEE,300)}</span>}
+              </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {[60,120,180,240,300].map(v=>{
-                  const selected=parseFloat(form.litterCustom||LITTER_FEE)===v||(v===60&&!form.litterCustom);
-                  return <button key={v} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${selected?C.blue:C.border}`,background:selected?C.blue:"transparent",color:selected?"#fff":C.text2,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>set("litterCustom",v)}>฿{v}</button>;
+                  const selected=litterFeePerRound===v;
+                  const isAuto=n>0&&Math.min(Math.ceil(n/6)*LITTER_FEE,300)===v;
+                  return <button key={v} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${selected?C.blue:isAuto?"#90caf9":C.border}`,background:selected?C.blue:isAuto?"#e3f2fd":"transparent",color:selected?"#fff":isAuto?C.blue:C.text2,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>set("litterCustom",v)}>฿{v}{isAuto&&!selected?" ★":""}</button>;
                 })}
               </div>
             </div>
@@ -1630,7 +1651,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* 2. Pet Taxi */}
         <div style={{...S.fg,padding:"12px 14px",background:petTaxiAmt>0?"#f5f0ff":C.bg,borderRadius:12,border:`1px solid ${petTaxiAmt>0?"#9c27b040":C.border}`,marginBottom:10}}>
           <div style={{fontSize:14,fontWeight:700,color:petTaxiAmt>0?"#7b1fa2":C.text,marginBottom:8}}>🚕 Pet Taxi</div>
-          <input type="number" style={{...S.inp,borderColor:petTaxiAmt>0?"#9c27b060":C.border}} min="0" placeholder="0 (ไม่มี)" value={form.petTaxi||""} onChange={e=>set("petTaxi",e.target.value)}/>
+          <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:petTaxiAmt>0?"#9c27b060":C.border}} min="0" placeholder="0 (ไม่มี)" value={form.petTaxi||""} onChange={e=>set("petTaxi",e.target.value)}/>
           {petTaxiAmt>0&&<div style={{fontSize:11,color:"#7b1fa2",marginTop:4}}>+฿{fmt2(petTaxiAmt)} รวมในยอด</div>}
         </div>
 
@@ -1642,7 +1663,23 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           </select>
         </div>
 
-        {/* 4. Payment Method */}
+        {/* 4. Deposit */}
+        <div style={{...S.fg,padding:"14px",background:"#fffbf0",borderRadius:12,border:`1px solid ${depositAmt>0?C.orange+"60":"#ffd70050"}`,marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <span style={{fontSize:16}}>💰</span>
+            <div style={{fontSize:14,fontWeight:700,color:C.orange}}>มัดจำ (Deposit)</div>
+            {depositAmt>0&&net>0&&<span style={{...S.chip(C.orange),marginLeft:"auto"}}>จ่ายไปแล้ว {Math.round(depositAmt/net*100)}%</span>}
+          </div>
+          <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:depositAmt>0?C.orange+"80":C.border}} min="0" placeholder="0" value={form.deposit||""} onChange={e=>set("deposit",e.target.value)}/>
+          {depositAmt>0&&net>0&&(
+            <div style={{marginTop:8,display:"flex",justifyContent:"space-between",fontSize:12,color:C.text2}}>
+              <span>ยอดรวม ฿{fmt2(net)}</span>
+              <span style={{color:remaining>0?C.red:C.green,fontWeight:700}}>คงเหลือ ฿{fmt2(remaining)}</span>
+            </div>
+          )}
+        </div>
+
+        {/* 5. Payment Method */}
         <div style={S.fg}>
           <div style={S.lbl}>รูปแบบชำระเงิน</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
@@ -1652,22 +1689,6 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               </button>
             ))}
           </div>
-        </div>
-
-        {/* 5. Deposit */}
-        <div style={{...S.fg,padding:"14px",background:"#fffbf0",borderRadius:12,border:`1px solid ${depositAmt>0?C.orange+"60":"#ffd70050"}`,marginBottom:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <span style={{fontSize:16}}>💰</span>
-            <div style={{fontSize:14,fontWeight:700,color:C.orange}}>มัดจำ (Deposit)</div>
-            {depositAmt>0&&net>0&&<span style={{...S.chip(C.orange),marginLeft:"auto"}}>จ่ายไปแล้ว {Math.round(depositAmt/net*100)}%</span>}
-          </div>
-          <input type="number" style={{...S.inp,borderColor:depositAmt>0?C.orange+"80":C.border}} min="0" placeholder="0" value={form.deposit||""} onChange={e=>set("deposit",e.target.value)}/>
-          {depositAmt>0&&net>0&&(
-            <div style={{marginTop:8,display:"flex",justifyContent:"space-between",fontSize:12,color:C.text2}}>
-              <span>ยอดรวม ฿{fmt2(net)}</span>
-              <span style={{color:remaining>0?C.red:C.green,fontWeight:700}}>คงเหลือ ฿{fmt2(remaining)}</span>
-            </div>
-          )}
         </div>
         {/* Paid */}
         <div style={S.fg}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={form.paid} onChange={e=>set("paid",e.target.checked)} style={{width:18,height:18,accentColor:C.green}}/><span style={{fontSize:14,fontWeight:600}}>ชำระเงินครบแล้ว (Fully Paid)</span></label></div>
@@ -2269,7 +2290,10 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
           )}
         </div>
       </div>
-      <input style={{...S.inp,marginTop:12}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+      <div style={{position:"relative",marginTop:12}}>
+        <input style={{...S.inp,paddingRight:search?36:14}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+        {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
+      </div>
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
       {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>🐱</div>No customers found</div>
@@ -2379,7 +2403,10 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
         </div>
       </div>
       <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();setSearch("");}}>{l}</button>)}</div>
-      <input style={{...S.inp,marginTop:10}} placeholder="🔍  Search by name, cat, room, date (e.g. Mar, Apr 2026)..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+      <div style={{position:"relative",marginTop:10}}>
+        <input style={{...S.inp,paddingRight:search?36:14}} placeholder="🔍  Search by name, cat, room, date (e.g. Mar, Apr 2026)..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+        {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
+      </div>
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
       {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📋</div>No bookings</div>
@@ -3231,7 +3258,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 09:30 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 10:30 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
