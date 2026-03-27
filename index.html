@@ -325,7 +325,7 @@ function exportICS(b,customers){
     `👤 ${c.nickname||""}${c.fullname?` (${c.fullname})`:""}`,
     c.phone?`📞 ${c.phone}`:"",
     c.line?`💬 Line: ${c.line}`:"",
-    c.notes?`📝 Customer Note: ${c.notes}`:"",
+    c.notes?`📝 Customer Notes: ${c.notes}`:"",
     `━━ แมว ━━`,
     catDetails||`🐱 ${names}`,
     `━━ การจอง ━━`,
@@ -470,6 +470,145 @@ function Toast({msg,onHide}){useEffect(()=>{if(msg){const t=setTimeout(onHide,25
 // ── ImageViewer ───────────────────────────────────────────────────────
 function ImageViewer({src,title,onClose}){return(<div style={{...S.overlay,alignItems:"center",justifyContent:"center",zIndex:400}} onClick={onClose}><div style={{background:C.white,borderRadius:16,padding:16,maxWidth:"90vw",maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:14}}>{title}</div><button style={S.btnG} onClick={onClose}>✕</button></div><img src={src} style={{maxWidth:"80vw",maxHeight:"70vh",borderRadius:10,display:"block"}} alt={title}/></div></div>);}
 
+
+// ════════════════════════════════════════════════════════════════
+// INFINITE SCROLL CALENDAR — shared date range picker
+// ════════════════════════════════════════════════════════════════
+function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,startLabel="📅 Check-in",endLabel="📅 Check-out"}){
+  const toStr=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const today2=toStr(new Date());
+  const [picking,setPicking]=useState(!checkin?"checkin":!checkout?"checkout":"checkin");
+  const [show,setShow]=useState(false);
+  // Generate list of months: 6 past + current + 18 future
+  const getMonths=()=>{
+    const list=[];
+    const now=new Date();
+    for(let i=-2;i<=18;i++){
+      const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+      list.push({y:d.getFullYear(),m:d.getMonth()});
+    }
+    return list;
+  };
+  const months=getMonths();
+  const scrollRef=useRef(null);
+
+  // Scroll to current month on open
+  useEffect(()=>{
+    if(show&&scrollRef.current){
+      const today=new Date();
+      const targetIdx=months.findIndex(mo=>mo.y===today.getFullYear()&&mo.m===today.getMonth());
+      if(targetIdx>=0){
+        // Each month block is ~280px tall
+        setTimeout(()=>{
+          if(scrollRef.current) scrollRef.current.scrollTop=Math.max(0,(targetIdx-0.5)*290);
+        },50);
+      }
+    }
+  },[show]);
+
+  const handleDay=(dateStr)=>{
+    if(picking==="checkin"){
+      onChange({checkin:dateStr,checkout:""});
+      setPicking("checkout");
+    } else {
+      if(dateStr<=checkin){
+        onChange({checkin:dateStr,checkout:""});
+        setPicking("checkout");
+      } else {
+        onChange({checkin,checkout:dateStr});
+        setPicking("checkin");
+        setShow(false);
+      }
+    }
+  };
+
+  const n=checkin&&checkout?Math.max(1,Math.round((new Date(checkout)-new Date(checkin))/(864e5))):0;
+
+  return(
+    <div>
+      {/* Display button */}
+      <div style={{border:`1px solid ${(checkin||checkout)?C.accent:C.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",background:C.white,display:"flex",alignItems:"center",justifyContent:"space-between"}} onClick={()=>setShow(s=>!s)}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
+          <div style={{textAlign:"center",flex:1}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
+            <div style={{fontSize:14,fontWeight:800,color:checkin?C.accent:C.text3}}>{checkin?fmt(checkin):"— —"}</div>
+          </div>
+          <div style={{fontSize:18,color:C.text3}}>→</div>
+          <div style={{textAlign:"center",flex:1}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-OUT</div>
+            <div style={{fontSize:14,fontWeight:800,color:checkout?C.blue:C.text3}}>{checkout?fmt(checkout):"— —"}</div>
+          </div>
+        </div>
+        {n>0&&<div style={{...S.chip(C.text),marginLeft:8}}>{n}คืน</div>}
+      </div>
+
+      {/* Infinite scroll calendar panel */}
+      {show&&(
+        <div style={{marginTop:6,border:`1px solid ${C.borderLight}`,borderRadius:14,background:C.white,boxShadow:C.shadowMd,overflow:"hidden"}}>
+          {/* Header */}
+          <div style={{background:C.accentBg,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10,borderBottom:`1px solid ${C.accent}20`}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.accent}}>
+              {picking==="checkin"?startLabel:endLabel}
+              {checkin&&picking==="checkout"?` (จาก ${fmt(checkin)})` :""}
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button style={{...S.btnG,fontSize:11,padding:"5px 10px"}} onClick={()=>{onChange({checkin:"",checkout:""});setPicking("checkin");}}>ล้าง</button>
+              <button style={{...S.btnG,fontSize:11,padding:"5px 10px"}} onClick={()=>setShow(false)}>เสร็จ</button>
+            </div>
+          </div>
+          {/* Day of week header */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"6px 8px 2px",background:"#fafafa",borderBottom:`1px solid ${C.borderLight}`,position:"sticky",top:43,zIndex:9}}>
+            {["อา","จ","อ","พ","พฤ","ศ","ส"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:C.text3}}>{d}</div>)}
+          </div>
+          {/* Scrollable months */}
+          <div ref={scrollRef} style={{overflowY:"auto",maxHeight:"60vh",WebkitOverflowScrolling:"touch"}}>
+            {months.map(({y,m})=>{
+              const daysInMonth=new Date(y,m+1,0).getDate();
+              const firstDayOfWeek=new Date(y,m,1).getDay();
+              const days=[];
+              for(let i=0;i<firstDayOfWeek;i++) days.push(null);
+              for(let d=1;d<=daysInMonth;d++) days.push(`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+              const monthKey=`${y}-${m}`;
+              return(
+                <div key={monthKey} style={{borderBottom:`1px solid ${C.borderLight}`,paddingBottom:8}}>
+                  {/* Month label */}
+                  <div style={{padding:"10px 14px 6px",fontSize:13,fontWeight:800,color:C.text,background:"#fafafa",borderBottom:`1px solid ${C.borderLight}40`}}>
+                    {MONTHS_FULL[m]} {y}
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"4px 8px",gap:2}}>
+                    {days.map((dateStr,i)=>{
+                      if(!dateStr) return <div key={i}/>;
+                      const isCI=dateStr===checkin;
+                      const isCO=dateStr===checkout;
+                      const inRange=checkin&&checkout&&dateStr>checkin&&dateStr<checkout;
+                      const isPast=!allowPast&&dateStr<today2;
+                      const isToday3=dateStr===today2;
+                      const isSel=isCI||isCO;
+                      return(
+                        <div key={dateStr} onClick={()=>!isPast&&handleDay(dateStr)} style={{
+                          textAlign:"center",padding:"7px 2px",borderRadius:8,
+                          cursor:isPast?"default":"pointer",
+                          background:isSel?C.accent:inRange?C.accentBg:"transparent",
+                          color:isSel?"#fff":isPast?"#ccc":isToday3?C.accent:C.text,
+                          fontWeight:isSel?800:isToday3?700:400,
+                          fontSize:14,
+                          border:isToday3&&!isSel?`1px solid ${C.accent}`:"none",
+                        }}>
+                          {new Date(dateStr+"T12:00:00").getDate()}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════
 // ROOMS PAGE — Timeline + Availability
 // ════════════════════════════════════════════════════════════════
@@ -537,7 +676,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
         `👤 ${cust.nickname||""}${cust.fullname?` (${cust.fullname})`:""}`,
         cust.phone?`📞 ${cust.phone}`:"",
         cust.line?`💬 Line: ${cust.line}`:"",
-        cust.notes?`📝 Customer Note: ${cust.notes}`:"",
+        cust.notes?`📝 Customer Notes: ${cust.notes}`:"",
         `━━ แมว ━━`,
         catDetails||`🐱 ${catNames}`,
         `━━ การจอง ━━`,
@@ -592,94 +731,15 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
       <div style={{...S.card,padding:14,marginBottom:0}}>
         {/* Date Range Picker for availability */}
         {(()=>{
-          const [showAvailCal,setShowAvailCal]=useState(false);
-          const [availCalMonth,setAvailCalMonth]=useState(()=>{const d=new Date();d.setDate(1);return d;});
-          const [availPicking,setAvailPicking]=useState("checkin");
-
-          const daysInMonth2=(y,m)=>new Date(y,m+1,0).getDate();
-          const firstDay2=(y,m)=>new Date(y,m,1).getDay();
-          const toStr2=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-          const today2=toStr2(new Date());
-
-          const handleAvailDay=(dateStr)=>{
-            if(availPicking==="checkin"){
-              setCheckAvail(v=>({...v,checkin:dateStr,checkout:""}));
-              setAvailPicking("checkout");
-            } else {
-              if(dateStr<=checkAvail.checkin){
-                setCheckAvail(v=>({...v,checkin:dateStr,checkout:""}));
-                setAvailPicking("checkout");
-              } else {
-                setCheckAvail(v=>({...v,checkout:dateStr}));
-                setAvailPicking("checkin");
-                setShowAvailCal(false);
-              }
-            }
-          };
-
-          const y2=availCalMonth.getFullYear(), m2=availCalMonth.getMonth();
-          const dim2=daysInMonth2(y2,m2);
-          const fd2=firstDay2(y2,m2);
-          const calDays2=[];
-          for(let i=0;i<fd2;i++) calDays2.push(null);
-          for(let d=1;d<=dim2;d++) calDays2.push(toStr2(new Date(y2,m2,d)));
-
+          const availN=checkAvail.checkin&&checkAvail.checkout?Math.max(1,Math.round((new Date(checkAvail.checkout)-new Date(checkAvail.checkin))/(864e5))):0;
           return(
-            <div style={{marginBottom:10}}>
-              {/* Display button */}
-              <div style={{border:`1px solid ${(checkAvail.checkin||checkAvail.checkout)?C.accent:C.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",background:C.white,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}} onClick={()=>{setShowAvailCal(!showAvailCal);setAvailPicking(checkAvail.checkin&&!checkAvail.checkout?"checkout":"checkin");}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
-                  <div style={{textAlign:"center",flex:1}}>
-                    <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
-                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkin?C.accent:C.text3}}>{checkAvail.checkin?fmt(checkAvail.checkin):"— —"}</div>
-                  </div>
-                  <div style={{fontSize:18,color:C.text3}}>→</div>
-                  <div style={{textAlign:"center",flex:1}}>
-                    <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-OUT</div>
-                    <div style={{fontSize:14,fontWeight:800,color:checkAvail.checkout?C.blue:C.text3}}>{checkAvail.checkout?fmt(checkAvail.checkout):"— —"}</div>
-                  </div>
-                </div>
-                {checkAvail.checkin&&checkAvail.checkout&&checkAvail.checkin<checkAvail.checkout&&(
-                  <div style={{...S.chip(C.text),marginLeft:8}}>{nights(checkAvail.checkin,checkAvail.checkout)}คืน</div>
-                )}
-              </div>
-
-              {/* Inline Calendar */}
-              {showAvailCal&&(
-                <div style={{border:`1px solid ${C.borderLight}`,borderRadius:14,background:C.white,boxShadow:C.shadow,overflow:"hidden",marginBottom:8}}>
-                  <div style={{background:C.accentBg,padding:"8px 14px",fontSize:12,fontWeight:700,color:C.accent,textAlign:"center"}}>
-                    {availPicking==="checkin"?"📅 Check-in":"📅 Check-out"}{checkAvail.checkin&&availPicking==="checkout"?` (จาก ${fmt(checkAvail.checkin)})`:""}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
-                    <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setAvailCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()-1);return x;})}>‹</button>
-                    <div style={{fontSize:14,fontWeight:800}}>{MONTHS_FULL[m2]} {y2}</div>
-                    <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setAvailCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()+1);return x;})}>›</button>
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"6px 8px 0"}}>
-                    {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:C.text3,padding:"2px 0"}}>{d}</div>)}
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"4px 8px 10px",gap:2}}>
-                    {calDays2.map((dateStr,i)=>{
-                      if(!dateStr) return <div key={i}/>;
-                      const isCI=dateStr===checkAvail.checkin;
-                      const isCO=dateStr===checkAvail.checkout;
-                      const inRange=checkAvail.checkin&&checkAvail.checkout&&dateStr>checkAvail.checkin&&dateStr<checkAvail.checkout;
-                      const isPast=dateStr<today2;
-                      const isToday3=dateStr===today2;
-                      const isSel=isCI||isCO;
-                      return(
-                        <div key={dateStr} onClick={()=>!isPast&&handleAvailDay(dateStr)} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:isPast?"default":"pointer",background:isSel?C.accent:inRange?C.accentBg:"transparent",color:isSel?"#fff":isPast?C.text3:isToday3?C.accent:C.text,fontWeight:isSel?800:isToday3?700:400,fontSize:13,opacity:isPast?0.35:1,border:isToday3&&!isSel?`1px solid ${C.accent}`:"none"}}>
-                          {new Date(dateStr+"T12:00:00").getDate()}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{padding:"0 12px 10px",display:"flex",gap:8}}>
-                    <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{setCheckAvail(v=>({...v,checkin:"",checkout:""}));setAvailPicking("checkin");}}>Clear</button>
-                    <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>setShowAvailCal(false)}>Done</button>
-                  </div>
-                </div>
-              )}
+            <div style={{marginBottom:8}}>
+              <InfiniteScrollCalendar
+                checkin={checkAvail.checkin}
+                checkout={checkAvail.checkout}
+                allowPast={false}
+                onChange={({checkin,checkout})=>setCheckAvail(v=>({...v,checkin,checkout}))}
+              />
             </div>
           );
         })()}
@@ -997,7 +1057,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 {/* Customer notes */}
                 {cust.notes&&(
                   <div style={{background:"#fffbf0",borderRadius:10,padding:"8px 12px",marginBottom:10,border:"1px solid #ffd70040"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Note</div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Notes</div>
                     <NotesText text={cust.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
                   </div>
                 )}
@@ -1434,117 +1494,12 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           </div>
         )}
         {/* Date Range Picker */}
-        {(()=>{
-          const [showCal,setShowCal]=useState(false);
-          const [calMonth,setCalMonth]=useState(()=>{
-            if(form.checkin) return new Date(form.checkin+"T12:00:00");
-            const d=new Date(); d.setDate(1); return d;
-          });
-          const [picking,setPicking]=useState("checkin"); // "checkin" | "checkout"
-
-          const daysInMonth=(y,m)=>new Date(y,m+1,0).getDate();
-          const firstDay=(y,m)=>new Date(y,m,1).getDay();
-          const toStr=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-
-          const handleDayClick=(dateStr)=>{
-            if(picking==="checkin"){
-              set("checkin",dateStr);
-              set("checkout","");
-              setPicking("checkout");
-            } else {
-              if(dateStr<=form.checkin){
-                set("checkin",dateStr);
-                set("checkout","");
-                setPicking("checkout");
-              } else {
-                set("checkout",dateStr);
-                setPicking("checkin");
-                setShowCal(false);
-              }
-            }
-          };
-
-          const y=calMonth.getFullYear(), m=calMonth.getMonth();
-          const dim=daysInMonth(y,m);
-          const fd=firstDay(y,m);
-          const today2=toStr(new Date());
-          const isEdit=!!booking; // allow past dates when editing
-
-          const calDays=[];
-          for(let i=0;i<fd;i++) calDays.push(null);
-          for(let d=1;d<=dim;d++) calDays.push(toStr(new Date(y,m,d)));
-
-          return(
-            <div style={S.fg}>
-              <div style={S.lbl}>Check-in → Check-out *</div>
-              {/* Display button */}
-              <div style={{border:`1px solid ${(form.checkin||form.checkout)?C.accent:C.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",background:C.white,display:"flex",alignItems:"center",justifyContent:"space-between"}} onClick={()=>{setShowCal(!showCal);setPicking(form.checkin&&!form.checkout?"checkout":"checkin");}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
-                  <div style={{textAlign:"center",flex:1}}>
-                    <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
-                    <div style={{fontSize:14,fontWeight:800,color:form.checkin?C.accent:C.text3}}>{form.checkin?fmt(form.checkin):"— —"}</div>
-                  </div>
-                  <div style={{fontSize:18,color:C.text3}}>→</div>
-                  <div style={{textAlign:"center",flex:1}}>
-                    <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-OUT</div>
-                    <div style={{fontSize:14,fontWeight:800,color:form.checkout?C.blue:C.text3}}>{form.checkout?fmt(form.checkout):"— —"}</div>
-                  </div>
-                </div>
-                {form.checkin&&form.checkout&&n>0&&(
-                  <div style={{...S.chip(C.text),marginLeft:8}}>{n}คืน</div>
-                )}
-              </div>
-              {/* Inline Calendar */}
-              {showCal&&(
-                <div style={{marginTop:8,border:`1px solid ${C.borderLight}`,borderRadius:14,background:C.white,boxShadow:C.shadow,overflow:"hidden"}}>
-                  {/* Status bar */}
-                  <div style={{background:C.accentBg,padding:"8px 14px",fontSize:12,fontWeight:700,color:C.accent,textAlign:"center"}}>
-                    {picking==="checkin"?"📅 Check-in":"📅 Check-out"}{form.checkin&&picking==="checkout"?` (จาก ${fmt(form.checkin)})`:""}
-                  </div>
-                  {/* Month nav */}
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:`1px solid ${C.borderLight}`}}>
-                    <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()-1);return x;})}>‹</button>
-                    <div style={{fontSize:14,fontWeight:800}}>{MONTHS_FULL[m]} {y}</div>
-                    <button style={{background:"none",border:"none",fontSize:18,cursor:"pointer",padding:"4px 8px",color:C.text2}} onClick={()=>setCalMonth(d=>{const x=new Date(d);x.setMonth(x.getMonth()+1);return x;})}>›</button>
-                  </div>
-                  {/* Day headers */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"6px 8px 0"}}>
-                    {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:C.text3,padding:"2px 0"}}>{d}</div>)}
-                  </div>
-                  {/* Days grid */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"4px 8px 10px",gap:2}}>
-                    {calDays.map((dateStr,i)=>{
-                      if(!dateStr) return <div key={i}/>;
-                      const isCheckin=dateStr===form.checkin;
-                      const isCheckout=dateStr===form.checkout;
-                      const inRange=form.checkin&&form.checkout&&dateStr>form.checkin&&dateStr<form.checkout;
-                      const isPast=!isEdit&&dateStr<today2;
-                      const isToday3=dateStr===today2;
-                      const isSel=isCheckin||isCheckout;
-                      return(
-                        <div key={dateStr} onClick={()=>!isPast&&handleDayClick(dateStr)} style={{
-                          textAlign:"center",padding:"6px 2px",borderRadius:8,cursor:isPast?"default":"pointer",
-                          background:isSel?C.accent:inRange?C.accentBg:"transparent",
-                          color:isSel?"#fff":isPast?C.text3:isToday3?C.accent:C.text,
-                          fontWeight:isSel?800:isToday3?700:400,
-                          fontSize:13,opacity:isPast?0.35:1,
-                          border:isToday3&&!isSel?`1px solid ${C.accent}`:"none",
-                        }}>
-                          {new Date(dateStr+"T12:00:00").getDate()}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Clear button */}
-                  <div style={{padding:"0 12px 10px",display:"flex",gap:8}}>
-                    <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{set("checkin","");set("checkout","");setPicking("checkin");}}>Clear</button>
-                    <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>setShowCal(false)}>Done</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        <InfiniteScrollCalendar
+          checkin={form.checkin}
+          checkout={form.checkout}
+          allowPast={!!booking}
+          onChange={({checkin,checkout})=>{set("checkin",checkin);set("checkout",checkout);}}
+        />
         {/* Size */}
         <div style={S.fg}><div style={S.lbl}>Room Type</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
@@ -1828,7 +1783,7 @@ function CustomerSheet({customer,onSave,onClose}){
         </div>
         <div style={S.fg}><div style={S.lbl}>Address</div><textarea style={S.ta} rows={2} value={form.address} onChange={e=>set("address",e.target.value)} placeholder="Address..."/></div>
         <div style={S.fg}><div style={S.lbl}>Owner ID Card</div><FileUpload value={form.idCard} onChange={v=>set("idCard",v)} label="ID Card" icon="🪪"/></div>
-        <div style={S.fg}><div style={S.lbl}>Notes</div><textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Any notes..."/></div>
+        <div style={S.fg}><div style={S.lbl}>Customer Notes</div><textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="เช่น แพ้อาหาร, วิธีดูแลพิเศษ, เบอร์ติดต่อฉุกเฉิน..."/></div>
         <div style={{background:C.accentBg,borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:12,fontWeight:700,color:C.accent}}>
           🐱 CATS — {form.cats.length} cat{form.cats.length>1?"s":""}{form.cats.length>1?` · +฿${(form.cats.length-1)*EXTRA_CAT_FEE}/night extra`:""}
         </div>
@@ -2446,8 +2401,8 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 </div>
               )}
               {cust?.notes&&!selectMode&&(
-                <div style={{background:"#fffbf0",borderRadius:8,padding:"6px 10px",marginBottom:8,border:"1px solid #ffd70040",display:"flex",gap:6,alignItems:"flex-start"}}>
-                  <span style={{fontSize:11,flexShrink:0}}>📝</span>
+                <div style={{background:"#fffbf0",borderRadius:8,padding:"6px 10px",marginBottom:8,border:"1px solid #ffd70040"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Notes</div>
                   <NotesText text={cust.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
                 </div>
               )}
@@ -3258,7 +3213,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 10:30 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 12:48 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
