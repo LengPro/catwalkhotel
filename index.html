@@ -342,9 +342,12 @@ function exportICS(b,customers){
   ].filter(Boolean);
   const desc=descParts.join("\\n");
   const summary=`🐱 ${names} — ${rooms} (${n}คืน)`;
+  const calName=rooms?`${rooms} — Catwalk Hotel`:`Catwalk Hotel`;
   const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
   const ics=[
     "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Catwalk Hotel//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+    `X-WR-CALNAME:${calName}`,
+    "X-WR-TIMEZONE:Asia/Bangkok",
     "BEGIN:VEVENT",
     `UID:stay-${b.id}@catwalkhotel`,
     `DTSTAMP:${ts}`,
@@ -465,7 +468,24 @@ function CatEditor({cat,index,total,onChange,onRemove}){
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────
-function Toast({msg,onHide}){useEffect(()=>{if(msg){const t=setTimeout(onHide,2500);return()=>clearTimeout(t);}},[msg]);return <div style={{position:"fixed",bottom:24,left:"50%",transform:`translateX(-50%) translateY(${msg?0:8}px)`,background:C.text,color:"#fff",padding:"10px 20px",borderRadius:100,fontSize:13,fontWeight:600,opacity:msg?1:0,pointerEvents:"none",transition:"all 0.2s",whiteSpace:"nowrap",zIndex:300,boxShadow:C.shadowMd}}>{msg}</div>;}
+function Toast({msg,onHide,undoAction,undoLabel}){
+  useEffect(()=>{
+    if(msg){
+      const t=setTimeout(()=>{onHide();},undoAction?10000:2500);
+      return()=>clearTimeout(t);
+    }
+  },[msg,undoAction]);
+  return(
+    <div style={{position:"fixed",bottom:24,left:"50%",transform:`translateX(-50%) translateY(${msg?0:8}px)`,background:C.text,color:"#fff",padding:"10px 16px",borderRadius:100,fontSize:13,fontWeight:600,opacity:msg?1:0,pointerEvents:msg?"auto":"none",transition:"all 0.2s",whiteSpace:"nowrap",zIndex:300,boxShadow:C.shadowMd,display:"flex",alignItems:"center",gap:10}}>
+      <span>{msg}</span>
+      {undoAction&&(
+        <button onClick={()=>{undoAction();onHide();}} style={{background:"#fff",color:C.text,border:"none",borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+          ↩ Undo
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ── ImageViewer ───────────────────────────────────────────────────────
 function ImageViewer({src,title,onClose}){return(<div style={{...S.overlay,alignItems:"center",justifyContent:"center",zIndex:400}} onClick={onClose}><div style={{background:C.white,borderRadius:16,padding:16,maxWidth:"90vw",maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontWeight:700,fontSize:14}}>{title}</div><button style={S.btnG} onClick={onClose}>✕</button></div><img src={src} style={{maxWidth:"80vw",maxHeight:"70vh",borderRadius:10,display:"block"}} alt={title}/></div></div>);}
@@ -661,7 +681,10 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   // Export ALL bookings as one ICS file
   function exportAllBookingsICS(){
     if(!bookings.length){ setToast("No bookings to export"); return; }
-    const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Catwalk Hotel//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+    const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Catwalk Hotel//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+      "X-WR-CALNAME:Catwalk Hotel — All Bookings",
+      "X-WR-TIMEZONE:Asia/Bangkok",
+    ];
     const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
     bookings.forEach(b=>{
       const cust=customers.find(c=>c.id===b.customerId)||{};
@@ -1074,7 +1097,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                   <button style={{flex:1,padding:"10px",background:"#f0fff4",color:C.green,border:`1px solid ${C.green}40`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{setEditBooking({...b,id:uid(),checkin:"",checkout:"",roomId:"",roomIds:[]});setDetailBooking(null);}}>⧉ Duplicate</button>
                   <button style={{flex:1,padding:"10px",background:"#fff8f0",color:C.orange,border:`1px solid ${C.orange}40`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{onShowReceipt(b,"receipt");setDetailBooking(null);}}>🧾 Receipt</button>
                   <button style={{flex:1,padding:"10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{exportICS(b,customers);setToast("iCal downloaded!");}}>📅 iCal</button>
-                  <button style={{...S.btnD,flex:1,padding:"10px",fontSize:12}} onClick={async()=>{if(window.confirm("ยืนยันยกเลิก/ลบ booking นี้?")){{await onDeleteBooking(b.id);setDetailBooking(null);setToast("Deleted ✓");}}}}>🗑 Delete</button>
+                  <button style={{...S.btnD,flex:1,padding:"10px",fontSize:12}} onClick={async()=>{await onDeleteBooking(b.id);setDetailBooking(null);}}>🗑 Delete</button>
                   <button style={S.btnG} onClick={()=>setDetailBooking(null)}>✕</button>
                 </div>
               </>);
@@ -2230,7 +2253,7 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
   const toggleSelectAll=()=>setSelected(s=>s.length===filtered.length?[]:filtered.map(c=>c.id));
   const exitSelect=()=>{setSelectMode(false);setSelected([]);};
   const bulkDelete=async()=>{
-    if(!window.confirm(`ลบ ${selected.length} ลูกค้าที่เลือก?`)) return;
+    
     for(const id of selected) await onDeleteCustomer(id);
     exitSelect();
   };
@@ -2294,7 +2317,7 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
       }
     </div></div>
     {(showForm||editCust)&&<CustomerSheet customer={editCust} onSave={async d=>{await onSaveCustomer(d);setShowForm(false);setEditCust(null);if(detailCust)setDetailCust(d);}} onClose={()=>{setShowForm(false);setEditCust(null);}}/>}
-    {detailCust&&<CustomerDetail customer={detailCust} bookings={bookings} onEdit={()=>{setEditCust(detailCust);setDetailCust(null);}} onDelete={async()=>{if(!window.confirm("Delete this customer?"))return;await onDeleteCustomer(detailCust.id);setDetailCust(null);}} onClose={()=>setDetailCust(null)} onNewBooking={()=>{setBookingFor(detailCust);setDetailCust(null);}}/>}
+    {detailCust&&<CustomerDetail customer={detailCust} bookings={bookings} onEdit={()=>{setEditCust(detailCust);setDetailCust(null);}} onDelete={async()=>{await onDeleteCustomer(detailCust.id);setDetailCust(null);}} onClose={()=>setDetailCust(null)} onNewBooking={()=>{setBookingFor(detailCust);setDetailCust(null);}}/>}
     {bookingFor&&<BookingSheet customers={customers} bookings={bookings} booking={{customerId:bookingFor.id,selectedCatIds:(bookingFor.cats||[]).slice(0,1).map(x=>x.id),checkin:"",checkout:"",size:"S",roomId:"",discount:"0",payMethod:"Cash",paid:false,notes:""}} onSave={async d=>{await onSaveBooking(d);setBookingFor(null);}} onClose={()=>setBookingFor(null)}/>}
   </div>);
 }
@@ -2342,7 +2365,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   const toggleSelectAll=()=>setSelected(s=>s.length===filtered.length?[]:filtered.map(b=>b.id));
   const exitSelect=()=>{setSelectMode(false);setSelected([]);};
   const bulkDelete=async()=>{
-    if(!window.confirm(`ลบ ${selected.length} booking ที่เลือก?`)) return;
+    
     for(const id of selected) await onDeleteBooking(id);
     exitSelect();
   };
@@ -2432,7 +2455,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
               </div>
               {!selectMode&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 <button style={{...S.btnG,fontSize:12,padding:"7px 12px"}} onClick={()=>setEditBook(b)}>Edit</button>
-                <button style={S.btnD} onClick={()=>{if(window.confirm("Delete this booking?"))onDeleteBooking(b.id);}}>Delete</button>
+                <button style={S.btnD} onClick={()=>onDeleteBooking(b.id)}>Delete</button>
                 <button style={{padding:"7px 10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>exportICS(b,customers)}>📅 iCal</button>
                 {!b.paid&&<button style={{padding:"7px 12px",background:C.greenBg,color:C.green,border:`1px solid ${C.green}30`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer",marginLeft:"auto"}} onClick={()=>onSaveBooking({...b,paid:true})}>Mark Paid ✓</button>}
               </div>}
@@ -2502,9 +2525,13 @@ function DashboardPage({bookings,customers,onExportBookings}){
     const y=new Date().getFullYear()+offset;return{start:new Date(y,0,1),end:new Date(y,11,31),label:`${y}`};
   };
   const{start,end,label}=getRange();
-  // นับ booking ที่ overlap กับช่วงวัน (checkin ≤ end AND checkout ≥ start)
+  // นับ booking ที่ overlap กับช่วงวัน
   const startStr=ds(start), endStr=ds(end);
-  const inRange=bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
+  // Day view: เฉพาะ booking ที่ยังอยู่จริง (checkin ≤ วันนี้ AND checkout > วันนี้)
+  // Week/Month/Year: checkin อยู่ในช่วง
+  const inRange=period==="day"
+    ?bookings.filter(b=>b.checkin<=endStr&&b.checkout>endStr)
+    :bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
 
   // Revenue per night for a booking (net / total nights)
   const netPerNight=b=>{
@@ -2614,6 +2641,33 @@ function DashboardPage({bookings,customers,onExportBookings}){
         </>)}
         {pmEntries.length>0&&(<><div style={S.slabel}>By Payment</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{pmEntries.map(([pm,v],i,arr)=>(<div key={pm} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{flex:1,fontSize:13,fontWeight:600}}>{pm}</div><div style={{width:70,height:4,background:C.bg,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:C.accent,width:`${v/maxPm*100}%`}}/></div><div style={{fontSize:13,fontWeight:700,minWidth:65,textAlign:"right"}}>฿{v.toLocaleString()}</div></div>))}</div></>)}
         {roomStats.length>0&&(<><div style={S.slabel}>Top Rooms</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{roomStats.slice(0,8).map(({room,count,revenue:rv},i,arr)=>(<div key={room.id} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{...S.chip(getRoomColor(room.id)),marginRight:4}}>{room.label}</div><div style={{flex:1,fontSize:13,color:C.text2}}>{count} booking{count>1?"s":""}</div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{rv.toLocaleString()}</div></div>))}</div></>)}
+        {period==="day"&&inRange.length>0&&(<>
+          <div style={S.slabel}>รายละเอียดรายได้วันนี้</div>
+          <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+            {inRange.map((b,i,arr)=>{
+              const cust=customers.find(c=>c.id===b.customerId)||{};
+              const n=Math.max(1,nights(b.checkin,b.checkout));
+              const npn=netPerNight(b);
+              const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
+              return(
+                <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}</div>
+                    <div style={{fontSize:11,color:C.text3}}>{rooms} · {n}คืน · ฿{fmt2(b.net||0)} รวม</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{fmt2(npn)}</div>
+                    <div style={{fontSize:10,color:C.text3}}>/วัน</div>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{padding:"10px 14px",background:C.bg,display:"flex",justifyContent:"space-between",borderTop:`2px solid ${C.border}`}}>
+              <span style={{fontSize:13,fontWeight:800}}>รวมรายได้วันนี้</span>
+              <span style={{fontSize:14,fontWeight:800,color:C.accent}}>฿{fmt2(revenue)}</span>
+            </div>
+          </div>
+        </>)}
         {inRange.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📊</div>No data for this period</div>}
       </div>
     )}
@@ -3224,7 +3278,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 13:05 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 20:10 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
@@ -3249,6 +3303,9 @@ function App(){
   const [dbError,setDbError]=useState(null);
   const [toast,setToast]=useState("");
   const [sync,setSync]=useState("");
+  const [undoAction,setUndoAction]=useState(null);
+  const showToastWithUndo=(msg,action)=>{setToast(msg);setUndoAction(action||null);};
+  const clearToast=()=>{setToast("");setUndoAction(null);};
   const [receiptBooking,setReceiptBooking]=useState(null);
   const [receiptMode,setReceiptMode]=useState("receipt"); // "receipt" | "quote"
   const [receiptCounter,setReceiptCounter]=useState(()=>parseInt(localStorage.getItem("cw_receipt_counter")||"1"));
@@ -3304,9 +3361,41 @@ function App(){
     });
   },[]);
   const onSaveCustomer=useCallback(async d=>saving(async()=>{await fbSave("customers",d.id,d);setToast("Saved ☁️");}),[]);
-  const onDeleteCustomer=useCallback(async id=>saving(async()=>{await fbDelete("customers",id);setToast("Deleted ✓");}),[]);
+  const onDeleteCustomer=useCallback(async id=>{
+    const item=customers.find(c=>c.id===id);
+    if(!item) return;
+    // Remove from local state immediately
+    setCustomers(prev=>prev.filter(c=>c.id!==id));
+    let cancelled=false;
+    showToastWithUndo(`🗑 ลบลูกค้า "${item.nickname||""}" แล้ว`,()=>{
+      cancelled=true;
+      setCustomers(prev=>[...prev,item].sort((a,b)=>a.nickname?.localeCompare(b.nickname)||0));
+      clearToast();
+    });
+    // Delay actual Firebase delete by 10s
+    setTimeout(async()=>{
+      if(!cancelled) await saving(async()=>fbDelete("customers",id));
+    },10000);
+  },[customers]);
   const onSaveBooking=useCallback(async d=>saving(async()=>{await fbSave("bookings",d.id,d);setToast("Saved ☁️");}),[]);
-  const onDeleteBooking=useCallback(async id=>saving(async()=>{await fbDelete("bookings",id);setToast("Deleted ✓");}),[]);
+  const onDeleteBooking=useCallback(async id=>{
+    const item=bookings.find(b=>b.id===id);
+    if(!item) return;
+    const cust=customers.find(c=>c.id===item.customerId);
+    const label=cust?.nickname?`"${cust.nickname}" ${item.checkin}→${item.checkout}`:`booking ${item.checkin}`;
+    // Remove from local state immediately
+    setBookings(prev=>prev.filter(b=>b.id!==id));
+    let cancelled=false;
+    showToastWithUndo(`🗑 ลบ ${label}`,()=>{
+      cancelled=true;
+      setBookings(prev=>[...prev,item]);
+      clearToast();
+    });
+    // Delay actual Firebase delete by 10s
+    setTimeout(async()=>{
+      if(!cancelled) await saving(async()=>fbDelete("bookings",id));
+    },10000);
+  },[bookings,customers]);
 
   if(loading)return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1a1a1a"}}>
@@ -3402,7 +3491,7 @@ function App(){
       ))}
     </div>
 
-    <Toast msg={toast} onHide={()=>setToast("")}/>
+    <Toast msg={toast} onHide={clearToast} undoAction={undoAction}/>
   </div>);
 }
 
