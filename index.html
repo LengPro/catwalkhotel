@@ -2542,10 +2542,9 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const{start,end,label}=getRange();
   // นับ booking ที่ overlap กับช่วงวัน
   const startStr=ds(start), endStr=ds(end);
-  // Day view: เฉพาะ booking ที่ยังอยู่จริง (checkin ≤ วันนี้ AND checkout > วันนี้)
-  // Week/Month/Year: checkin อยู่ในช่วง
+  // Day view: booking ที่อยู่วันนี้รวม checkout วันนี้ด้วย (checkout >= today)
   const inRange=period==="day"
-    ?bookings.filter(b=>b.checkin<=endStr&&b.checkout>endStr)
+    ?bookings.filter(b=>b.checkin<=endStr&&b.checkout>=endStr)
     :bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
 
   // Revenue per night for a booking (net / total nights)
@@ -3325,7 +3324,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 27 Mar 2026 · 23:00 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 00:30 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
