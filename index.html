@@ -915,6 +915,11 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               </div>
             </div>);
           })}
+        </div>
+      </div>
+    </div>
+
+    {/* ── Today's Occupancy Summary ── */}
     <div style={{...S.sec,marginTop:16,paddingBottom:0}}>
       <div style={S.slabel}>Today's Rooms — {fmt(todayStr)}</div>
       {zones.map(zone=>{
