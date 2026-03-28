@@ -682,10 +682,12 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
       onChange({checkin:dateStr,checkout:""});
       setPicking("checkout");
     } else {
-      if(dateStr<=checkin){
+      if(dateStr<checkin){
+        // selected earlier than checkin — restart
         onChange({checkin:dateStr,checkout:""});
         setPicking("checkout");
       } else {
+        // same day or later → allow (same day = 1 คืน day use)
         onChange({checkin,checkout:dateStr});
         setPicking("checkin");
         setShow(false);
@@ -828,7 +830,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
 
   const availCheckin=checkAvail.checkin;
   const availCheckout=checkAvail.checkout;
-  const availableRooms=availCheckin&&availCheckout&&availCheckin<availCheckout
+  const availableRooms=availCheckin&&availCheckout&&availCheckin<=availCheckout
     ? ROOMS.filter(r=>r.type===checkAvail.type&&isRoomAvailable(r.id,availCheckin,availCheckout,bookings))
     : null;
 
@@ -1512,7 +1514,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
   const numCats=form.selectedCatIds?.length||0;
-  const n=form.checkin&&form.checkout&&form.checkin<form.checkout?nights(form.checkin,form.checkout):0;
+  const n=form.checkin&&form.checkout&&form.checkin<=form.checkout?nights(form.checkin,form.checkout):0;
   const selectedRooms=form.roomIds||[];
   const numRooms=Math.max(selectedRooms.length,1);
   const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
@@ -1565,13 +1567,13 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const ids=form.roomIds||[];
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   };
-  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<form.checkout&&(form.roomIds||[]).length>0;
+  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(form.roomIds||[]).length>0;
   const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
   useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
 
   // Available rooms for selected dates+type
   // For @Home (H): always available — use virtual @HOME room
-  const availRooms=form.checkin&&form.checkout&&form.checkin<form.checkout
+  const availRooms=form.checkin&&form.checkout&&form.checkin<=form.checkout
     ? form.size==="H"
       ? [{id:"@HOME",zone:"special",type:"H",label:"@Home"}]
       : ROOMS.filter(r=>r.type===form.size&&isRoomAvailable(r.id,form.checkin,form.checkout,bookings,booking?.id))
@@ -1731,7 +1733,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             <div style={S.lbl}>เลือกห้อง * (เลือกได้หลายห้อง)</div>
             {selectedRooms.length>0&&<span style={S.chip(C.accent)}>{selectedRooms.length} ห้อง</span>}
           </div>
-          {form.checkin&&form.checkout&&form.checkin<form.checkout?(
+          {form.checkin&&form.checkout&&form.checkin<=form.checkout?(
             availRooms.length>0?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
                 {availRooms.map(r=>{
