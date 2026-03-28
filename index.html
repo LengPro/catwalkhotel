@@ -1043,8 +1043,10 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
     </div>
     {detailBooking&&(
       <div style={S.overlay} onClick={()=>setDetailBooking(null)}>
-        <div style={{...S.sheet,maxHeight:"60vh"}} onClick={e=>e.stopPropagation()}>
+        <div style={{...S.sheet,maxHeight:"60vh",position:"relative"}} onClick={e=>e.stopPropagation()}>
           <div style={S.sheetHandle}/>
+          {/* X close button top-right */}
+          <button onClick={()=>setDetailBooking(null)} style={{position:"absolute",top:14,right:16,width:30,height:30,borderRadius:"50%",background:C.bg,border:`1px solid ${C.border}`,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.text2,fontFamily:"inherit",zIndex:10}}>✕</button>
           <div style={{padding:"16px 20px"}}>
             {(()=>{
               const b=detailBooking;
@@ -1087,13 +1089,22 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                   {b.litter&&<span style={S.chip(C.blue)}>🪣 ทราย</span>}
                   {b.petTaxiAmt>0&&<span style={S.chip("#7b1fa2")}>🚕 ฿{fmt2(b.petTaxiAmt)}</span>}
                 </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <button style={{...S.btnP,flex:1,fontSize:13}} onClick={()=>{setEditBooking(b);setDetailBooking(null);}}>✏️ Edit</button>
-                  <button style={{flex:1,padding:"10px",background:"#f0fff4",color:C.green,border:`1px solid ${C.green}40`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{setEditBooking({...b,id:uid(),checkin:"",checkout:"",roomId:"",roomIds:[]});setDetailBooking(null);}}>⧉ Duplicate</button>
-                  <button style={{flex:1,padding:"10px",background:"#fff8f0",color:C.orange,border:`1px solid ${C.orange}40`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{onShowReceipt(b,"receipt");setDetailBooking(null);}}>🧾 Receipt</button>
-                  <button style={{flex:1,padding:"10px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}25`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>{exportICS(b,customers);setToast("iCal downloaded!");}}>📅 iCal</button>
-                  <button style={{...S.btnD,flex:1,padding:"10px",fontSize:12}} onClick={async()=>{await onDeleteBooking(b.id);setDetailBooking(null);}}>🗑 Delete</button>
-                  <button style={S.btnG} onClick={()=>setDetailBooking(null)}>✕</button>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:4}}>
+                  <button style={{padding:"12px 6px",background:C.accent,color:"#fff",border:"none",borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{setEditBooking(b);setDetailBooking(null);}}>
+                    <span style={{fontSize:18}}>✏️</span><span>Edit</span>
+                  </button>
+                  <button style={{padding:"12px 6px",background:"#f0fff4",color:C.green,border:`1px solid ${C.green}30`,borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{setEditBooking({...b,id:uid(),checkin:"",checkout:"",roomId:"",roomIds:[]});setDetailBooking(null);}}>
+                    <span style={{fontSize:18}}>⧉</span><span>Duplicate</span>
+                  </button>
+                  <button style={{padding:"12px 6px",background:"#fff8f0",color:C.orange,border:`1px solid ${C.orange}30`,borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{onShowReceipt(b,"receipt");setDetailBooking(null);}}>
+                    <span style={{fontSize:18}}>🧾</span><span>Receipt</span>
+                  </button>
+                  <button style={{padding:"12px 6px",background:"#f0f6ff",color:C.blue,border:`1px solid ${C.blue}30`,borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{exportICS(b,customers);setToast("iCal downloaded!");}}>
+                    <span style={{fontSize:18}}>📅</span><span>iCal</span>
+                  </button>
+                  <button style={{padding:"12px 6px",background:"#fff5f5",color:C.red,border:`1px solid ${C.red}30`,borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,gridColumn:"2/4"}} onClick={async()=>{await onDeleteBooking(b.id);setDetailBooking(null);}}>
+                    <span style={{fontSize:18}}>🗑</span><span>Delete</span>
+                  </button>
                 </div>
               </>);
             })()}
@@ -3336,7 +3347,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 10:00 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 10:15 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
