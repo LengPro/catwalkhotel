@@ -1107,7 +1107,16 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
             {vr:VIRTUAL_ROWS[1], getBookings:()=>bookings.filter(b=>b.petTaxiAmt>0&&b.checkin&&b.checkout)},
           ].map(({vr,getBookings})=>{
             const vrBookings=getBookings();
-            const getVRBookingForDate=(dateStr)=>vrBookings.find(b=>b.checkin<=dateStr&&b.checkout>=dateStr);
+            const getVRBookingForDate=(dateStr)=>{
+              if(vr.type!=="taxi") return vrBookings.find(b=>b.checkin<=dateStr&&b.checkout>=dateStr);
+              // Pet Taxi: show only on selected day(s)
+              return vrBookings.find(b=>{
+                const day=b.petTaxiDay||"checkin";
+                if(day==="both") return dateStr===b.checkin||dateStr===b.checkout;
+                if(day==="checkout") return dateStr===b.checkout;
+                return dateStr===b.checkin; // default: checkin
+              });
+            };
             return(<div key={vr.id}>
               {/* Special zone label row */}
               <div style={{display:"flex",background:vr.bg,borderBottom:`1px solid ${C.borderLight}`}}>
@@ -1255,7 +1264,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                   {b.discount>0&&<span style={S.chip(C.red)}>-{b.discount}%</span>}
                   {b.size==="H"&&<span style={S.chip("#7b1fa2")}>@Home</span>}
                   {b.litter&&<span style={S.chip(C.blue)}>🪣 ทราย</span>}
-                  {b.petTaxiAmt>0&&<span style={S.chip("#7b1fa2")}>🚕 ฿{fmt2(b.petTaxiAmt)}</span>}
+                  {b.petTaxiAmt>0&&<span style={S.chip("#7b1fa2")}>🚕{b.petTaxiDay==="checkout"?" ส่ง":b.petTaxiDay==="both"?" รับ+ส่ง":" รับ"} ฿{fmt2(b.petTaxiAmt)}</span>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:4}}>
                   <button style={{padding:"12px 6px",background:C.accent,color:"#fff",border:"none",borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{setEditBooking(b);setDetailBooking(null);}}>
@@ -1509,7 +1518,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1851,8 +1860,19 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* 2. Pet Taxi */}
         <div style={{...S.fg,padding:"12px 14px",background:petTaxiAmt>0?"#f5f0ff":C.bg,borderRadius:12,border:`1px solid ${petTaxiAmt>0?"#9c27b040":C.border}`,marginBottom:10}}>
           <div style={{fontSize:14,fontWeight:700,color:petTaxiAmt>0?"#7b1fa2":C.text,marginBottom:8}}>🚕 Pet Taxi</div>
-          <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:petTaxiAmt>0?"#9c27b060":C.border}} min="0" placeholder="0 (ไม่มี)" value={form.petTaxi||""} onChange={e=>set("petTaxi",e.target.value)}/>
-          {petTaxiAmt>0&&<div style={{fontSize:11,color:"#7b1fa2",marginTop:4}}>+฿{fmt2(petTaxiAmt)} รวมในยอด</div>}
+          <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:petTaxiAmt>0?"#9c27b060":C.border,marginBottom:8}} min="0" placeholder="0 (ไม่มี)" value={form.petTaxi||""} onChange={e=>set("petTaxi",e.target.value)}/>
+          {petTaxiAmt>0&&(
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#7b1fa2",marginBottom:6}}>ใช้บริการวันไหน?</div>
+              <div style={{display:"flex",gap:6}}>
+                {[{v:"checkin",label:"🚕 วันรับ (Check-in)"},{v:"checkout",label:"🚕 วันส่ง (Check-out)"},{v:"both",label:"🚕 ทั้งสองวัน"}].map(({v,label})=>{
+                  const sel=(form.petTaxiDay||"checkin")===v;
+                  return(<button key={v} onClick={()=>set("petTaxiDay",v)} style={{flex:1,padding:"7px 4px",borderRadius:9,border:`2px solid ${sel?"#9c27b0":"#e0d0f0"}`,background:sel?"#9c27b0":"transparent",color:sel?"#fff":"#7b1fa2",fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer",lineHeight:1.3}}>{label}</button>);
+                })}
+              </div>
+              <div style={{fontSize:11,color:"#7b1fa2",marginTop:6}}>+฿{fmt2(petTaxiAmt)} รวมในยอด · แสดงใน Rooms timeline</div>
+            </div>
+          )}
         </div>
 
         {/* 3. Discount */}
@@ -1938,7 +1958,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {/* Pet Taxi */}
             {petTaxiAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.text2}}>🚕 Pet Taxi</span>
+                <span style={{fontSize:13,color:C.text2}}>🚕 Pet Taxi{(form.petTaxiDay||"checkin")==="checkin"?" (วันรับ)":(form.petTaxiDay)==="checkout"?" (วันส่ง)":" (รับ+ส่ง)"}</span>
                 <span style={{fontSize:13,fontWeight:600,color:C.text}}>+฿{fmt2(petTaxiAmt)}</span>
               </div>
             )}
@@ -1998,7 +2018,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
           </div>
         )}
-        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||"",homePriceTotal:form.size==="H"?homePriceLump:0})}>          {booking?"Save Changes":"Add Booking"}
+        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,petTaxiDay:petTaxiAmt>0?(form.petTaxiDay||"checkin"):"",depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||"",homePriceTotal:form.size==="H"?homePriceLump:0})}>          {booking?"Save Changes":"Add Booking"}
         </button>
       </div>
     </div>
@@ -3556,9 +3576,30 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       {/* ── About ── */}
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 15:30 (ICT)</div>
-        <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
+        <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 28 Mar 2026 · 23:30 (ICT)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync</div>
+        <div style={{borderTop:`1px solid ${C.borderLight}`,paddingTop:8}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:6}}>📋 Updates — 28 Mar 2026</div>
+          {[
+            {time:"23:30",text:"🚕 Pet Taxi เลือกวันส่ง Check-in / Check-out / ทั้งสองวัน"},
+            {time:"22:45",text:"📅 ปฏิทิน Rooms — ล็อกวันที่ค้างเมื่อเลื่อนลง"},
+            {time:"23:00",text:"📆 Check-in และ Check-out วันเดียวกันได้ (Day Use = 1 คืน)"},
+            {time:"20:00",text:"🏠 @Home ใส่ราคารวมทั้งหมด (ไม่คูณคืน)"},
+            {time:"19:00",text:"💰 ส่วนลดรวมค่าห้อง + ทรายแมว"},
+            {time:"18:30",text:"📥 แก้ Combined Template import — booking ไม่หาย"},
+            {time:"18:00",text:"📊 Export .xlsx (Numbers) มี 2 sheets + styling"},
+            {time:"16:00",text:"🪣 ทรายแมว UI ใหม่ — เลือกราคาได้, แสดงสูตรชัดเจน"},
+            {time:"15:00",text:"🪣 แก้ทรายคูณจำนวนแมว (฿60 × แมว × รอบ)"},
+            {time:"14:45",text:"🖼 เปลี่ยน Nav Icons ทั้ง 5 เมนู"},
+            {time:"13:00",text:"🐛 แก้ Bug ทรายแมวคูณ numCats ผิด"},
+          ].map(({time,text})=>(
+            <div key={time} style={{display:"flex",gap:8,marginBottom:5,alignItems:"flex-start"}}>
+              <span style={{fontSize:10,color:C.text3,flexShrink:0,marginTop:1,fontFamily:"monospace"}}>{time}</span>
+              <span style={{fontSize:11,color:C.text2,lineHeight:1.4}}>{text}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   </div>);
