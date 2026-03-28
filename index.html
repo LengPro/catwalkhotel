@@ -2471,17 +2471,20 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
 const YEAR_COLORS=["#ff6b9d","#0071e3","#34c759","#ff9500","#af52de"];
 
 function getMonthRevenue(bookings, year, month){
-  // month: 0-11, use checkin date, deduct CC fee
   const s=new Date(year,month,1);
   const e=new Date(year,month+1,0);
-  const ds=d=>d.toISOString().split("T")[0];
-  return bookings
-    .filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e))
-    .reduce((a,b)=>{
-      const net=b.net||0;
-      const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
-      return a+net-ccFee;
-    },0);
+  const sStr=s.toISOString().split("T")[0];
+  const eStr=e.toISOString().split("T")[0];
+  return bookings.filter(b=>b.checkin<=eStr&&b.checkout>=sStr).reduce((sum,b)=>{
+    const totalDays=Math.max(1,Math.round((new Date(b.checkout)-new Date(b.checkin))/(864e5))+1);
+    const net=b.net||0;
+    const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
+    const perDay=(net-ccFee)/totalDays;
+    const overlapStart=b.checkin>sStr?b.checkin:sStr;
+    const overlapEnd=b.checkout<eStr?b.checkout:eStr;
+    const overlapDays=Math.round((new Date(overlapEnd)-new Date(overlapStart))/(864e5))+1;
+    return sum+perDay*Math.max(0,overlapDays);
+  },0);
 }
 function getMonthBookings(bookings, year, month){
   const s=new Date(year,month,1);
@@ -2543,14 +2546,26 @@ function DashboardPage({bookings,customers,onExportBookings}){
     return parseFloat((fullNet/totalDays).toFixed(2));
   };
 
-  // For Day: sum net-per-night of all staying bookings
-  // For Week/Month/Year: sum full net of bookings whose checkin falls in range (no double-counting)
-  const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
+  // กระจายรายได้ทุกวันที่แมวอยู่ (checkin → checkout inclusive)
+  // เช่น checkin 1 Apr, checkout 2 Apr = 2 วัน → แต่ละวันได้ 350/2 = 175
+  const getRevenueForDateRange=(rangeStart,rangeEnd)=>{
+    return bookings.reduce((sum,b)=>{
+      if(!b.checkin||!b.checkout) return sum;
+      // วันที่ overlap = max(checkin, rangeStart) ถึง min(checkout, rangeEnd)
+      const overlapStart=b.checkin>rangeStart?b.checkin:rangeStart;
+      const overlapEnd=b.checkout<rangeEnd?b.checkout:rangeEnd;
+      if(overlapStart>overlapEnd) return sum;
+      // จำนวนวันที่ overlap (inclusive)
+      const overlapDays=Math.round((new Date(overlapEnd)-new Date(overlapStart))/(864e5))+1;
+      return sum+netPerDay(b)*overlapDays;
+    },0);
+  };
+
+  const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
 
-  const revenue=period==="day"
-    ?parseFloat(inRange.reduce((a,b)=>a+netPerDay(b),0).toFixed(2))
-    :parseFloat(revenueBookings.reduce((a,b)=>a+actualNet(b),0).toFixed(2));
+  const revenue=parseFloat(getRevenueForDateRange(startStr,endStr).toFixed(2));
+
   const ccFeeTotal=parseFloat((period==="day"
     ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
         const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
@@ -2560,19 +2575,26 @@ function DashboardPage({bookings,customers,onExportBookings}){
   ).toFixed(2));
   const unpaid=parseFloat((period==="day"
     ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b),0)
-    :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0)
+    :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b)*(Math.round((new Date(b.checkout<endStr?b.checkout:endStr)-new Date(b.checkin>startStr?b.checkin:startStr))/(864e5))+1),0)
   ).toFixed(2));
   const totalNights=period==="day"?inRange.length:inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
   const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
   let bars=[];
-  if(period==="week"){for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);const ds2=ds(d);const v=bookings.filter(b=>b.checkin===ds2).reduce((a,b)=>a+actualNet(b),0);bars.push({label:["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()],val:v});}}
-  else if(period==="month"){let ws=new Date(start);while(ws<=end){const we=new Date(ws);we.setDate(ws.getDate()+6);const ae=we>end?end:we;const v=bookings.filter(b=>b.checkin>=ds(ws)&&b.checkin<=ds(ae)).reduce((a,b)=>a+actualNet(b),0);bars.push({label:`${ws.getDate()}/${ws.getMonth()+1}`,val:v});ws=new Date(we);ws.setDate(we.getDate()+1);}}
-  else if(period==="year"){for(let m=0;m<12;m++){const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);const v=bookings.filter(b=>b.checkin>=ds(ms)&&b.checkin<=ds(me)).reduce((a,b)=>a+actualNet(b),0);bars.push({label:MONTHS[m],val:v});}}
+  if(period==="week"){for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);const ds2=ds(d);const v=getRevenueForDateRange(ds2,ds2);bars.push({label:["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()],val:v});}}
+  else if(period==="month"){let ws=new Date(start);while(ws<=end){const we=new Date(ws);we.setDate(ws.getDate()+6);const ae=we>end?end:we;const v=getRevenueForDateRange(ds(ws),ds(ae));bars.push({label:`${ws.getDate()}/${ws.getMonth()+1}`,val:v});ws=new Date(we);ws.setDate(we.getDate()+1);}}
+  else if(period==="year"){for(let m=0;m<12;m++){const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);const v=getRevenueForDateRange(ds(ms),ds(me));bars.push({label:MONTHS[m],val:v});}}
   else{bars=[{label:"Today",val:revenue}];}
   const maxBar=Math.max(...bars.map(r=>r.val),1);
-  // pmMap: Day = staying bookings, Week/Month/Year = checkin in range
-  const pmSource=period==="day"?inRange:revenueBookings;
-  const pmMap={};pmSource.forEach(b=>{pmMap[b.payMethod]=(pmMap[b.payMethod]||0)+actualNet(b);});
+  // pmMap: กระจายรายได้ตามวันที่อยู่จริงในช่วง
+  const pmMap={};
+  revenueBookings.forEach(b=>{
+    const overlapStart=b.checkin>startStr?b.checkin:startStr;
+    const overlapEnd=b.checkout<endStr?b.checkout:endStr;
+    if(overlapStart>overlapEnd) return;
+    const days=Math.round((new Date(overlapEnd)-new Date(overlapStart))/(864e5))+1;
+    const v=netPerDay(b)*days;
+    pmMap[b.payMethod]=(pmMap[b.payMethod]||0)+v;
+  });
   const pmEntries=Object.entries(pmMap).sort((a,b)=>b[1]-a[1]);
   const maxPm=Math.max(...pmEntries.map(e=>e[1]),1);
   const roomStats=ROOMS.map(r=>({room:r,count:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).length,revenue:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).reduce((a,b)=>a+actualNet(b),0)})).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
@@ -3311,7 +3333,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:15 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:30 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
