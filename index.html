@@ -1530,14 +1530,19 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const suggestedLitterAmt=form.litter?lRoundsTotal*LITTER_FEE*lCatsTotal:0;
   const customLitterVal=parseFloat(form.litterCustom)||0;
   const totalLitterAmt=form.litter?(customLitterVal>0?customLitterVal:suggestedLitterAmt):0;
-  // calcRoomNet computes litter via litterFeePerRound; we strip it out and add totalLitterAmt instead
-  const roomNetNoLitter=(rid)=>{const r=calcRoomNet(rid);const disc=parseFloat(form.discount)||0;const baseNoLit=n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);const discAmt2=parseFloat((baseNoLit*disc/100).toFixed(2));return parseFloat((baseNoLit-discAmt2).toFixed(2));};
-  const totalNet=selectedRooms.length>0
-    ? selectedRooms.reduce((sum,rid)=>sum+roomNetNoLitter(rid),0)+totalLitterAmt+petTaxiAmt
-    : (n>0&&numCats>0?(()=>{const p=calcPrice(n,form.size==="H"?"S":form.size,numCats,form.discount,false);return p.net*(form.size==="H"&&PRICES.S>0?homePricePerNight/PRICES.S:1)})():0)+totalLitterAmt+petTaxiAmt;
-  const net=parseFloat(totalNet.toFixed(2));
+  // discount applies to (room base + litter), petTaxi excluded from discount
+  const disc=parseFloat(form.discount)||0;
+  const roomBaseNoLitter=(rid)=>{const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);};
+  const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0?(()=>{const p=calcPrice(n,form.size==="H"?"S":form.size,numCats,0,false);return p.base*(form.size==="H"&&PRICES.S>0?homePricePerNight/PRICES.S:1)})():0);
+  const discountableBase=totalRoomBase+totalLitterAmt;
+  const discAmt2=parseFloat((discountableBase*disc/100).toFixed(2));
+  const totalNet=parseFloat((discountableBase-discAmt2+petTaxiAmt).toFixed(2));
+  const net=totalNet;
   const isCreditCard=form.payMethod==="Credit Card";
-  const {base,discAmt,litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
+  // base = room+litter before discount; discAmt = actual discount amount (room+litter)
+  const base=discountableBase;
+  const discAmt=discAmt2;
+  const {litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,0,form.litter):{litterAmt:0,litterWeeks:0};
   const depositAmt=Math.max(0,parseFloat(form.deposit)||0);
   const remaining=parseFloat(Math.max(0,net-depositAmt).toFixed(2));
   const ccFeeAmt=isCreditCard&&remaining>0?parseFloat((remaining*CREDIT_CARD_FEE_PCT/100).toFixed(2)):0;
@@ -1920,25 +1925,12 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
 
             {/* ส่วนลด */}
-            {parseFloat(form.discount)>0&&(()=>{
-              const preDisc=selectedRooms.reduce((s,rid)=>{
-                const {base:rb}=calcRoomNet(rid);
-                // base before discount
-                const r2=ROOMS.find(x=>x.id===rid);
-                const sz2=r2?.type||form.size;
-                const pp=getPriceForSize(sz2==="S"||sz2==="M"?sz2:form.size);
-                const ec=Math.max(0,getCatsForRoom(rid)-1);
-                const la=form.litter?Math.ceil(n/6)*LITTER_FEE*getCatsForRoom(rid):0;
-                return s+n*(pp+ec*EXTRA_CAT_FEE)+la;
-              },0);
-              const totalDisc=parseFloat((preDisc*(parseFloat(form.discount)||0)/100).toFixed(2));
-              return totalDisc>0?(
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}%</span>
-                  <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(totalDisc)}</span>
-                </div>
-              ):null;
-            })()}
+            {discAmt>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}% (ห้อง+ทราย)</span>
+                <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(discAmt)}</span>
+              </div>
+            )}
 
             {/* ── ยอดรวม ── */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:`2px solid ${C.text}`,paddingTop:8,marginTop:4,marginBottom:depositAmt>0?8:0}}>
