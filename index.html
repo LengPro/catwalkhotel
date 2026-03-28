@@ -2157,10 +2157,11 @@ function downloadTemplateBookingCSV(){
 }
 
 function downloadTemplateCombinedCSV(){
-  const h=["Customer Nickname","Full Name","Phone","Line ID","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Discount %","Deposit","Payment Method","Fully Paid","Cat Litter","Pet Taxi","Booking Notes"];
+  const h=["Customer Nickname","Full Name","Phone","Line ID","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Discount %","Deposit","Payment Method","Fully Paid","Cat Litter","Pet Taxi","Booking Notes"];
   const ex=[
-    ["K.Nong","คุณน้อง","0812345678","@nong","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","A-S1","A-S1","S","2026-04-01","2026-04-07","10","500","Transfer","No","Yes","0",""],
-    ["K.Joy","คุณจอย","0898765432","","","Taro","Maine Coon","","","B-S6","B-S6","S","2026-04-05","2026-04-10","0","0","Cash","Yes","No","0",""]
+    ["K.Nong","คุณน้อง","0812345678","@nong","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-04-01","2026-04-07","10","500","Transfer","No","No","0",""],
+    ["K.Nong","คุณน้อง","0812345678","@nong","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-05-10","2026-05-15","0","0","Transfer","Yes","No","0",""],
+    ["K.Joy","คุณจอย","0898765432","","","Taro","Maine Coon","","","","","B-S6","B-S6","S","2026-04-05","2026-04-10","0","0","Cash","Yes","Yes","0",""]
   ];
   dlCSV([h,...ex],"catwalk-combined-template.csv");
 }
@@ -3258,16 +3259,16 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
     const cat3Name=(r["cat3 name"]||r["cat 3"]||"").trim();
     const cat3Breed=(r["cat3 breed"]||"").trim();
     // ── Booking fields ──
-    const checkin=(r["check-in"]||r["checkin"]||r["check in"]||r["วันเข้า"]||"").trim();
-    const checkout=(r["check-out"]||r["checkout"]||r["check out"]||r["วันออก"]||"").trim();
+    const checkin=(r["check-in"]||r["checkin"]||r["check in"]||r["check-in (yyyy-mm-dd)"]||r["วันเข้า"]||"").trim();
+    const checkout=(r["check-out"]||r["checkout"]||r["check out"]||r["check-out (yyyy-mm-dd)"]||r["วันออก"]||"").trim();
     const roomId=(r["room id"]||r["room"]||r["ห้อง"]||r["roomid"]||"").trim().toUpperCase();
     const roomIdsStr=(r["room ids"]||r["room ids (multi)"]||"").trim();
-    const size=(r["room size"]||r["size"]||r["type"]||"S").trim().toUpperCase()||"S";
+    const size=(r["room size"]||r["size (s/m)"]||r["size"]||r["type"]||"S").trim().toUpperCase()||"S";
     const discount=parseFloat(r["discount %"]||r["discount"]||r["ส่วนลด"]||"0")||0;
     const deposit=parseFloat(r["deposit"]||r["มัดจำ"]||"0")||0;
     const payMethod=(r["payment method"]||r["payment"]||r["การชำระ"]||"Transfer").trim()||"Transfer";
-    const paid=(r["fully paid"]||r["paid"]||r["ชำระแล้ว"]||"").toLowerCase()==="yes";
-    const litter=(r["cat litter"]||r["litter"]||r["ทราย"]||"").toLowerCase()==="yes";
+    const paid=(r["fully paid"]||r["paid (yes/no)"]||r["paid"]||r["ชำระแล้ว"]||"").toLowerCase()==="yes";
+    const litter=(r["cat litter"]||r["cat litter (yes/no)"]||r["litter"]||r["ทราย"]||"").toLowerCase()==="yes";
     const petTaxi=parseFloat(r["pet taxi"]||"0")||0;
     const notes=(r["booking notes"]||r["notes"]||r["หมายเหตุ"]||"").trim();
 
@@ -3497,11 +3498,11 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           คอลัมน์: Name, Phone, Cat Name, Breed, Room, Check-in, Check-out, Size, Discount%, Deposit, Payment, Paid
         </div>
         <button style={{...S.btnP,width:"100%"}} onClick={()=>{
-          const h=["Name","Phone","Line ID","Cat Name","Breed","Cat2 Name","Cat2 Breed","Room","Check-in (YYYY-MM-DD)","Check-out (YYYY-MM-DD)","Size (S/M)","Discount %","Deposit","Payment Method","Paid (Yes/No)","Cat Litter (Yes/No)","Notes"];
+          const h=["Customer Nickname","Full Name","Phone","Line ID","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Discount %","Deposit","Payment Method","Fully Paid","Cat Litter","Pet Taxi","Booking Notes"];
           const ex=[
-            ["K.Nong","0812345678","@nong","Mochi","Scottish Fold","Luna","Persian","A-S2","2026-04-01","2026-04-07","S","0","500","Cash","No","No",""],
-            ["K.Nong","0812345678","@nong","Mochi","Scottish Fold","Luna","Persian","A-S2","2026-05-10","2026-05-15","S","10","0","Transfer","Yes","No",""],
-            ["K.Joy","0898765432","","Taro","Maine Coon","","","B-S6","2026-04-05","2026-04-10","S","0","0","Cash","Yes","Yes",""],
+            ["K.Nong","คุณน้อง","0812345678","@nong","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S2","A-S2","S","2026-04-01","2026-04-07","0","500","Transfer","No","No","0",""],
+            ["K.Nong","คุณน้อง","0812345678","@nong","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S2","A-S2","S","2026-05-10","2026-05-15","10","0","Transfer","Yes","No","0",""],
+            ["K.Joy","","0898765432","","","Taro","Maine Coon","","","","","B-S6","B-S6","S","2026-04-05","2026-04-10","0","0","Cash","Yes","Yes","0",""],
           ];
           dlCSV([h,...ex],"catwalk-combined-template.csv");
           setToast("✅ Downloaded template!");
