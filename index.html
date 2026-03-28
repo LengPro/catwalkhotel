@@ -60,6 +60,7 @@ input[type=date]::-webkit-calendar-picker-indicator { opacity:0.5; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
 const firebaseConfig = {
@@ -321,6 +322,161 @@ function exportAllCSV(customers,bookings){
 
 // ── ICS / Calendar ────────────────────────────────────────────────────
 const toICS=d=>d.replace(/-/g,"");
+function exportAllXLSX(customers,bookings){
+  // ── style helpers ──────────────────────────────────────────────
+  const S=(bold,sz,color,bgColor,ha,va,wrap,borderStyle)=>({
+    font:{name:"Arial",bold:!!bold,sz:sz||10,color:{rgb:color||"000000"}},
+    fill:bgColor?{patternType:"solid",fgColor:{rgb:bgColor}}:{},
+    alignment:{horizontal:ha||"left",vertical:va||"center",wrapText:!!wrap},
+    border:borderStyle==="thin"?{top:{style:"thin",color:{rgb:"BBBBBB"}},bottom:{style:"thin",color:{rgb:"BBBBBB"}},left:{style:"thin",color:{rgb:"BBBBBB"}},right:{style:"thin",color:{rgb:"BBBBBB"}}}
+          :borderStyle==="dotted"?{top:{style:"hair",color:{rgb:"CCCCCC"}},bottom:{style:"hair",color:{rgb:"CCCCCC"}}}
+          :borderStyle==="bottom"?{bottom:{style:"medium",color:{rgb:"999999"}}}:{}
+  });
+  const setCell=(ws,addr,v,style)=>{
+    if(!ws[addr])ws[addr]={t:typeof v==="number"?"n":"s",v};
+    else{ws[addr].t=typeof v==="number"?"n":"s";ws[addr].v=v;}
+    ws[addr].s=style;
+  };
+  const applyRow=(ws,row,startCol,endCol,style)=>{
+    for(let c=startCol;c<=endCol;c++){
+      const addr=XLSX.utils.encode_cell({r:row,c});
+      if(!ws[addr])ws[addr]={t:"s",v:""};
+      ws[addr].s=style;
+    }
+  };
+  // ── color palette (matches sample) ────────────────────────────
+  const CLR={
+    black:"1A1A1A",white:"FFFFFF",
+    titleBg:"1A1A1A",  // title row background
+    hdrBg:"2C3E50",    // header bg dark
+    // column group colors from sample
+    grpCust:"EBF5FB",  grpCustHdr:"2980B9",   // customer cols
+    grpDates:"EAF4EA", grpDatesHdr:"27AE60",  // dates cols
+    grpRoom:"FEF9E7",  grpRoomHdr:"F39C12",   // room cols
+    grpPrice:"FBEEE6", grpPriceHdr:"E74C3C",  // price cols
+    grpPay:"F5EEF8",   grpPayHdr:"8E44AD",    // payment cols
+    grpMeta:"F0F3F4",  grpMetaHdr:"566573",   // notes cols
+    altRow:"F9F9F9",   // alternating row
+    totalBg:"ECF0F1",  // total row
+  };
+  // ── BUILD BOOKINGS SHEET ────────────────────────────────────────
+  const bHeaders=["No.","Customer","Full Name","Phone","Cat Names","Nights","Room","Size","Price/Night","Base Price","Litter Amt","Pet Taxi","Discount %","Discount Amt","Net Total","CC Fee","Shop Receives","Pay Method","Deposit","Remaining","Paid","Notes","Check-in","Check-out","Created"];
+  // col group: 0=No,1-3=cust,4=cat,5=nights,6-7=room,8-13=price,14-16=price,17-20=pay,21=meta,22-24=dates
+  const bColGroups=[
+    {cols:[0],bg:CLR.grpMetaHdr,label:"No."},
+    {cols:[1,2,3,4],bg:CLR.grpCustHdr,label:"Customer"},
+    {cols:[5,6,7],bg:CLR.grpRoomHdr,label:"Room & Stay"},
+    {cols:[8,9,10,11,12,13,14,15,16],bg:CLR.grpPriceHdr,label:"Pricing"},
+    {cols:[17,18,19,20],bg:CLR.grpPayHdr,label:"Payment"},
+    {cols:[21],bg:CLR.grpMetaHdr,label:"Notes"},
+    {cols:[22,23,24],bg:CLR.grpDatesHdr,label:"Dates"},
+  ];
+  const bColData=bookings.map((b,i)=>{
+    const c=customers.find(x=>x.id===b.customerId)||{};
+    const n=nights(b.checkin,b.checkout);
+    const cats=(b.selectedCatIds||[]).map(id=>(c.cats||[]).find(cat=>cat.id===id)?.name||"").filter(Boolean).join(", ")||b.catName||"";
+    const rooms=b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean);
+    const sz=b.size||"S";
+    const ppn=sz==="H"?(b.homePricePerNight||0):(PRICES[sz]||350);
+    const net=b.net||0;const dep=b.depositAmt||0;const rem=b.remaining||Math.max(0,net-dep);const ccFee=b.ccFeeAmt||0;
+    return[i+1,c.nickname||"",c.fullname||"",c.phone||"",cats,n,rooms.join(", "),sz,ppn,b.base||0,b.litterAmt||0,b.petTaxiAmt||0,b.discount||0,b.discAmt||0,parseFloat(fmt2(net)),parseFloat(fmt2(ccFee)),parseFloat(fmt2(dep+(rem-ccFee))),b.payMethod||"",parseFloat(fmt2(dep)),parseFloat(fmt2(rem)),b.paid?"✓":"",b.notes||"",b.checkin||"",b.checkout||"",b.createdAt?.split("T")[0]||""];
+  });
+  const bColWidths=[6,16,18,13,22,7,14,6,10,11,10,9,9,11,11,9,13,12,10,11,7,28,13,13,13];
+
+  const wb=XLSX.utils.book_new();
+  // Create sheet from aoa first
+  const ws1=XLSX.utils.aoa_to_sheet([[`Revenue of Catwalk Hotel — Bookings (${today()})`],...[bHeaders],...bColData]);
+
+  // ── Row 0: Title ──
+  const titleStyle=S(true,14,CLR.white,CLR.titleBg,"left","center",false,null);
+  for(let c=0;c<bHeaders.length;c++){
+    const addr=XLSX.utils.encode_cell({r:0,c});
+    if(!ws1[addr])ws1[addr]={t:"s",v:""};
+    ws1[addr].s=titleStyle;
+  }
+  ws1["!merges"]=[{s:{r:0,c:0},e:{r:0,c:bHeaders.length-1}}];
+
+  // ── Row 1: Headers ──
+  bColGroups.forEach(grp=>{
+    grp.cols.forEach(ci=>{
+      const addr=XLSX.utils.encode_cell({r:1,c:ci});
+      const hStyle=S(true,10,CLR.white,grp.bg,"center","center",true,"thin");
+      if(!ws1[addr])ws1[addr]={t:"s",v:bHeaders[ci]};
+      ws1[addr].s=hStyle;
+    });
+  });
+
+  // ── Data rows ──
+  bColData.forEach((row,ri)=>{
+    const isAlt=ri%2===1;
+    const rowBg=isAlt?CLR.altRow:CLR.white;
+    row.forEach((v,ci)=>{
+      const addr=XLSX.utils.encode_cell({r:ri+2,c:ci});
+      const isNum=typeof v==="number";
+      const isName=ci===1||ci===2||ci===4; // name/cat cols
+      const isPaid=ci===20;
+      const grp=bColGroups.find(g=>g.cols.includes(ci));
+      const cellBg=isAlt?rowBg:rowBg;
+      const ha=isNum?"right":isName?"left":"center";
+      const cellStyle={
+        font:{name:"Arial",sz:10,bold:ci===14||ci===16,color:{rgb:isPaid&&v==="✓"?"27AE60":ci>=8&&ci<=16?"1A1A1A":"333333"}},
+        fill:{patternType:"solid",fgColor:{rgb:cellBg}},
+        alignment:{horizontal:ha,vertical:"center",wrapText:isName},
+        border:{top:{style:"hair",color:{rgb:"DDDDDD"}},bottom:{style:"hair",color:{rgb:"DDDDDD"}}},
+        numFmt:isNum&&ci>=8?"#,##0.##":"@"
+      };
+      if(!ws1[addr])ws1[addr]={t:isNum?"n":"s",v};
+      ws1[addr].s=cellStyle;
+    });
+  });
+
+  // ── Row heights ──
+  ws1["!rows"]=[{hpt:30},{hpt:22},...bColData.map(()=>({hpt:20}))];
+  ws1["!cols"]=bColWidths.map(w=>({wch:w}));
+
+  // ── BUILD CUSTOMERS SHEET ─────────────────────────────────────
+  const cHeaders=["No.","Nickname","Full Name","Phone","Line ID","Total Bookings","Total Nights","Total Spent (฿)","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Notes"];
+  const cColData=customers.map((cu,i)=>{
+    const myB=bookings.filter(b=>b.customerId===cu.id);
+    const totalNights=myB.reduce((s,b)=>s+nights(b.checkin,b.checkout),0);
+    const totalSpent=myB.reduce((s,b)=>s+(b.net||0),0);
+    const cats=cu.cats||[];
+    return[i+1,cu.nickname||"",cu.fullname||"",cu.phone||"",cu.line||"",myB.length,totalNights,parseFloat(fmt2(totalSpent)),cats[0]?.name||"",cats[0]?.breed||"",cats[1]?.name||"",cats[1]?.breed||"",cats[2]?.name||"",cats[2]?.breed||"",cu.notes||""];
+  });
+  const ws2=XLSX.utils.aoa_to_sheet([[`Catwalk Hotel — Customers (${today()})`],...[cHeaders],...cColData]);
+
+  // Title row
+  for(let c=0;c<cHeaders.length;c++){const addr=XLSX.utils.encode_cell({r:0,c});if(!ws2[addr])ws2[addr]={t:"s",v:""};ws2[addr].s=S(true,14,CLR.white,CLR.titleBg,"left","center",false,null);}
+  ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:cHeaders.length-1}}];
+
+  // Header row — two color groups
+  const cGrps=[
+    {cols:[0],bg:CLR.grpMetaHdr},{cols:[1,2,3,4],bg:CLR.grpCustHdr},
+    {cols:[5,6,7],bg:CLR.grpPriceHdr},{cols:[8,9,10,11,12,13],bg:CLR.grpDatesHdr},{cols:[14],bg:CLR.grpMetaHdr}
+  ];
+  cGrps.forEach(grp=>grp.cols.forEach(ci=>{
+    const addr=XLSX.utils.encode_cell({r:1,c:ci});
+    if(!ws2[addr])ws2[addr]={t:"s",v:cHeaders[ci]};
+    ws2[addr].s=S(true,10,CLR.white,grp.bg,"center","center",true,"thin");
+  }));
+
+  cColData.forEach((row,ri)=>{
+    const rowBg=ri%2===1?CLR.altRow:CLR.white;
+    row.forEach((v,ci)=>{
+      const addr=XLSX.utils.encode_cell({r:ri+2,c:ci});
+      const isNum=typeof v==="number"&&ci>0;
+      if(!ws2[addr])ws2[addr]={t:isNum?"n":"s",v};
+      ws2[addr].s={font:{name:"Arial",sz:10,bold:ci===7,color:{rgb:"333333"}},fill:{patternType:"solid",fgColor:{rgb:rowBg}},alignment:{horizontal:isNum?"right":ci===2||ci===14?"left":"center",vertical:"center",wrapText:ci===14},border:{top:{style:"hair",color:{rgb:"DDDDDD"}},bottom:{style:"hair",color:{rgb:"DDDDDD"}}},numFmt:ci===7?"#,##0.##":"@"};
+    });
+  });
+  ws2["!rows"]=[{hpt:30},{hpt:22},...cColData.map(()=>({hpt:20}))];
+  ws2["!cols"]=[{wch:6},{wch:16},{wch:18},{wch:13},{wch:12},{wch:12},{wch:11},{wch:14},{wch:14},{wch:16},{wch:14},{wch:16},{wch:14},{wch:16},{wch:28}];
+
+  XLSX.utils.book_append_sheet(wb,ws1,"Bookings");
+  XLSX.utils.book_append_sheet(wb,ws2,"Customers");
+  XLSX.writeFile(wb,`catwalk-${today()}.xlsx`,{cellStyles:true});
+}
+
 function exportICS(b,customers){
   const c=customers.find(x=>x.id===b.customerId)||{};
   const selCats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id));
@@ -3370,7 +3526,10 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
             <div style={{fontSize:13,fontWeight:700}}>Export All (Bookings + Customers)</div>
             <div style={{fontSize:11,color:C.text3}}>ข้อมูลครบทุกอย่าง — นำเข้ากลับได้</div>
           </div>
-          <button style={{...S.btnP,fontSize:12,padding:"8px 14px"}} onClick={()=>{exportAllCSV(customers,bookings);setToast("✅ Exported all data!");}}>⬇ CSV</button>
+          <div style={{display:"flex",gap:6}}>
+            <button style={{...S.btnP,fontSize:12,padding:"8px 14px"}} onClick={()=>{exportAllXLSX(customers,bookings);setToast("✅ Exported .xlsx — เปิดใน Numbers ได้เลย!");}}>⬇ .xlsx (Numbers)</button>
+            <button style={{...S.btnG,fontSize:11,padding:"8px 10px"}} onClick={()=>{exportAllCSV(customers,bookings);setToast("✅ Exported CSV!");}}>⬇ CSV</button>
+          </div>
         </div>
         <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div><div style={{fontSize:13,fontWeight:700}}>Export Bookings</div><div style={{fontSize:11,color:C.text3}}>{bookings.length} bookings · รายละเอียดการจองและราคา</div></div>
