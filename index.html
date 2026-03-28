@@ -2534,12 +2534,13 @@ function DashboardPage({bookings,customers,onExportBookings}){
     :bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
 
   // Revenue per night for a booking (net / total nights)
-  const netPerNight=b=>{
-    const n=Math.max(1,nights(b.checkin,b.checkout));
+  // หารด้วยจำนวนวัน (nights + 1) เช่น checkin 28, checkout 29 = 1 คืน 2 วัน → หาร 2
+  const netPerDay=b=>{
+    const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
     const fullNet=b.payMethod==="Credit Card"
       ?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2))
       :(b.net||0);
-    return parseFloat((fullNet/n).toFixed(2));
+    return parseFloat((fullNet/totalDays).toFixed(2));
   };
 
   // For Day: sum net-per-night of all staying bookings
@@ -2548,17 +2549,17 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
 
   const revenue=period==="day"
-    ?parseFloat(inRange.reduce((a,b)=>a+netPerNight(b),0).toFixed(2))
+    ?parseFloat(inRange.reduce((a,b)=>a+netPerDay(b),0).toFixed(2))
     :parseFloat(revenueBookings.reduce((a,b)=>a+actualNet(b),0).toFixed(2));
   const ccFeeTotal=parseFloat((period==="day"
     ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
-        const n=Math.max(1,nights(b.checkin,b.checkout));
-        return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/n;
+        const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
+        return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/totalDays;
       },0)
     :revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0)
   ).toFixed(2));
   const unpaid=parseFloat((period==="day"
-    ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerNight(b),0)
+    ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b),0)
     :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+(b.net||0),0)
   ).toFixed(2));
   const totalNights=period==="day"?inRange.length:inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
@@ -2651,7 +2652,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
               const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
               const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
               const n=Math.max(1,nights(b.checkin,b.checkout));
-              const npn=netPerNight(b);
+              const npn=netPerDay(b);
               const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
               return(
                 <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
@@ -3310,7 +3311,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:00 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:15 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
