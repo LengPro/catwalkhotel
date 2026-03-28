@@ -2471,12 +2471,13 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
 const YEAR_COLORS=["#ff6b9d","#0071e3","#34c759","#ff9500","#af52de"];
 
 function getMonthRevenue(bookings, year, month){
+  const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const s=new Date(year,month,1);
   const e=new Date(year,month+1,0);
-  const sStr=s.toISOString().split("T")[0];
-  const eStr=e.toISOString().split("T")[0];
+  const sStr=fmtD(s);
+  const eStr=fmtD(e);
   return bookings.filter(b=>b.checkin<=eStr&&b.checkout>=sStr).reduce((sum,b)=>{
-    const totalDays=Math.max(1,Math.round((new Date(b.checkout)-new Date(b.checkin))/(864e5))+1);
+    const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const net=b.net||0;
     const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
     const perDay=(net-ccFee)/totalDays;
@@ -2487,9 +2488,10 @@ function getMonthRevenue(bookings, year, month){
   },0);
 }
 function getMonthBookings(bookings, year, month){
+  const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const s=new Date(year,month,1);
   const e=new Date(year,month+1,0);
-  const ds=d=>d.toISOString().split("T")[0];
+  const ds=d=>fmtD(d);
   return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).length;
 }
 function pct(a,b){ if(!b) return null; return Math.round((a-b)/b*100); }
@@ -2518,9 +2520,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
   };
 
   useEffect(()=>setOffset(0),[period]);
-  const ds=d=>d.toISOString().split("T")[0];
-
-  // ── Overview helpers ──
+  const ds=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const getRange=()=>{
     const now=new Date(new Date().getTime()+7*60*60*1000);now.setHours(0,0,0,0);
     if(period==="day"){const d=new Date(now);d.setDate(now.getDate()+offset);return{start:d,end:d,label:`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`};}
@@ -2539,11 +2539,11 @@ function DashboardPage({bookings,customers,onExportBookings}){
   // Revenue per night for a booking (net / total nights)
   // หารด้วยจำนวนวัน (nights + 1) เช่น checkin 28, checkout 29 = 1 คืน 2 วัน → หาร 2
   const netPerDay=b=>{
-    const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
+    const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const fullNet=b.payMethod==="Credit Card"
       ?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2))
       :(b.net||0);
-    return parseFloat((fullNet/totalDays).toFixed(2));
+    return fullNet/totalDays;
   };
 
   // กระจายรายได้ทุกวันที่แมวอยู่ (checkin → checkout inclusive)
@@ -3336,7 +3336,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:50 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 10:00 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
