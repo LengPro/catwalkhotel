@@ -790,6 +790,16 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   const [editBooking,setEditBooking]=useState(null);
   const [checkAvail,setCheckAvail]=useState({checkin:"",checkout:"",type:"S"});
   const tlRef=useRef(null);
+  const stickyHdrRef=useRef(null);
+
+  // Sync sticky header horizontal scroll with main timeline
+  useEffect(()=>{
+    const el=tlRef.current;
+    if(!el) return;
+    const onScroll=()=>{ if(stickyHdrRef.current) stickyHdrRef.current.scrollLeft=el.scrollLeft; };
+    el.addEventListener("scroll",onScroll,{passive:true});
+    return()=>el.removeEventListener("scroll",onScroll);
+  },[]);
 
   // Build date array for timeline
   const dateArr=useMemo(()=>{
@@ -806,7 +816,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   useEffect(()=>{
     if(!tlRef.current) return;
     const idx=dateArr.indexOf(todayStr);
-    if(idx>=0){ const scrollTo=idx*44; tlRef.current.scrollLeft=Math.max(0,scrollTo-60); }
+    if(idx>=0){ const scrollTo=idx*44; tlRef.current.scrollLeft=Math.max(0,scrollTo-60); if(stickyHdrRef.current) stickyHdrRef.current.scrollLeft=tlRef.current.scrollLeft; }
   },[viewDate,dateArr]);
 
   function getBookingForRoomDate(roomId,dateStr){
@@ -985,25 +995,25 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
       </div>
 
       {/* Timeline table — horizontal scroll, sticky room column */}
-      <div ref={tlRef} style={{overflowX:"auto",borderRadius:14,border:`1px solid ${C.borderLight}`,background:C.white,boxShadow:C.shadow,WebkitOverflowScrolling:"touch"}}>
+      {/* Sticky date header — synced with tlRef scroll */}
+      <div ref={stickyHdrRef} style={{overflowX:"hidden",position:"sticky",top:54,zIndex:30,background:C.white,borderRadius:"14px 14px 0 0",border:`1px solid ${C.borderLight}`,borderBottom:"none",boxShadow:"0 2px 6px rgba(0,0,0,0.06)"}}>
+        <div style={{display:"flex",minWidth:68+daysShow*44}}>
+          <div style={{width:68,flexShrink:0,padding:"8px 8px",fontSize:10,fontWeight:700,color:C.text3,background:C.bg,borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:20}}>ROOM</div>
+          {dateArr.map(d=>{
+            const x=new Date(d+"T12:00:00");
+            const isToday=d===todayStr;
+            const isSun=x.getDay()===0; const isSat=x.getDay()===6;
+            const isMonth1=x.getDate()===1;
+            return(<div key={d} style={{width:44,flexShrink:0,textAlign:"center",padding:"4px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
+              <div style={{fontSize:9,fontWeight:600,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
+              <div style={{fontSize:12,fontWeight:isToday?800:600,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
+              <div style={{fontSize:8,color:isMonth1?C.text2:C.text3,fontWeight:isMonth1?700:400}}>{MONTHS[x.getMonth()]}</div>
+            </div>);
+          })}
+        </div>
+      </div>
+      <div ref={tlRef} style={{overflowX:"auto",borderRadius:"0 0 14px 14px",border:`1px solid ${C.borderLight}`,borderTop:"none",background:C.white,boxShadow:C.shadow,WebkitOverflowScrolling:"touch"}}>
         <div style={{minWidth:68+daysShow*44}}>
-
-          {/* Date header row */}
-          <div style={{display:"flex",position:"sticky",top:0,zIndex:10,background:C.white}}>
-            {/* Sticky room label corner */}
-            <div style={{width:68,flexShrink:0,padding:"8px 8px",fontSize:10,fontWeight:700,color:C.text3,background:C.bg,borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:20}}>ROOM</div>
-            {dateArr.map(d=>{
-              const x=new Date(d+"T12:00:00");
-              const isToday=d===todayStr;
-              const isSun=x.getDay()===0; const isSat=x.getDay()===6;
-              const isMonth1=x.getDate()===1;
-              return(<div key={d} style={{width:44,flexShrink:0,textAlign:"center",padding:"4px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
-                <div style={{fontSize:9,fontWeight:600,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
-                <div style={{fontSize:12,fontWeight:isToday?800:600,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
-                <div style={{fontSize:8,color:isMonth1?C.text2:C.text3,fontWeight:isMonth1?700:400}}>{MONTHS[x.getMonth()]}</div>
-              </div>);
-            })}
-          </div>
 
           {/* Zone + Room rows */}
           {zones.map(zone=>{
