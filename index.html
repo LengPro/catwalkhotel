@@ -2482,7 +2482,7 @@ function getMonthRevenue(bookings, year, month){
     const perDay=(net-ccFee)/totalDays;
     const overlapStart=b.checkin>sStr?b.checkin:sStr;
     const overlapEnd=b.checkout<eStr?b.checkout:eStr;
-    const overlapDays=Math.round((new Date(overlapEnd)-new Date(overlapStart))/(864e5))+1;
+    const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
     return sum+perDay*Math.max(0,overlapDays);
   },0);
 }
@@ -2547,24 +2547,27 @@ function DashboardPage({bookings,customers,onExportBookings}){
   };
 
   // กระจายรายได้ทุกวันที่แมวอยู่ (checkin → checkout inclusive)
-  // เช่น checkin 1 Apr, checkout 2 Apr = 2 วัน → แต่ละวันได้ 350/2 = 175
-  const getRevenueForDateRange=(rangeStart,rangeEnd)=>{
-    return bookings.reduce((sum,b)=>{
+  // เช็คอิน 1 Apr, เช็คเอ้าท์ 2 Apr = อยู่วันที่ 1 และ 2 เท่านั้น (ไม่มีวัน 3)
+  const getRevenueForDateRange=(rangeStart,rangeEnd,bkList)=>{
+    return (bkList||bookings).reduce((sum,b)=>{
       if(!b.checkin||!b.checkout) return sum;
-      // วันที่ overlap = max(checkin, rangeStart) ถึง min(checkout, rangeEnd)
+      // lastDay = checkout (วันสุดท้ายที่อยู่จริง)
       const overlapStart=b.checkin>rangeStart?b.checkin:rangeStart;
       const overlapEnd=b.checkout<rangeEnd?b.checkout:rangeEnd;
       if(overlapStart>overlapEnd) return sum;
-      // จำนวนวันที่ overlap (inclusive)
-      const overlapDays=Math.round((new Date(overlapEnd)-new Date(overlapStart))/(864e5))+1;
-      return sum+netPerDay(b)*overlapDays;
+      const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
+      return sum+netPerDay(b)*Math.max(0,overlapDays);
     },0);
   };
 
   const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
 
-  const revenue=parseFloat(getRevenueForDateRange(startStr,endStr).toFixed(2));
+  // Day: sum netPerDay ของ inRange (checkin<=today AND checkout>=today) เท่านั้น
+  // Week/Month/Year: กระจาย overlap ทุก booking ในช่วง
+  const revenue=period==="day"
+    ?parseFloat(inRange.reduce((a,b)=>a+netPerDay(b),0).toFixed(2))
+    :parseFloat(getRevenueForDateRange(startStr,endStr).toFixed(2));
 
   const ccFeeTotal=parseFloat((period==="day"
     ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
@@ -3333,7 +3336,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:4}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:30 (ICT)</div>
+        <div style={{fontSize:12,color:C.text3}}>v 28 Mar 2026 · 01:50 (ICT)</div>
         <div style={{fontSize:12,color:C.text3,marginTop:4}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
