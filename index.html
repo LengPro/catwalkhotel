@@ -521,6 +521,11 @@ function exportICS(b,customers){
     `SUMMARY:${summary}`,
     `DESCRIPTION:${desc}`,
     `LOCATION:Catwalk Hotel — ${rooms}`,
+    "BEGIN:VALARM",
+    "TRIGGER:-P1D",
+    "ACTION:DISPLAY",
+    `DESCRIPTION:🐱 พรุ่งนี้มีลูกค้า! ${summary}`,
+    "END:VALARM",
     "END:VEVENT",
     "END:VCALENDAR"
   ].join("\r\n");
@@ -889,6 +894,11 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
         `SUMMARY:${summary}`,
         `DESCRIPTION:${desc}`,
         `LOCATION:Catwalk Hotel — ${rooms}`,
+        "BEGIN:VALARM",
+        "TRIGGER:-P1D",
+        "ACTION:DISPLAY",
+        `DESCRIPTION:🐱 พรุ่งนี้มีลูกค้า! ${summary}`,
+        "END:VALARM",
         "END:VEVENT"
       );
     });
@@ -3570,6 +3580,42 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
         <div style={{padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div><div style={{fontSize:13,fontWeight:700}}>Export Customers</div><div style={{fontSize:11,color:C.text3}}>{customers.length} customers · ข้อมูลลูกค้าและแมว</div></div>
           <button style={{...S.btnG,fontSize:12}} onClick={()=>{exportCustomersCSV(customers,bookings);setToast("✅ Customers exported!");}}>⬇ CSV</button>
+        </div>
+      </div>
+
+      {/* ── Calendar Subscribe ── */}
+      <div style={S.slabel}>📅 Calendar Sync</div>
+      <div style={{...S.card,overflow:\"hidden\",marginBottom:16}}>
+        <div style={{padding:\"14px 16px\"}}>
+          <div style={{display:\"flex\",alignItems:\"center\",justifyContent:\"space-between\",marginBottom:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>Subscribe Calendar (Live Sync)</div>
+              <div style={{fontSize:11,color:C.text3}}>Calendar app จะ sync อัตโนมัติ — แจ้งเตือน 1 วันก่อน check-in</div>
+            </div>
+            <div style={{display:\"flex\",gap:6}}>
+              <button
+                style={{...S.btnB,fontSize:12,padding:\"8px 14px\"}}
+                onClick={()=>{
+                  const url=\"https://catwalk-ical.nvvcv7ds48.workers.dev/?token=catwalk2025secret\";
+                  navigator.clipboard.writeText(url).then(()=>setToast(\"✅ Copy URL แล้ว! นำไป Subscribe ใน Calendar\")).catch(()=>setToast(\"❌ Copy ไม่ได้ — ลอง copy เอง\"));
+                }}
+              >📋 Copy URL</button>
+              <a
+                href=\"https://catwalk-ical.nvvcv7ds48.workers.dev/?token=catwalk2025secret\"
+                target=\"_blank\" rel=\"noopener noreferrer\"
+                style={{...S.btnG,fontSize:12,padding:\"8px 14px\",textDecoration:\"none\",display:\"inline-flex\",alignItems:\"center\"}}
+              >🔗 เปิด</a>
+            </div>
+          </div>
+          <div style={{background:C.bg2,borderRadius:8,padding:\"8px 12px\",fontSize:10,color:C.text3,fontFamily:\"monospace\",wordBreak:\"break-all\",lineHeight:1.5}}>
+            https://catwalk-ical.nvvcv7ds48.workers.dev/?token=catwalk2025secret
+          </div>
+          <div style={{marginTop:10,fontSize:11,color:C.text3,lineHeight:1.7}}>
+            <div style={{fontWeight:700,color:C.text2,marginBottom:4}}>วิธี Subscribe:</div>
+            <div>🍎 <b>Apple Calendar (iPhone/iPad):</b> Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → วาง URL</div>
+            <div>🖥 <b>Apple Calendar (Mac):</b> File → New Calendar Subscription → วาง URL</div>
+            <div>📆 <b>Google Calendar:</b> + ข้าง "Other calendars" → From URL → วาง URL</div>
+          </div>
         </div>
       </div>
 
