@@ -248,7 +248,7 @@ function exportBookingsCSV(bookings,customers){
     const nc=b.numCats||b.selectedCatIds?.length||1;
     const rooms=b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean);
     const sz=b.size||"S";
-    const pricePerNight=sz==="H"?(b.homePricePerNight||0):(PRICES[sz]||350);
+    const pricePerNight=sz==="H"?(b.homePriceTotal||b.homePricePerNight||0):(PRICES[sz]||350);
     const net=b.net||0;
     const dep=b.depositAmt||0;
     const rem=b.remaining||Math.max(0,net-dep);
@@ -303,7 +303,7 @@ function exportAllCSV(customers,bookings){
     const nc=b.numCats||b.selectedCatIds?.length||1;
     const rooms=b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean);
     const sz=b.size||"S";
-    const pricePerNight=sz==="H"?(b.homePricePerNight||0):(PRICES[sz]||350);
+    const pricePerNight=sz==="H"?(b.homePriceTotal||b.homePricePerNight||0):(PRICES[sz]||350);
     const net=b.net||0; const dep=b.depositAmt||0; const rem=b.remaining||Math.max(0,net-dep); const ccFee=b.ccFeeAmt||0;
     return[
       c.nickname||"", c.fullname||"", c.phone||"", c.line||"", c.notes||"",
@@ -377,7 +377,7 @@ function exportAllXLSX(customers,bookings){
     const cats=(b.selectedCatIds||[]).map(id=>(c.cats||[]).find(cat=>cat.id===id)?.name||"").filter(Boolean).join(", ")||b.catName||"";
     const rooms=b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean);
     const sz=b.size||"S";
-    const ppn=sz==="H"?(b.homePricePerNight||0):(PRICES[sz]||350);
+    const ppn=sz==="H"?(b.homePriceTotal||b.homePricePerNight||0):(PRICES[sz]||350);
     const net=b.net||0;const dep=b.depositAmt||0;const rem=b.remaining||Math.max(0,net-dep);const ccFee=b.ccFeeAmt||0;
     return[i+1,c.nickname||"",c.fullname||"",c.phone||"",cats,n,rooms.join(", "),sz,ppn,b.base||0,b.litterAmt||0,b.petTaxiAmt||0,b.discount||0,b.discAmt||0,parseFloat(fmt2(net)),parseFloat(fmt2(ccFee)),parseFloat(fmt2(dep+(rem-ccFee))),b.payMethod||"",parseFloat(fmt2(dep)),parseFloat(fmt2(rem)),b.paid?"✓":"",b.notes||"",b.checkin||"",b.checkout||"",b.createdAt?.split("T")[0]||""];
   });
@@ -1043,7 +1043,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       const tooltipParts=[
                         nickname?`${nickname}: ${allCatNames}`:allCatNames,
                         `${bk.checkin}→${bk.checkout}`,
-                        isHome?`@Home ฿${bk.homePricePerNight||"??"}/คืน`:"",
+                        isHome?`@Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`:"",
                         hasTaxi?`🚕 Pet Taxi ฿${fmt2(bk.petTaxiAmt)}`:"",
                         bk.notes?`📝 ${bk.notes}`:"",
                       ].filter(Boolean).join(" · ");
@@ -1120,7 +1120,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                     const allCatNames=cats.map(c=>c.name).join(", ")||bk.catName||"Cat";
                     const nickname=cust?.nickname||"";
                     const tip=vr.type==="H"
-                      ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePricePerNight||"??"}/คืน`
+                      ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`
                       :`${nickname}: ${allCatNames} · 🚕 ฿${fmt2(bk.petTaxiAmt)}`;
                     return(<div key={d} style={{
                       width:44,flexShrink:0,height:38,
@@ -1345,7 +1345,8 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
   const numCats=Math.max(booking.selectedCatIds?.length||1,1);
   const extraCatsPerRoom=Math.max(0,numCats-1);
   const extraCats=extraCatsPerRoom*rooms.length;
-  const basePerRoom=n*(PRICES[booking.size]||PRICES.S);
+  const isHomeBooking=booking.size==="H";
+  const basePerRoom=isHomeBooking?(booking.homePriceTotal||booking.homePricePerNight||0):n*(PRICES[booking.size]||PRICES.S);
   const baseTotal=basePerRoom*rooms.length;
   const extraCatAmt=extraCats*n*EXTRA_CAT_FEE;
   const litterAmt=booking.litter?Math.ceil(n/6)*LITTER_FEE*numCats:0;
@@ -1505,8 +1506,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const selectedRooms=form.roomIds||[];
   const numRooms=Math.max(selectedRooms.length,1);
   const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
-  const homePricePerNight=Math.max(0,parseFloat(form.homePrice)||0);
-  const getPriceForSize=sz=>sz==="H"?homePricePerNight:(PRICES[sz]||PRICES.S);
+  const homePriceLump=Math.max(0,parseFloat(form.homePrice)||0); // total price, not per-night
+  const getPriceForSize=sz=>sz==="H"?0:(PRICES[sz]||PRICES.S); // @Home handled separately
   // catPerRoom: {roomId: numCats} — default spread cats evenly, user can adjust
   const catPerRoom=form.catPerRoom||{};
   const getCatsForRoom=rid=>Math.max(1,parseInt(catPerRoom[rid])||1);
@@ -1532,8 +1533,11 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const totalLitterAmt=form.litter?(customLitterVal>0?customLitterVal:suggestedLitterAmt):0;
   // discount applies to (room base + litter), petTaxi excluded from discount
   const disc=parseFloat(form.discount)||0;
-  const roomBaseNoLitter=(rid)=>{const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);};
-  const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0?(()=>{const p=calcPrice(n,form.size==="H"?"S":form.size,numCats,0,false);return p.base*(form.size==="H"&&PRICES.S>0?homePricePerNight/PRICES.S:1)})():0);
+  const roomBaseNoLitter=(rid)=>{
+    if(rid==="@HOME") return homePriceLump; // lump sum — already total
+    const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
+  };
+  const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false);return p.base;})():homePriceLump);
   const discountableBase=totalRoomBase+totalLitterAmt;
   const discAmt2=parseFloat((discountableBase*disc/100).toFixed(2));
   const totalNet=parseFloat((discountableBase-discAmt2+petTaxiAmt).toFixed(2));
@@ -1703,11 +1707,11 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 inputMode="numeric"
                 pattern="[0-9]*"
                 style={{...S.inp,borderColor:C.accent}}
-                placeholder="ราคา/คืน (฿)"
+                placeholder="ราคารวมทั้งหมด (฿)"
                 value={form.homePrice||""}
                 onChange={e=>set("homePrice",e.target.value)}
               />
-              <div style={{fontSize:11,color:C.text3,marginTop:4}}>ใส่ราคาต่อคืนสำหรับ @Home service</div>
+              <div style={{fontSize:11,color:C.text3,marginTop:4}}>ใส่ราคารวมทั้งหมดสำหรับ @Home (ไม่คูณคืน)</div>
             </div>
           )}
         </div>
@@ -1894,16 +1898,19 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
 
             {/* ── Step-by-step rows ── */}
             {selectedRooms.map((rid,ri)=>{
-              const r=ROOMS.find(x=>x.id===rid);
-              const sz=r?.type||form.size;
-              const {net:rn,pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid);
+              const isHome=rid==="@HOME";
+              const {pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid);
+              const roomAmt=isHome?homePriceLump:n*(pricePerNight+ec*EXTRA_CAT_FEE);
+              const roomLabel=isHome
+                ?`฿${fmt2(homePriceLump)} รวมทั้งหมด · ${rc} แมว`
+                :`${n}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว`;
               return(
                 <div key={rid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
                     <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
-                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n}คืน × ฿{pricePerNight}{ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · {rc} แมว</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{roomLabel}</span>
                   </div>
-                  <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(n*(pricePerNight+ec*EXTRA_CAT_FEE))}</span>
+                  <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(roomAmt)}</span>
                 </div>
               );
             })}
@@ -1979,7 +1986,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
           </div>
         )}
-        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||""})}>          {booking?"Save Changes":"Add Booking"}
+        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||"",homePriceTotal:form.size==="H"?homePriceLump:0})}>          {booking?"Save Changes":"Add Booking"}
         </button>
       </div>
     </div>
