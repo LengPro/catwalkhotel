@@ -1369,12 +1369,16 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const discAmt2=parseFloat((base*(parseFloat(form.discount)||0)/100).toFixed(2));
     return{net:parseFloat((base-discAmt2).toFixed(2)),base,extraCats,roomCats,la,pricePerNight};
   };
+  const lCatsTotal=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
+  const lRoundsTotal=n>0?Math.ceil(n/6):0;
+  const suggestedLitterAmt=form.litter?lRoundsTotal*LITTER_FEE*lCatsTotal:0;
+  const customLitterVal=parseFloat(form.litterCustom)||0;
+  const totalLitterAmt=form.litter?(customLitterVal>0?customLitterVal:suggestedLitterAmt):0;
+  // calcRoomNet computes litter via litterFeePerRound; we strip it out and add totalLitterAmt instead
+  const roomNetNoLitter=(rid)=>{const r=calcRoomNet(rid);const disc=parseFloat(form.discount)||0;const baseNoLit=n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);const discAmt2=parseFloat((baseNoLit*disc/100).toFixed(2));return parseFloat((baseNoLit-discAmt2).toFixed(2));};
   const totalNet=selectedRooms.length>0
-    ? selectedRooms.reduce((sum,rid)=>sum+calcRoomNet(rid).net,0)+petTaxiAmt
-    : (n>0&&numCats>0?calcPrice(n,form.size==="H"?"S":form.size,numCats,form.discount,form.litter).net*(form.size==="H"&&PRICES.S>0?homePricePerNight/PRICES.S:1):0)+petTaxiAmt;
-  const totalLitterAmt=selectedRooms.length>0
-    ? selectedRooms.reduce((sum,rid)=>sum+calcRoomNet(rid).la,0)
-    : litterAmt;
+    ? selectedRooms.reduce((sum,rid)=>sum+roomNetNoLitter(rid),0)+totalLitterAmt+petTaxiAmt
+    : (n>0&&numCats>0?(()=>{const p=calcPrice(n,form.size==="H"?"S":form.size,numCats,form.discount,false);return p.net*(form.size==="H"&&PRICES.S>0?homePricePerNight/PRICES.S:1)})():0)+totalLitterAmt+petTaxiAmt;
   const net=parseFloat(totalNet.toFixed(2));
   const isCreditCard=form.payMethod==="Credit Card";
   const {base,discAmt,litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,form.discount,form.litter):{base:0,discAmt:0,net:0,litterAmt:0,litterWeeks:0};
@@ -1409,18 +1413,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     if(form.size==="H"&&form.checkin&&form.checkout) set("roomIds",["@HOME"]);
   },[form.size,form.checkin,form.checkout]);
 
-  // Auto-set litter price based on number of rounds (ceil(n/6) × 60) when litter toggled on or dates change
+  // Reset litterCustom when dates/cats change so suggested recalculates
   useEffect(()=>{
-    if(form.litter&&n>0){
-      const rounds=Math.ceil(n/6);
-      const catsInRooms=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):numCats;
-      const autoPrice=rounds*LITTER_FEE*Math.max(1,catsInRooms);
-      const maxOption=300*Math.max(1,catsInRooms);
-      const capped=Math.min(autoPrice,maxOption);
-      // Only auto-set if user hasn't manually picked a value yet, or dates just changed
-      set("litterCustom",capped);
-    }
-  },[form.litter,form.checkin,form.checkout,form.selectedCatIds,form.roomIds]);
+    set("litterCustom",0);
+  },[form.checkin,form.checkout,form.selectedCatIds,form.roomIds]);
 
   // backward compat: if old booking has roomId (string), convert
   useEffect(()=>{
@@ -1607,60 +1603,68 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {(()=>{
           const lCats=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
           const lRounds=n>0?Math.ceil(n/6):0;
-          const lTotal=form.litter?lRounds*LITTER_FEE*lCats:0;
+          const suggestedAmt=lRounds*LITTER_FEE*lCats;
+          const customVal=parseFloat(form.litterCustom)||0;
+          const lTotal=form.litter?(customVal>0?customVal:suggestedAmt):0;
+          const isCustom=form.litter&&customVal>0&&customVal!==suggestedAmt;
+          const presets=[60,120,180,240,300];
           return(
           <div style={{...S.fg,padding:"12px 14px",background:form.litter?"#f0f6ff":C.bg,borderRadius:12,border:`1px solid ${form.litter?C.blue+"40":C.border}`,marginBottom:10}}>
             {/* Header row */}
             <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <input type="checkbox" checked={form.litter||false} onChange={e=>set("litter",e.target.checked)} style={{width:18,height:18,accentColor:C.blue,flexShrink:0}}/>
+              <input type="checkbox" checked={form.litter||false} onChange={e=>{set("litter",e.target.checked);if(!e.target.checked)set("litterCustom",0);}} style={{width:18,height:18,accentColor:C.blue,flexShrink:0}}/>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
                 <div style={{fontSize:11,color:C.text3,marginTop:1}}>฿{LITTER_FEE} / 6 คืน / แมว 1 ตัว</div>
               </div>
               {form.litter&&lTotal>0&&<span style={{...S.chip(C.blue),fontSize:14,fontWeight:800}}>+฿{fmt2(lTotal)}</span>}
             </div>
-            {/* Breakdown when checked */}
+            {/* Expanded section */}
             {form.litter&&(
-              <div style={{marginTop:12,background:"#e8f1ff",borderRadius:10,padding:"10px 12px"}}>
-                {/* Formula row */}
-                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {/* Rounds */}
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontSize:11,color:C.text3,marginBottom:2}}>จำนวนรอบ</div>
-                    <div style={{background:"#fff",borderRadius:8,padding:"4px 14px",fontWeight:800,fontSize:16,color:C.blue,border:`1px solid ${C.blue}40`}}>
-                      {lRounds>0?lRounds:"—"}
-                    </div>
-                    <div style={{fontSize:10,color:C.text3,marginTop:2}}>{n>0?`(${n} คืน ÷ 6)`:""}</div>
-                  </div>
-                  <div style={{fontSize:18,color:C.text3,paddingTop:4}}>×</div>
-                  {/* Fee */}
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontSize:11,color:C.text3,marginBottom:2}}>ราคา/รอบ/ตัว</div>
-                    <div style={{background:"#fff",borderRadius:8,padding:"4px 14px",fontWeight:800,fontSize:16,color:C.blue,border:`1px solid ${C.blue}40`}}>
-                      ฿{LITTER_FEE}
+              <div style={{marginTop:12}}>
+                {/* Suggest info box */}
+                {n>0&&lRounds>0?(
+                  <div style={{background:"#dbeafe",borderRadius:8,padding:"8px 10px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:15}}>💡</span>
+                    <div style={{fontSize:12,color:"#1e40af"}}>
+                      <b>แนะนำ ฿{fmt2(suggestedAmt)}</b>
+                      <span style={{fontWeight:400,marginLeft:4}}>({lRounds} รอบ × ฿{LITTER_FEE} × {lCats} ตัว)</span>
                     </div>
                   </div>
-                  <div style={{fontSize:18,color:C.text3,paddingTop:4}}>×</div>
-                  {/* Cats */}
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontSize:11,color:C.text3,marginBottom:2}}>จำนวนแมว</div>
-                    <div style={{background:"#fff",borderRadius:8,padding:"4px 14px",fontWeight:800,fontSize:16,color:C.blue,border:`1px solid ${C.blue}40`}}>
-                      {lCats}
-                    </div>
-                    <div style={{fontSize:10,color:C.text3,marginTop:2}}>ตัว</div>
+                ):(
+                  <div style={{background:"#fff3cd",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:12,color:"#856404"}}>
+                    ⚠️ เลือกวันพักและแมวก่อน เพื่อดูราคาแนะนำ
                   </div>
-                  <div style={{fontSize:18,color:C.text3,paddingTop:4}}>=</div>
-                  {/* Total */}
-                  <div style={{textAlign:"center"}}>
-                    <div style={{fontSize:11,color:C.text3,marginBottom:2}}>รวม</div>
-                    <div style={{background:C.blue,borderRadius:8,padding:"4px 16px",fontWeight:800,fontSize:16,color:"#fff"}}>
-                      {lTotal>0?`฿${fmt2(lTotal)}`:"—"}
-                    </div>
-                  </div>
+                )}
+                {/* Preset buttons */}
+                <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกราคาทราย (฿ รวมทั้งหมด)</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {presets.map(v=>{
+                    const isSuggested=n>0&&v===suggestedAmt;
+                    const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&n>0);
+                    return(
+                      <button key={v} onClick={()=>set("litterCustom",isSelected?0:v)}
+                        style={{padding:"8px 14px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
+                          background:isSelected?C.blue:isSuggested?"#eff6ff":"transparent",
+                          color:isSelected?"#fff":isSuggested?C.blue:C.text2,
+                          fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",
+                          display:"flex",flexDirection:"column",alignItems:"center",gap:1,minWidth:54}}>
+                        <span>฿{v}</span>
+                        {isSuggested&&<span style={{fontSize:9,fontWeight:600,opacity:0.85}}>แนะนำ</span>}
+                      </button>
+                    );
+                  })}
                 </div>
-                {/* Info note */}
-                {n===0&&<div style={{fontSize:11,color:"#e65100",fontWeight:600}}>⚠️ เลือกวันเช็คอิน–เช็คเอาต์ก่อน</div>}
-                {n>0&&lRounds>0&&<div style={{fontSize:11,color:C.text3}}>{lRounds} รอบ × ฿{LITTER_FEE} × {lCats} ตัว = <b style={{color:C.blue}}>฿{fmt2(lTotal)}</b></div>}
+                {/* Custom input */}
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{fontSize:11,color:C.text3,flexShrink:0}}>หรือกรอกเอง:</div>
+                  <input type="number" inputMode="numeric" min="0"
+                    placeholder={n>0?`แนะนำ ${suggestedAmt}`:"กรอกราคา"}
+                    value={form.litterCustom||""}
+                    onChange={e=>set("litterCustom",parseFloat(e.target.value)||0)}
+                    style={{...S.inp,flex:1,padding:"6px 10px",fontSize:13}}/>
+                  {isCustom&&<span style={{fontSize:11,color:C.orange,flexShrink:0}}>✏️ กำหนดเอง</span>}
+                </div>
               </div>
             )}
           </div>
