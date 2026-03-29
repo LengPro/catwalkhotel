@@ -3583,6 +3583,65 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
         </div>
       </div>
 
+      {/* ── Push Notifications ── */}
+      <div style={S.slabel}>🔔 Push Notifications</div>
+      <div style={{...S.card,overflow:'hidden',marginBottom:16}}>
+        <div style={{padding:'14px 16px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>แจ้งเตือน Check-in พรุ่งนี้</div>
+              <div style={{fontSize:11,color:C.text3}}>รับ push notification ทุกคืน 20:00 — ต้อง Add to Home Screen ก่อน</div>
+            </div>
+            <button
+              id="pwa-notify-btn"
+              style={{...S.btnB,fontSize:12,padding:'8px 14px'}}
+              onClick={async ()=>{
+                try {
+                  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    alert('กรุณาเปิดจาก Home Screen (Add to Home Screen) ก่อนครับ');
+                    return;
+                  }
+                  const reg = await navigator.serviceWorker.ready;
+                  const existing = await reg.pushManager.getSubscription();
+                  if (existing) {
+                    setToast('✅ เปิดรับแจ้งเตือนอยู่แล้ว!');
+                    return;
+                  }
+                  const permission = await Notification.requestPermission();
+                  if (permission !== 'granted') {
+                    setToast('❌ ไม่ได้รับอนุญาต — กรุณาอนุญาตใน Settings');
+                    return;
+                  }
+                  const sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: 'BEZfmnCIy0MJB2oHOpEH1wcLmnelG2I5yJs8cai6wCGaaVs517R238jnvGhk3Zi7O2kzeKMOvM4XmF2-KwsGhvM'
+                  });
+                  const res = await fetch('https://catwalk-push.nvvcv7ds48.workers.dev/subscribe', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({subscription: sub})
+                  });
+                  if (res.ok) {
+                    setToast('✅ เปิดรับแจ้งเตือนสำเร็จ! จะแจ้งทุกคืน 20:00');
+                  } else {
+                    setToast('❌ เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
+                  }
+                } catch(e) {
+                  setToast('❌ ' + e.message);
+                }
+              }}
+            >🔔 เปิดรับแจ้งเตือน</button>
+          </div>
+          <div style={{fontSize:11,color:C.text3,lineHeight:1.7}}>
+            <div style={{fontWeight:700,color:C.text2,marginBottom:4}}>วิธีใช้:</div>
+            <div>{'1. Safari → Share → Add to Home Screen'}</div>
+            <div>{'2. เปิด app จาก Home Screen'}</div>
+            <div>{'3. กดปุ่ม เปิดรับแจ้งเตือน → Allow'}</div>
+            <div>{'4. จะได้รับแจ้งเตือนทุกคืน 20:00 ถ้ามี booking check-in พรุ่งนี้'}</div>
+          </div>
+        </div>
+      </div>
+
       {/* ── Calendar Subscribe ── */}
       <div style={S.slabel}>📅 Calendar Sync</div>
       <div style={{...S.card,overflow:'hidden',marginBottom:16}}>
@@ -3844,6 +3903,16 @@ const onDeleteCustomer=useCallback(async id=>{
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+// Register Service Worker for PWA Push Notifications
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('SW registered:', reg.scope))
+      .catch(err => console.log('SW registration failed:', err));
+  });
+}
 </script>
 </body>
 </html>
