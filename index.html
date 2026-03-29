@@ -486,27 +486,29 @@ function exportICS(b,customers){
   const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
   const checkoutPlusOne=addDays(b.checkout,1);
   const descParts=[
-    `━━ ข้อมูลลูกค้า ━━`,
-    `👤 ${c.nickname||""}${c.fullname?` (${c.fullname})`:""}`,
-    c.phone?`📞 ${c.phone}`:"",
-    c.line?`💬 Line: ${c.line}`:"",
-    c.notes?`📝 Customer Notes: ${c.notes}`:"",
-    `━━ แมว ━━`,
-    catDetails||`🐱 ${names}`,
-    `━━ การจอง ━━`,
-    `🏠 ห้อง: ${rooms}`,
-    `📅 ${b.checkin} → ${b.checkout} · ${n} คืน`,
-    `━━ ราคา ━━`,
-    `💰 ฿${fmt2(b.net||0)} · ${b.payMethod}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
+    `IN  : ${b.checkin}`,
+    `OUT : ${b.checkout}`,
+    `ชื่อลค : ${c.nickname||""}${c.fullname?` (${c.fullname})`:""}`,
+    `ชื่อแมว : ${names}`,
+    `ราคาห้อง : ฿${fmt2(b.net||0)}`,
+    `ทราย : ${b.litter?"✅":"❌"}${b.litter&&b.litterAmt>0?` ฿${fmt2(b.litterAmt)}`:""}`,
+    `Taxi : ${b.petTaxiAmt>0?`✅ ฿${fmt2(b.petTaxiAmt)} (${b.petTaxiDay||""})`:`❌`}`,
+    `เบอร์ : ${c.phone||""}`,
+    `ที่อยู่ : ${c.address||""}`,
+    `Booking notes : ${b.notes||""}`,
+    ``,
+    `━━ รายละเอียด ━━`,
+    `🏠 ${rooms} · ${n} คืน`,
+    `💰 ฿${fmt2(b.net||0)} · ${b.payMethod||""}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
     b.depositAmt>0?`💳 มัดจำ: ฿${fmt2(b.depositAmt)}`:"",
     b.remaining>0?`⚠️ ค้างชำระ: ฿${fmt2(b.remaining)}`:"",
-    b.litter?`🪣 ทรายแมว: ฿${fmt2(b.litterAmt||0)}`:"",
-    b.petTaxiAmt>0?`🚕 Pet Taxi: ฿${fmt2(b.petTaxiAmt)}`:"",
     b.discount>0?`🏷 ส่วนลด: ${b.discount}%`:"",
-    b.notes?`━━ หมายเหตุ ━━\\n📝 ${b.notes}`:"",
+    catDetails?`\\n━━ แมว ━━\\n${catDetails}`:"",
+    c.line?`💬 Line: ${c.line}`:"",
+    c.notes?`📝 Customer Notes: ${c.notes}`:"",
   ].filter(Boolean);
   const desc=descParts.join("\\n");
-  const summary=`🐱 ${names} — ${rooms} (${n}คืน)`;
+  const custName=c.nickname||"";const summary=`${rooms} ${custName?custName+" ":""} (${names}) : ${n} คืน`;
   const calName=rooms?`${rooms} — Catwalk Hotel`:`Catwalk Hotel`;
   const ts=new Date().toISOString().replace(/[-:]/g,"").split(".")[0]+"Z";
   const ics=[
@@ -524,7 +526,7 @@ function exportICS(b,customers){
     "BEGIN:VALARM",
     "TRIGGER:-P1D",
     "ACTION:DISPLAY",
-    `DESCRIPTION:🐱 พรุ่งนี้มีลูกค้า! ${summary}`,
+    `DESCRIPTION:พรุ่งนี้มีลูกค้า! ${summary}`,
     "END:VALARM",
     "END:VEVENT",
     "END:VCALENDAR"
@@ -863,27 +865,29 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
       const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
       const checkoutPlusOne=addDays(b.checkout,1);
       const descParts=[
-        `━━ ข้อมูลลูกค้า ━━`,
-        `👤 ${cust.nickname||""}${cust.fullname?` (${cust.fullname})`:""}`,
-        cust.phone?`📞 ${cust.phone}`:"",
-        cust.line?`💬 Line: ${cust.line}`:"",
-        cust.notes?`📝 Customer Notes: ${cust.notes}`:"",
-        `━━ แมว ━━`,
-        catDetails||`🐱 ${catNames}`,
-        `━━ การจอง ━━`,
-        `🏠 ห้อง: ${rooms}`,
-        `📅 ${b.checkin} → ${b.checkout} · ${n} คืน`,
-        `━━ ราคา ━━`,
-        `💰 ฿${fmt2(b.net||0)} · ${b.payMethod}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
+        `IN  : ${b.checkin}`,
+        `OUT : ${b.checkout}`,
+        `ชื่อลค : ${cust.nickname||""}${cust.fullname?` (${cust.fullname})`:""}`,
+        `ชื่อแมว : ${catNames}`,
+        `ราคาห้อง : ฿${fmt2(b.net||0)}`,
+        `ทราย : ${b.litter?"✅":"❌"}${b.litter&&b.litterAmt>0?` ฿${fmt2(b.litterAmt)}`:""}`,
+        `Taxi : ${b.petTaxiAmt>0?`✅ ฿${fmt2(b.petTaxiAmt)} (${b.petTaxiDay||""})`:`❌`}`,
+        `เบอร์ : ${cust.phone||""}`,
+        `ที่อยู่ : ${cust.address||""}`,
+        `Booking notes : ${b.notes||""}`,
+        ``,
+        `━━ รายละเอียด ━━`,
+        `🏠 ${rooms} · ${n} คืน`,
+        `💰 ฿${fmt2(b.net||0)} · ${b.payMethod||""}${b.paid?" ✓":" (ยังไม่ชำระครบ)"}`,
         b.depositAmt>0?`💳 มัดจำ: ฿${fmt2(b.depositAmt)}`:"",
         b.remaining>0?`⚠️ ค้างชำระ: ฿${fmt2(b.remaining)}`:"",
-        b.litter?`🪣 ทรายแมว: ฿${fmt2(b.litterAmt||0)}`:"",
-        b.petTaxiAmt>0?`🚕 Pet Taxi: ฿${fmt2(b.petTaxiAmt)}`:"",
         b.discount>0?`🏷 ส่วนลด: ${b.discount}%`:"",
-        b.notes?`━━ หมายเหตุ ━━\\n📝 ${b.notes}`:"",
+        catDetails?`\\n━━ แมว ━━\\n${catDetails}`:"",
+        cust.line?`💬 Line: ${cust.line}`:"",
+        cust.notes?`📝 Customer Notes: ${cust.notes}`:"",
       ].filter(Boolean);
       const desc=descParts.join("\\n");
-      const summary=`🐱 ${catNames} — ${rooms} (${n}คืน)`;
+      const custName2=cust.nickname||"";const summary=`${rooms} ${custName2?custName2+" ":""} (${catNames}) : ${n} คืน`;
       // Single all-day event covering full stay
       lines.push(
         "BEGIN:VEVENT",
@@ -897,7 +901,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
         "BEGIN:VALARM",
         "TRIGGER:-P1D",
         "ACTION:DISPLAY",
-        `DESCRIPTION:🐱 พรุ่งนี้มีลูกค้า! ${summary}`,
+        `DESCRIPTION:พรุ่งนี้มีลูกค้า! ${summary}`,
         "END:VALARM",
         "END:VEVENT"
       );
@@ -1009,23 +1013,23 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
       {/* Timeline table — horizontal scroll, sticky room column */}
       {/* Sticky date header — synced with tlRef scroll */}
       <div ref={stickyHdrRef} style={{overflowX:"hidden",position:"sticky",top:54,zIndex:30,background:C.white,borderRadius:"14px 14px 0 0",border:`1px solid ${C.borderLight}`,borderBottom:"none",boxShadow:"0 2px 6px rgba(0,0,0,0.06)"}}>
-        <div style={{display:"flex",minWidth:68+daysShow*44}}>
+        <div style={{display:"flex",minWidth:68+daysShow*54}}>
           <div style={{width:68,flexShrink:0,padding:"8px 8px",fontSize:10,fontWeight:700,color:C.text3,background:C.bg,borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:20}}>ROOM</div>
           {dateArr.map(d=>{
             const x=new Date(d+"T12:00:00");
             const isToday=d===todayStr;
             const isSun=x.getDay()===0; const isSat=x.getDay()===6;
             const isMonth1=x.getDate()===1;
-            return(<div key={d} style={{width:44,flexShrink:0,textAlign:"center",padding:"4px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
-              <div style={{fontSize:9,fontWeight:600,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
-              <div style={{fontSize:12,fontWeight:isToday?800:600,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
-              <div style={{fontSize:8,color:isMonth1?C.text2:C.text3,fontWeight:isMonth1?700:400}}>{MONTHS[x.getMonth()]}</div>
+            return(<div key={d} style={{width:54,flexShrink:0,textAlign:"center",padding:"5px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
+              <div style={{fontSize:10,fontWeight:700,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
+              <div style={{fontSize:15,fontWeight:isToday?800:700,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
+              <div style={{fontSize:9,color:isMonth1?C.text2:C.text3,fontWeight:isMonth1?700:500}}>{MONTHS[x.getMonth()]}</div>
             </div>);
           })}
         </div>
       </div>
       <div ref={tlRef} style={{overflowX:"auto",borderRadius:"0 0 14px 14px",border:`1px solid ${C.borderLight}`,borderTop:"none",background:C.white,boxShadow:C.shadow,WebkitOverflowScrolling:"touch"}}>
-        <div style={{minWidth:68+daysShow*44}}>
+        <div style={{minWidth:68+daysShow*54}}>
 
           {/* Zone + Room rows */}
           {zones.map(zone=>{
@@ -1034,7 +1038,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               {/* Zone label row */}
               <div style={{display:"flex",background:ZONE_BG[zone],borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"5px 8px",fontSize:10,fontWeight:800,color:ZONE_COLORS[zone],borderRight:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:5,background:ZONE_BG[zone]}}>ZONE {zone}</div>
-                {dateArr.map(d=><div key={d} style={{width:44,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:ZONE_BG[zone]}}/>)}
+                {dateArr.map(d=><div key={d} style={{width:54,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:ZONE_BG[zone]}}/>)}
               </div>
 
               {/* Each room row */}
@@ -1070,7 +1074,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                         bk.notes?`📝 ${bk.notes}`:"",
                       ].filter(Boolean).join(" · ");
                       return(<div key={d} style={{
-                        width:44,flexShrink:0,height:38,
+                        width:54,flexShrink:0,height:38,
                         background:isHome?"#f3e5f5":getRoomColor(room.id)+"25",
                         borderRight:`1px solid ${isMonth1?"#bbb":getRoomColor(room.id)+"30"}`,
                         borderLeft:isStart?`3px solid ${isHome?"#7b1fa2":getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":"none"),
@@ -1101,7 +1105,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       </div>);
                     }
                     return(<div key={d} style={{
-                      width:44,flexShrink:0,height:38,
+                      width:54,flexShrink:0,height:38,
                       background:isToday?"#fff5f8":isWeekend?"#fafafa":C.white,
                       borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
                       borderLeft:isMonth1?"2px solid #bbb":"none",
@@ -1131,7 +1135,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               {/* Special zone label row */}
               <div style={{display:"flex",background:vr.bg,borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"5px 8px",fontSize:10,fontWeight:800,color:vr.color,borderRight:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:5,background:vr.bg}}>{vr.label.toUpperCase()}</div>
-                {dateArr.map(d=><div key={d} style={{width:44,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:vr.bg}}/>)}
+                {dateArr.map(d=><div key={d} style={{width:54,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:vr.bg}}/>)}
               </div>
               {/* Single row */}
               <div style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
@@ -1154,7 +1158,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`
                       :`${nickname}: ${allCatNames} · 🚕 ฿${fmt2(bk.petTaxiAmt)}`;
                     return(<div key={d} style={{
-                      width:44,flexShrink:0,height:38,
+                      width:54,flexShrink:0,height:38,
                       background:vr.bg,
                       borderRight:`1px solid ${isMonth1?"#bbb":vr.color+"30"}`,
                       borderLeft:isStart?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":"none"),
@@ -1171,7 +1175,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                     </div>);
                   }
                   return(<div key={d} style={{
-                    width:44,flexShrink:0,height:38,
+                    width:54,flexShrink:0,height:38,
                     background:isToday?"#fffde7":C.white,
                     borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
                     borderLeft:isMonth1?"2px solid #bbb":"none",
@@ -3087,7 +3091,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
           <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+momYears.length*110)}}>
             {/* Header */}
             <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
-              <div style={{width:44,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
+              <div style={{width:54,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
               {[...momYears].sort((a,b)=>b-a).map((yr,i)=>(
                 <div key={yr} style={{flex:1,textAlign:"right",fontSize:10,fontWeight:800,color:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}>
                   {yr}
@@ -3101,7 +3105,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
               const sortedYrs=[...momYears].sort((a,b)=>b-a);
               return(
                 <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
-                  <div style={{width:44,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>
+                  <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>
                     {MONTHS[mi]}{isCurrentMonth&&" ◀"}
                   </div>
                   {sortedYrs.map((yr,i)=>{
@@ -3122,7 +3126,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
             })}
             {/* Total row */}
             <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
-              <div style={{width:44,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
+              <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
               {[...momYears].sort((a,b)=>b-a).map((yr,i)=>{
                 const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
                 const sortedYrs=[...momYears].sort((a,b)=>b-a);
@@ -3213,7 +3217,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
                       {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
                       {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
                     </div>
-                    {prevYrVal!==null&&<div style={{width:44,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(val,prevYrVal)}/></div>}
+                    {prevYrVal!==null&&<div style={{width:54,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(val,prevYrVal)}/></div>}
                   </div>
                 );
               })}
