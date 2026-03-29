@@ -1158,7 +1158,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`
                       :`${nickname}: ${allCatNames} · 🚕 ฿${fmt2(bk.petTaxiAmt)}`;
                     return(<div key={d} style={{
-                      width:54,flexShrink:0,height:38,
+                      width:54,flexShrink:0,height:vr.type==="taxi"?52:38,
                       background:vr.bg,
                       borderRight:`1px solid ${isMonth1?"#bbb":vr.color+"30"}`,
                       borderLeft:isStart?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":"none"),
@@ -1166,9 +1166,9 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
                     }} onClick={()=>setDetailBooking(bk)} title={tip}>
                       {(isStart||di===0)&&(
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",padding:"0 4px",overflow:"hidden",maxWidth:40}}>
-                          {nickname&&<div style={{fontSize:10,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:38,lineHeight:1.3}}>{nickname}</div>}
-                          <div style={{fontSize:9,fontWeight:600,color:vr.color+"aa",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:38,lineHeight:1.3}}>{allCatNames}</div>
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",padding:"0 4px",overflow:"hidden",maxWidth:50}}>
+                          {nickname&&<div style={{fontSize:10,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:48,lineHeight:1.3}}>{nickname}</div>}
+                          <div style={{fontSize:9,fontWeight:600,color:vr.color+"cc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:48,lineHeight:1.3}}>{allCatNames}</div>
                         </div>
                       )}
                       {isToday&&!isStart&&di!==0&&<div style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:C.accent}}/>}
