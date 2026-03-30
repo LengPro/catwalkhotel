@@ -2766,30 +2766,34 @@ function PctBadge({val}){
 }
 
 function DashboardPage({bookings,customers,onExportBookings}){
-  const [dashTab,setDashTab]=useState("overview"); // overview | mom | yoy
+  // ── Main mode: revenue | checkin ──
+  const [mode,setMode]=useState("revenue"); // "revenue" | "checkin"
+  // ── Sub-tabs (shared between modes) ──
+  const [subTab,setSubTab]=useState("overview"); // overview | mom | yoy
+
+  // ── Overview state ──
   const [period,setPeriod]=useState("month");
   const [offset,setOffset]=useState(0);
-  // MoM: pick a month, show 12 months trend
+  useEffect(()=>setOffset(0),[period,mode]);
+
+  // ── MoM state ──
   const [momYears,setMomYears]=useState([new Date().getFullYear(),new Date().getFullYear()-1]);
   const toggleMomYear=yr=>{
     if(momYears.includes(yr)){ if(momYears.length>1) setMomYears(y=>y.filter(x=>x!==yr)); }
     else setMomYears(y=>[...y,yr]);
   };
-  // YoY: pick years (up to 5)
+
+  // ── YoY state ──
   const curYear=new Date().getFullYear();
   const [yoyYears,setYoyYears]=useState([curYear,curYear-1]);
   const toggleYear=yr=>{
-    if(yoyYears.includes(yr)) { if(yoyYears.length>1) setYoyYears(y=>y.filter(x=>x!==yr)); }
+    if(yoyYears.includes(yr)){ if(yoyYears.length>1) setYoyYears(y=>y.filter(x=>x!==yr)); }
     else setYoyYears(y=>[...y,yr].sort((a,b)=>b-a));
   };
-  // Check-in tab: pick years (reuse same multi-year pattern as MoM)
-  const [ciYears,setCiYears]=useState([new Date().getFullYear(),new Date().getFullYear()-1]);
-  const toggleCiYear=yr=>{
-    if(ciYears.includes(yr)){ if(ciYears.length>1) setCiYears(y=>y.filter(x=>x!==yr)); }
-    else setCiYears(y=>[...y,yr]);
-  };
 
-  useEffect(()=>setOffset(0),[period]);
+  const availYears=Array.from({length:13},(_,i)=>2030-i);
+
+  // ── Helpers: Revenue mode (pro-rata) ──
   const ds=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const getRange=()=>{
     const now=new Date(new Date().getTime()+7*60*60*1000);now.setHours(0,0,0,0);
@@ -2799,15 +2803,8 @@ function DashboardPage({bookings,customers,onExportBookings}){
     const y=new Date().getFullYear()+offset;return{start:new Date(y,0,1),end:new Date(y,11,31),label:`${y}`};
   };
   const{start,end,label}=getRange();
-  // นับ booking ที่ overlap กับช่วงวัน
-  const startStr=ds(start), endStr=ds(end);
-  // Day view: booking ที่อยู่วันนี้รวม checkout วันนี้ด้วย (checkout >= today)
-  const inRange=period==="day"
-    ?bookings.filter(b=>b.checkin<=endStr&&b.checkout>=endStr)
-    :bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
+  const startStr=ds(start),endStr=ds(end);
 
-  // Revenue per night for a booking (net / total nights)
-  // หารด้วยจำนวนวัน (nights + 1) เช่น checkin 28, checkout 29 = 1 คืน 2 วัน → หาร 2
   const netPerDay=b=>{
     const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const fullNet=b.payMethod==="Credit Card"
@@ -2815,30 +2812,86 @@ function DashboardPage({bookings,customers,onExportBookings}){
       :(b.net||0);
     return fullNet/totalDays;
   };
-
-  // กระจายรายได้ทุกวันที่แมวอยู่ (checkin → checkout inclusive)
-  // เช็คอิน 1 Apr, เช็คเอ้าท์ 2 Apr = อยู่วันที่ 1 และ 2 เท่านั้น (ไม่มีวัน 3)
-  const getRevenueForDateRange=(rangeStart,rangeEnd,bkList)=>{
-    return (bkList||bookings).reduce((sum,b)=>{
+  const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
+  const getRevenueForDateRange=(rangeStart,rangeEnd,bkList)=>
+    (bkList||bookings).reduce((sum,b)=>{
       if(!b.checkin||!b.checkout) return sum;
-      // lastDay = checkout (วันสุดท้ายที่อยู่จริง)
       const overlapStart=b.checkin>rangeStart?b.checkin:rangeStart;
       const overlapEnd=b.checkout<rangeEnd?b.checkout:rangeEnd;
       if(overlapStart>overlapEnd) return sum;
       const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
       return sum+netPerDay(b)*Math.max(0,overlapDays);
     },0);
+
+  // ── Helpers: Check-in mode (full net → checkin month) ──
+  const getNetByCheckin=b=>{
+    const net=b.net||0;
+    const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
+    return net-ccFee;
   };
+  // bookings whose checkin falls in [startStr,endStr]
+  const inRangeCheckin=bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
+  const revenueCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
+  const unpaidCheckin=parseFloat(inRangeCheckin.filter(b=>!b.paid).reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
+  const ccFeeTotalCheckin=parseFloat(inRangeCheckin.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0).toFixed(2));
 
-  const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
-  const actualNet=b=>b.payMethod==="Credit Card"?parseFloat(((b.net||0)-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0);
+  // bars for checkin overview
+  let barsCheckin=[];
+  if(period==="week"){
+    for(let i=0;i<7;i++){
+      const d=new Date(start);d.setDate(start.getDate()+i);
+      const ds2=ds(d);
+      const v=bookings.filter(b=>b.checkin===ds2).reduce((a,b)=>a+getNetByCheckin(b),0);
+      barsCheckin.push({label:["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()],val:v});
+    }
+  } else if(period==="month"){
+    let ws=new Date(start);
+    while(ws<=end){
+      const we=new Date(ws);we.setDate(ws.getDate()+6);
+      const ae=we>end?end:we;
+      const s2=ds(ws),e2=ds(ae);
+      const v=bookings.filter(b=>b.checkin>=s2&&b.checkin<=e2).reduce((a,b)=>a+getNetByCheckin(b),0);
+      barsCheckin.push({label:`${ws.getDate()}/${ws.getMonth()+1}`,val:v});
+      ws=new Date(we);ws.setDate(we.getDate()+1);
+    }
+  } else if(period==="year"){
+    for(let m=0;m<12;m++){
+      const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);
+      const v=bookings.filter(b=>b.checkin>=ds(ms)&&b.checkin<=ds(me)).reduce((a,b)=>a+getNetByCheckin(b),0);
+      barsCheckin.push({label:MONTHS[m],val:v});
+    }
+  } else {
+    barsCheckin=[{label:"Today",val:revenueCheckin}];
+  }
+  const maxBarCheckin=Math.max(...barsCheckin.map(r=>r.val),1);
 
-  // Day: sum netPerDay ของ inRange (checkin<=today AND checkout>=today) เท่านั้น
-  // Week/Month/Year: กระจาย overlap ทุก booking ในช่วง
+  // totals for checkin
+  const totalNightsCI=inRangeCheckin.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
+  const totalCatsCI=inRangeCheckin.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
+
+  // payment breakdown for checkin
+  const pmMapCheckin={};
+  inRangeCheckin.forEach(b=>{
+    pmMapCheckin[b.payMethod]=(pmMapCheckin[b.payMethod]||0)+getNetByCheckin(b);
+  });
+  const pmEntriesCheckin=Object.entries(pmMapCheckin).sort((a,b)=>b[1]-a[1]);
+  const maxPmCheckin=Math.max(...pmEntriesCheckin.map(e=>e[1]),1);
+
+  // room stats for checkin
+  const roomStatsCheckin=ROOMS.map(r=>({
+    room:r,
+    count:inRangeCheckin.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).length,
+    revenue:inRangeCheckin.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).reduce((a,b)=>a+getNetByCheckin(b),0)
+  })).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
+
+  // ── Revenue-mode overview ──
+  const inRange=period==="day"
+    ?bookings.filter(b=>b.checkin<=endStr&&b.checkout>=endStr)
+    :bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   const revenue=period==="day"
     ?parseFloat(inRange.reduce((a,b)=>a+netPerDay(b),0).toFixed(2))
     :parseFloat(getRevenueForDateRange(startStr,endStr).toFixed(2));
-
+  const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   const ccFeeTotal=parseFloat((period==="day"
     ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
         const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
@@ -2858,7 +2911,6 @@ function DashboardPage({bookings,customers,onExportBookings}){
   else if(period==="year"){for(let m=0;m<12;m++){const ms=new Date(start.getFullYear(),m,1),me=new Date(start.getFullYear(),m+1,0);const v=getRevenueForDateRange(ds(ms),ds(me));bars.push({label:MONTHS[m],val:v});}}
   else{bars=[{label:"Today",val:revenue}];}
   const maxBar=Math.max(...bars.map(r=>r.val),1);
-  // pmMap: กระจายรายได้ตามวันที่อยู่จริงในช่วง
   const pmMap={};
   revenueBookings.forEach(b=>{
     const overlapStart=b.checkin>startStr?b.checkin:startStr;
@@ -2872,167 +2924,300 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const maxPm=Math.max(...pmEntries.map(e=>e[1]),1);
   const roomStats=ROOMS.map(r=>({room:r,count:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).length,revenue:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).reduce((a,b)=>a+actualNet(b),0)})).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
 
-  // ── MoM: 12 months in a year, with MoM % change ──
-  // momYears data computed inline in render
-
-  // ── YoY: all 12 months, multiple years side by side ──
+  // ── MoM/YoY getters depend on mode ──
+  const getMR=(yr,m)=>mode==="revenue"?getMonthRevenue(bookings,yr,m):getMonthRevenueByCheckin(bookings,yr,m);
+  const yearTotals=yoyYears.map(yr=>({yr,total:Array.from({length:12},(_,m)=>getMR(yr,m)).reduce((a,b)=>a+b,0),bkgs:Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0)}));
   const yoyData=Array.from({length:12},(_,m)=>{
     const entry={month:MONTHS[m],monthFull:MONTHS_FULL[m]};
-    yoyYears.forEach(yr=>{ entry[yr]=getMonthRevenue(bookings,yr,m); });
+    yoyYears.forEach(yr=>{ entry[yr]=getMR(yr,m); });
     return entry;
   });
   const maxYoy=Math.max(...yoyData.flatMap(d=>yoyYears.map(yr=>d[yr]||0)),1);
-  // Year totals
-  const yearTotals=yoyYears.map(yr=>({yr,total:Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0),bkgs:Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0)}));
 
-  const availYears=Array.from({length:13},(_,i)=>2030-i); // 2030 down to 2018
+  // ── shared MoM/YoY UI helpers ──
+  const MoMYearPicker=({years,toggle,setAll,setOne})=>(
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
+        {availYears.map(yr=>{
+          const sel=years.includes(yr);
+          const colIdx=years.indexOf(yr);
+          return(
+            <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggle(yr)}>
+              {yr}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{fontSize:11,color:C.text3}}>{years.length} ปีที่เลือก — {[...years].sort((a,b)=>b-a).join(", ")}</div>
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={setAll}>เลือกทั้งหมด</button>
+        <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={setOne}>ล้างทั้งหมด</button>
+      </div>
+    </div>
+  );
+
+  const modeLabel=mode==="revenue"?"Revenue (pro-rata)":"Bookings";
+  const modeColor=mode==="revenue"?C.accent:"#34c759";
 
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div><div style={S.htitle}>Dashboard</div><div style={S.hSub}>Revenue analytics</div></div>
       </div>
-      {/* Main tab: Overview / MoM / YoY */}
+
+      {/* ── Mode switcher (2 main tabs) ── */}
       <div style={{display:"flex",gap:8,marginTop:12}}>
-        {[["overview","📊 Overview"],["mom","📈 MoM"],["yoy","📅 YoY"],["checkin","📍 Check-in"]].map(([v,l])=>(
-          <button key={v} style={{flex:1,padding:"10px 4px",background:dashTab===v?C.text:C.white,color:dashTab===v?"#fff":C.text2,border:`1px solid ${dashTab===v?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>setDashTab(v)}>{l}</button>
+        {[["revenue","📊 Revenue","นับรายได้ตามช่วงวันที่พัก (pro-rata)"],["checkin","📋 Bookings","นับรายได้ตามวัน check-in ของเดือน"]].map(([v,l,desc])=>(
+          <button key={v} onClick={()=>{setMode(v);setSubTab("overview");}}
+            style={{flex:1,padding:"10px 8px",background:mode===v?modeColor:C.white,color:mode===v?"#fff":C.text2,
+              border:`2px solid ${mode===v?modeColor:C.border}`,borderRadius:12,fontFamily:"inherit",
+              fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1.3}}>
+            {l}
+            {mode===v&&<div style={{fontSize:10,fontWeight:500,opacity:0.85,marginTop:2}}>{desc}</div>}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Sub-tabs ── */}
+      <div style={{display:"flex",gap:6,marginTop:10}}>
+        {[["overview","📈 Overview"],["mom","MoM"],["yoy","YoY"]].map(([v,l])=>(
+          <button key={v} style={{flex:1,padding:"8px 4px",background:subTab===v?C.text:C.bg,color:subTab===v?"#fff":C.text2,
+            border:`1px solid ${subTab===v?C.text:C.border}`,borderRadius:8,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}}
+            onClick={()=>setSubTab(v)}>{l}</button>
         ))}
       </div>
     </div>
 
-    {/* ══ OVERVIEW TAB ══════════════════════════════════════════ */}
-    {dashTab==="overview"&&(
+    {/* ══ OVERVIEW ══════════════════════════════════════════════ */}
+    {subTab==="overview"&&(
       <div style={{padding:"14px 16px 0"}}>
-        <div style={{...S.tabs,marginBottom:12}}>{[["day","Day"],["week","Week"],["month","Month"],["year","Year"]].map(([v,l])=><button key={v} style={S.tab(period===v)} onClick={()=>setPeriod(v)}>{l}</button>)}</div>
+        <div style={{...S.tabs,marginBottom:12}}>
+          {[["day","Day"],["week","Week"],["month","Month"],["year","Year"]].map(([v,l])=>(
+            <button key={v} style={S.tab(period===v)} onClick={()=>setPeriod(v)}>{l}</button>
+          ))}
+        </div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
           <div style={{display:"flex",gap:8}}>
             <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14}} onClick={()=>setOffset(o=>o-1)}>‹</button>
             <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14}} onClick={()=>setOffset(o=>o+1)}>›</button>
           </div>
-          <div style={{fontSize:14,fontWeight:700}}>{label}</div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{fmt2(revenue)}</div><div style={S.statLbl}>Revenue (หลังหัก CC)</div></div>
-          <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{fmt2(unpaid)}</div><div style={S.statLbl}>Unpaid</div></div>
-        </div>
-        {ccFeeTotal>0&&(
-          <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:12,color:C.orange}}>💳 CC Fee หัก ({CREDIT_CARD_FEE_PCT}%)</span>
-            <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotal)}</span>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:14,fontWeight:700}}>{label}</div>
+            <div style={{fontSize:10,color:modeColor,fontWeight:700}}>{modeLabel}</div>
           </div>
-        )}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
-          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
-          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
-          <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalCats}</div><div style={S.statLbl}>Cats</div></div>
         </div>
-        {period!=="day"&&bars.length>0&&(<><div style={S.slabel}>Revenue Chart</div>
-          <div style={{...S.cardPad,marginBottom:14}}>{bars.map((r,i)=>{const pct2=r.val/maxBar*100;const inside=pct2>30;return(<div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <div style={{fontSize:10,fontWeight:600,color:C.text3,width:46,textAlign:"right",flexShrink:0}}>{r.label}</div>
-            <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
-              <div style={{height:"100%",borderRadius:6,background:C.accent,width:`${pct2}%`,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8,minWidth:0}}>{inside&&r.val>0&&<span style={{fontSize:10,fontWeight:700,color:"#fff"}}>฿{r.val.toLocaleString()}</span>}</div>
-              {!inside&&r.val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 4px)`,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:C.text2}}>฿{r.val.toLocaleString()}</span>}
-              {r.val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.text3}}>—</span>}
+
+        {mode==="revenue"&&(<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div style={S.statCard}><div style={{...S.statVal,color:C.accent}}>฿{fmt2(revenue)}</div><div style={S.statLbl}>Revenue</div></div>
+            <div style={S.statCard}><div style={{...S.statVal,color:unpaid>0?C.orange:C.green}}>฿{fmt2(unpaid)}</div><div style={S.statLbl}>Unpaid</div></div>
+          </div>
+          {ccFeeTotal>0&&(
+            <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:C.orange}}>💳 CC Fee ({CREDIT_CARD_FEE_PCT}%)</span>
+              <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotal)}</span>
             </div>
-          </div>);})}
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+            <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
+            <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
+            <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalCats}</div><div style={S.statLbl}>Cats</div></div>
           </div>
-        </>)}
-        {pmEntries.length>0&&(<><div style={S.slabel}>By Payment</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{pmEntries.map(([pm,v],i,arr)=>(<div key={pm} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{flex:1,fontSize:13,fontWeight:600}}>{pm}</div><div style={{width:70,height:4,background:C.bg,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:C.accent,width:`${v/maxPm*100}%`}}/></div><div style={{fontSize:13,fontWeight:700,minWidth:65,textAlign:"right"}}>฿{v.toLocaleString()}</div></div>))}</div></>)}
-        {roomStats.length>0&&(<><div style={S.slabel}>Top Rooms</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>{roomStats.slice(0,8).map(({room,count,revenue:rv},i,arr)=>(<div key={room.id} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}><div style={{...S.chip(getRoomColor(room.id)),marginRight:4}}>{room.label}</div><div style={{flex:1,fontSize:13,color:C.text2}}>{count} booking{count>1?"s":""}</div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{rv.toLocaleString()}</div></div>))}</div></>)}
-        {period==="day"&&inRange.length>0&&(<>
-          <div style={S.slabel}>รายละเอียดรายได้วันนี้</div>
-          <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
-            {inRange.map((b,i,arr)=>{
-              const cust=customers.find(c=>c.id===b.customerId)||{};
-              const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
-              const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
-              const n=Math.max(1,nights(b.checkin,b.checkout));
-              const npn=netPerDay(b);
-              const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
-              return(
-                <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
-                    <div style={{fontSize:11,color:C.text3}}>{rooms} · {n}คืน · ฿{fmt2(b.net||0)} รวม</div>
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{fmt2(npn)}</div>
-                    <div style={{fontSize:10,color:C.text3}}>/วัน</div>
+          {period!=="day"&&bars.length>0&&(<><div style={S.slabel}>Revenue Chart</div>
+            <div style={{...S.cardPad,marginBottom:14}}>
+              {bars.map((r,i)=>{const p=r.val/maxBar*100;const ins=p>30;return(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:600,color:C.text3,width:46,textAlign:"right",flexShrink:0}}>{r.label}</div>
+                  <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+                    <div style={{height:"100%",borderRadius:6,background:C.accent,width:`${p}%`,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8}}>
+                      {ins&&r.val>0&&<span style={{fontSize:10,fontWeight:700,color:"#fff"}}>฿{r.val.toLocaleString()}</span>}
+                    </div>
+                    {!ins&&r.val>0&&<span style={{position:"absolute",left:`calc(${p}% + 4px)`,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:C.text2}}>฿{r.val.toLocaleString()}</span>}
+                    {r.val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.text3}}>—</span>}
                   </div>
                 </div>
-              );
-            })}
-            <div style={{padding:"10px 14px",background:C.bg,display:"flex",justifyContent:"space-between",borderTop:`2px solid ${C.border}`}}>
-              <span style={{fontSize:13,fontWeight:800}}>รวมรายได้วันนี้</span>
-              <span style={{fontSize:14,fontWeight:800,color:C.accent}}>฿{fmt2(revenue)}</span>
+              );})}
             </div>
-          </div>
-        </>)}
-        {period!=="day"&&revenueBookings.length>0&&(<>
-          <div style={S.slabel}>รายละเอียดรายได้ {period==="week"?"สัปดาห์นี้":period==="month"?"เดือนนี้":"ปีนี้"}</div>
-          <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
-            {revenueBookings.sort((a,b)=>a.checkin>b.checkin?1:-1).map((b,i,arr)=>{
-              const cust=customers.find(c=>c.id===b.customerId)||{};
-              const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
-              const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
-              const n=Math.max(1,nights(b.checkin,b.checkout));
-              const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
-              return(
-                <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
-                    <div style={{fontSize:11,color:C.text3}}>{rooms} · {fmt(b.checkin)}→{fmt(b.checkout)} · {n}คืน</div>
+          </>)}
+          {pmEntries.length>0&&(<><div style={S.slabel}>By Payment</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+            {pmEntries.map(([pm,v],i,arr)=>(
+              <div key={pm} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}>
+                <div style={{flex:1,fontSize:13,fontWeight:600}}>{pm}</div>
+                <div style={{width:70,height:4,background:C.bg,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:C.accent,width:`${v/maxPm*100}%`}}/></div>
+                <div style={{fontSize:13,fontWeight:700,minWidth:65,textAlign:"right"}}>฿{v.toLocaleString()}</div>
+              </div>
+            ))}
+          </div></>)}
+          {roomStats.length>0&&(<><div style={S.slabel}>Top Rooms</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+            {roomStats.slice(0,8).map(({room,count,revenue:rv},i,arr)=>(
+              <div key={room.id} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}>
+                <div style={{...S.chip(getRoomColor(room.id)),marginRight:4}}>{room.label}</div>
+                <div style={{flex:1,fontSize:13,color:C.text2}}>{count} booking{count>1?"s":""}</div>
+                <div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{rv.toLocaleString()}</div>
+              </div>
+            ))}
+          </div></>)}
+          {period==="day"&&inRange.length>0&&(<>
+            <div style={S.slabel}>รายละเอียดวันนี้</div>
+            <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+              {inRange.map((b,i,arr)=>{
+                const cust=customers.find(c=>c.id===b.customerId)||{};
+                const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+                const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
+                const n=Math.max(1,nights(b.checkin,b.checkout));
+                const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
+                return(
+                  <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
+                      <div style={{fontSize:11,color:C.text3}}>{rooms} · {n}คืน</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{fmt2(netPerDay(b))}</div>
+                      <div style={{fontSize:10,color:C.text3}}>/วัน</div>
+                    </div>
                   </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{fmt2(actualNet(b))}</div>
-                    {b.discount>0&&<div style={{fontSize:10,color:C.red}}>-{b.discount}%</div>}
+                );
+              })}
+              <div style={{padding:"10px 14px",background:C.bg,display:"flex",justifyContent:"space-between",borderTop:`2px solid ${C.border}`}}>
+                <span style={{fontSize:13,fontWeight:800}}>รวมรายได้วันนี้</span>
+                <span style={{fontSize:14,fontWeight:800,color:C.accent}}>฿{fmt2(revenue)}</span>
+              </div>
+            </div>
+          </>)}
+          {period!=="day"&&revenueBookings.length>0&&(<>
+            <div style={S.slabel}>รายละเอียด {period==="week"?"สัปดาห์":period==="month"?"เดือน":"ปี"}นี้</div>
+            <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+              {revenueBookings.sort((a,b)=>a.checkin>b.checkin?1:-1).map((b,i,arr)=>{
+                const cust=customers.find(c=>c.id===b.customerId)||{};
+                const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+                const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
+                const n=Math.max(1,nights(b.checkin,b.checkout));
+                const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
+                return(
+                  <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
+                      <div style={{fontSize:11,color:C.text3}}>{rooms} · {fmt(b.checkin)}→{fmt(b.checkout)} · {n}คืน</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.accent}}>฿{fmt2(actualNet(b))}</div>
+                      {b.discount>0&&<div style={{fontSize:10,color:C.red}}>-{b.discount}%</div>}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{padding:"10px 14px",background:C.bg,display:"flex",justifyContent:"space-between",borderTop:`2px solid ${C.border}`}}>
+                <span style={{fontSize:13,fontWeight:800}}>รวม {revenueBookings.length} bookings</span>
+                <span style={{fontSize:14,fontWeight:800,color:C.accent}}>฿{fmt2(revenue)}</span>
+              </div>
+            </div>
+          </>)}
+          {inRange.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📊</div>No data for this period</div>}
+        </>)}
+
+        {mode==="checkin"&&(<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div style={S.statCard}><div style={{...S.statVal,color:"#34c759"}}>฿{fmt2(revenueCheckin)}</div><div style={S.statLbl}>Revenue (Bookings)</div></div>
+            <div style={S.statCard}><div style={{...S.statVal,color:unpaidCheckin>0?C.orange:C.green}}>฿{fmt2(unpaidCheckin)}</div><div style={S.statLbl}>Unpaid</div></div>
+          </div>
+          {ccFeeTotalCheckin>0&&(
+            <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:C.orange}}>💳 CC Fee ({CREDIT_CARD_FEE_PCT}%)</span>
+              <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotalCheckin)}</span>
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+            <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRangeCheckin.length}</div><div style={S.statLbl}>Bookings</div></div>
+            <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNightsCI}</div><div style={S.statLbl}>Nights</div></div>
+            <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalCatsCI}</div><div style={S.statLbl}>Cats</div></div>
+          </div>
+          {barsCheckin.length>0&&(<><div style={S.slabel}>Revenue Chart</div>
+            <div style={{...S.cardPad,marginBottom:14}}>
+              {barsCheckin.map((r,i)=>{const p=r.val/maxBarCheckin*100;const ins=p>30;return(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div style={{fontSize:10,fontWeight:600,color:C.text3,width:46,textAlign:"right",flexShrink:0}}>{r.label}</div>
+                  <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+                    <div style={{height:"100%",borderRadius:6,background:"#34c759",width:`${p}%`,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8}}>
+                      {ins&&r.val>0&&<span style={{fontSize:10,fontWeight:700,color:"#fff"}}>฿{r.val.toLocaleString()}</span>}
+                    </div>
+                    {!ins&&r.val>0&&<span style={{position:"absolute",left:`calc(${p}% + 4px)`,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:C.text2}}>฿{r.val.toLocaleString()}</span>}
+                    {r.val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:C.text3}}>—</span>}
                   </div>
                 </div>
-              );
-            })}
-            <div style={{padding:"10px 14px",background:C.bg,display:"flex",justifyContent:"space-between",borderTop:`2px solid ${C.border}`}}>
-              <span style={{fontSize:13,fontWeight:800}}>รวม {revenueBookings.length} bookings</span>
-              <span style={{fontSize:14,fontWeight:800,color:C.accent}}>฿{fmt2(revenue)}</span>
+              );})}
             </div>
-          </div>
+          </>)}
+          {pmEntriesCheckin.length>0&&(<><div style={S.slabel}>By Payment</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+            {pmEntriesCheckin.map(([pm,v],i,arr)=>(
+              <div key={pm} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}>
+                <div style={{flex:1,fontSize:13,fontWeight:600}}>{pm}</div>
+                <div style={{width:70,height:4,background:C.bg,borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",background:"#34c759",width:`${v/maxPmCheckin*100}%`}}/></div>
+                <div style={{fontSize:13,fontWeight:700,minWidth:65,textAlign:"right"}}>฿{v.toLocaleString()}</div>
+              </div>
+            ))}
+          </div></>)}
+          {roomStatsCheckin.length>0&&(<><div style={S.slabel}>Top Rooms</div><div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+            {roomStatsCheckin.slice(0,8).map(({room,count,revenue:rv},i,arr)=>(
+              <div key={room.id} style={{display:"flex",alignItems:"center",padding:"11px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:10}}>
+                <div style={{...S.chip(getRoomColor(room.id)),marginRight:4}}>{room.label}</div>
+                <div style={{flex:1,fontSize:13,color:C.text2}}>{count} booking{count>1?"s":""}</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#34c759"}}>฿{rv.toLocaleString()}</div>
+              </div>
+            ))}
+          </div></>)}
+          {inRangeCheckin.length>0&&(<>
+            <div style={S.slabel}>รายละเอียด Bookings {period==="day"?"วันนี้":period==="week"?"สัปดาห์นี้":period==="month"?"เดือนนี้":"ปีนี้"}</div>
+            <div style={{...S.card,overflow:"hidden",marginBottom:14}}>
+              {inRangeCheckin.sort((a,b)=>a.checkin>b.checkin?1:-1).map((b,i,arr)=>{
+                const cust=customers.find(c=>c.id===b.customerId)||{};
+                const selCats=(cust.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
+                const catNames=selCats.map(c=>c.name).join(", ")||b.catName||"";
+                const n=Math.max(1,nights(b.checkin,b.checkout));
+                const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).join(", ")||b.size||"";
+                return(
+                  <div key={b.id} style={{display:"flex",alignItems:"center",padding:"10px 14px",borderBottom:i<arr.length-1?`1px solid ${C.borderLight}`:"none",gap:8}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cust.nickname||"—"}{catNames?` (${catNames})`:""}</div>
+                      <div style={{fontSize:11,color:C.text3}}>{rooms}{period!=="day"?` · ${fmt(b.checkin)}→${fmt(b.checkout)}`:""} · {n}คืน</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:"#34c759"}}>฿{fmt2(getNetByCheckin(b))}</div>
+                      {b.discount>0&&<div style={{fontSize:10,color:C.red}}>-{b.discount}%</div>}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{padding:"10px 14px",background:C.bg,display:"flex",justifyContent:"space-between",borderTop:`2px solid ${C.border}`}}>
+                <span style={{fontSize:13,fontWeight:800}}>รวม {inRangeCheckin.length} bookings</span>
+                <span style={{fontSize:14,fontWeight:800,color:"#34c759"}}>฿{fmt2(revenueCheckin)}</span>
+              </div>
+            </div>
+          </>)}
+          {inRangeCheckin.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📋</div>ไม่มี Bookings ในช่วงนี้</div>}
         </>)}
-        {inRange.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>📊</div>No data for this period</div>}
       </div>
     )}
 
-    {/* ══ MoM TAB ═══════════════════════════════════════════════ */}
-    {dashTab==="mom"&&(
+    {/* ══ MoM TAB ════════════════════════════════════════════════ */}
+    {subTab==="mom"&&(
       <div style={{padding:"14px 16px 0"}}>
-
-        {/* Multi-year picker */}
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>
-            Month-over-Month — เลือกได้ทุกปี 2018–2030
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
-            {availYears.map(yr=>{
-              const sel=momYears.includes(yr);
-              const colIdx=momYears.indexOf(yr);
-              return(
-                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleMomYear(yr)}>
-                  {yr}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{fontSize:11,color:C.text3}}>{momYears.length} ปีที่เลือก — {[...momYears].sort((a,b)=>b-a).join(", ")}</div>
-          <div style={{display:"flex",gap:8,marginTop:8}}>
-            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setMomYears(availYears)}>เลือกทั้งหมด</button>
-            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setMomYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
-          </div>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>
+          Month-over-Month — {modeLabel}
         </div>
+        <MoMYearPicker
+          years={momYears}
+          toggle={toggleMomYear}
+          setAll={()=>setMomYears(availYears)}
+          setOne={()=>setMomYears([new Date().getFullYear()])}
+        />
 
         {/* Year summary cards */}
         <div style={S.slabel}>สรุปรายปี</div>
         <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(momYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
           {[...momYears].sort((a,b)=>b-a).map(yr=>{
-            const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
-            const totalPrev=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr-1,m)).reduce((a,b)=>a+b,0);
+            const total=Array.from({length:12},(_,m)=>getMR(yr,m)).reduce((a,b)=>a+b,0);
+            const totalPrev=Array.from({length:12},(_,m)=>getMR(yr-1,m)).reduce((a,b)=>a+b,0);
             const bkgsTotal=Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0);
             const colIdx=momYears.indexOf(yr);
             return(
@@ -3047,12 +3232,8 @@ function DashboardPage({bookings,customers,onExportBookings}){
           })}
         </div>
 
-        {/* Monthly grouped bar chart */}
-        <div style={S.slabel}>
-          รายได้รายเดือน — {[...momYears].sort((a,b)=>b-a).join(" vs ")}
-        </div>
+        <div style={S.slabel}>รายได้รายเดือน — {[...momYears].sort((a,b)=>b-a).join(" vs ")}</div>
         <div style={{...S.cardPad,marginBottom:14}}>
-          {/* Legend */}
           <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
             {[...momYears].sort((a,b)=>b-a).map(yr=>(
               <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
@@ -3061,34 +3242,31 @@ function DashboardPage({bookings,customers,onExportBookings}){
               </div>
             ))}
           </div>
-          {/* Bars per month */}
           {Array.from({length:12},(_,mi)=>{
             const isCurrentMonth=new Date().getMonth()===mi;
             const sortedYrs=[...momYears].sort((a,b)=>b-a);
-            const maxVal=Math.max(...sortedYrs.map(yr=>getMonthRevenue(bookings,yr,mi)),1);
+            const globalMax=Math.max(...Array.from({length:12},(_,m2)=>Math.max(...sortedYrs.map(y=>getMR(y,m2)))),1);
             return(
               <div key={mi} style={{marginBottom:12}}>
                 <div style={{fontSize:11,fontWeight:isCurrentMonth?800:600,color:isCurrentMonth?C.accent:C.text2,marginBottom:4}}>
                   {MONTHS_FULL[mi]}{isCurrentMonth?" ◀":""}
                 </div>
                 {sortedYrs.map((yr,yi)=>{
-                  const val=getMonthRevenue(bookings,yr,mi);
+                  const val=getMR(yr,mi);
                   const bk=getMonthBookings(bookings,yr,mi);
-                  const globalMax=Math.max(...Array.from({length:12},(_,m2)=>Math.max(...sortedYrs.map(y=>getMonthRevenue(bookings,y,m2)))),1);
-                  const pct2=val/globalMax*100;
-                  const inside=pct2>32;
+                  const p2=val/globalMax*100;
+                  const inside=p2>32;
                   const color=YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length];
-                  // MoM: compare same month, this year vs prev year in selection
                   const prevYrInSel=sortedYrs[yi+1];
-                  const prevVal=prevYrInSel!==undefined?getMonthRevenue(bookings,prevYrInSel,mi):null;
+                  const prevVal=prevYrInSel!==undefined?getMR(prevYrInSel,mi):null;
                   return(
                     <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                       <div style={{fontSize:10,fontWeight:700,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
                       <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
-                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${pct2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${p2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
                           {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
                         </div>
-                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${p2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
                         {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
                       </div>
                       <div style={{width:20,flexShrink:0,textAlign:"center",fontSize:10,color:C.text3}}>{bk>0?bk:""}</div>
@@ -3103,11 +3281,9 @@ function DashboardPage({bookings,customers,onExportBookings}){
           })}
         </div>
 
-        {/* MoM Detail Table — months as rows, years as columns */}
         <div style={S.slabel}>ตารางเปรียบเทียบ MoM</div>
         <div style={{overflowX:"auto",marginBottom:24}}>
           <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+momYears.length*110)}}>
-            {/* Header */}
             <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
               <div style={{width:54,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
               {[...momYears].sort((a,b)=>b-a).map((yr,i)=>(
@@ -3117,7 +3293,6 @@ function DashboardPage({bookings,customers,onExportBookings}){
                 </div>
               ))}
             </div>
-            {/* Rows */}
             {Array.from({length:12},(_,mi)=>{
               const isCurrentMonth=new Date().getMonth()===mi;
               const sortedYrs=[...momYears].sort((a,b)=>b-a);
@@ -3127,9 +3302,9 @@ function DashboardPage({bookings,customers,onExportBookings}){
                     {MONTHS[mi]}{isCurrentMonth&&" ◀"}
                   </div>
                   {sortedYrs.map((yr,i)=>{
-                    const val=getMonthRevenue(bookings,yr,mi);
+                    const val=getMR(yr,mi);
                     const prevYr=sortedYrs[i+1];
-                    const prevVal=prevYr!==undefined?getMonthRevenue(bookings,prevYr,mi):null;
+                    const prevVal=prevYr!==undefined?getMR(prevYr,mi):null;
                     return(
                       <div key={yr} style={{flex:1,textAlign:"right"}}>
                         <div style={{fontSize:12,fontWeight:700,color:val>0?YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]:C.text3}}>
@@ -3142,14 +3317,13 @@ function DashboardPage({bookings,customers,onExportBookings}){
                 </div>
               );
             })}
-            {/* Total row */}
             <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
               <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
               {[...momYears].sort((a,b)=>b-a).map((yr,i)=>{
-                const total=Array.from({length:12},(_,m)=>getMonthRevenue(bookings,yr,m)).reduce((a,b)=>a+b,0);
+                const total=Array.from({length:12},(_,m)=>getMR(yr,m)).reduce((a,b)=>a+b,0);
                 const sortedYrs=[...momYears].sort((a,b)=>b-a);
                 const prevYr=sortedYrs[i+1];
-                const prevTotal=prevYr!==undefined?Array.from({length:12},(_,m)=>getMonthRevenue(bookings,prevYr,m)).reduce((a,b)=>a+b,0):null;
+                const prevTotal=prevYr!==undefined?Array.from({length:12},(_,m)=>getMR(prevYr,m)).reduce((a,b)=>a+b,0):null;
                 return(
                   <div key={yr} style={{flex:1,textAlign:"right"}}>
                     <div style={{fontSize:12,fontWeight:800,color:YEAR_COLORS[momYears.indexOf(yr)%YEAR_COLORS.length]}}>฿{total.toLocaleString()}</div>
@@ -3163,233 +3337,74 @@ function DashboardPage({bookings,customers,onExportBookings}){
       </div>
     )}
 
-    {/* ══ YoY TAB ═══════════════════════════════════════════════ */}
-    {dashTab==="yoy"&&(
+    {/* ══ YoY TAB ════════════════════════════════════════════════ */}
+    {subTab==="yoy"&&(
       <div style={{padding:"14px 16px 0"}}>
-        {/* Year picker */}
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>Year-over-Year — เลือกได้ทุกปี 2018–2030</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {availYears.map((yr,i)=>{
-              const sel=yoyYears.includes(yr);
-              const colorIdx=yoyYears.indexOf(yr);
-              return(
-                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleYear(yr)}>
-                  {yr}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{fontSize:11,color:C.text3,marginTop:6}}>{yoyYears.length} ปีที่เลือก — {yoyYears.sort((a,b)=>b-a).join(", ")}</div>
-          <div style={{display:"flex",gap:8,marginTop:8}}>
-            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([...availYears])}>เลือกทั้งหมด</button>
-            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
-          </div>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>Year-over-Year — {modeLabel}</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
+          {availYears.map((yr,i)=>{
+            const sel=yoyYears.includes(yr);
+            const colorIdx=yoyYears.indexOf(yr);
+            return(
+              <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colorIdx%YEAR_COLORS.length]||C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleYear(yr)}>
+                {yr}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{fontSize:11,color:C.text3,marginTop:6}}>{yoyYears.length} ปีที่เลือก — {yoyYears.sort((a,b)=>b-a).join(", ")}</div>
+        <div style={{display:"flex",gap:8,marginTop:8,marginBottom:14}}>
+          <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([...availYears])}>เลือกทั้งหมด</button>
+          <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setYoyYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
         </div>
 
-        {/* Year total summary cards */}
         <div style={S.slabel}>สรุปรายปี</div>
         <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(yoyYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
           {yearTotals.sort((a,b)=>b.yr-a.yr).map((yt,i)=>{
-            const prevYr=yearTotals.find(x=>x.yr===yt.yr-1);
+            const prevYr=yearTotals.find(y=>y.yr===yt.yr-1);
             return(
               <div key={yt.yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[yoyYears.indexOf(yt.yr)%YEAR_COLORS.length]||C.accent}`}}>
                 <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yt.yr)%YEAR_COLORS.length]||C.accent,marginBottom:4}}>{yt.yr}</div>
                 <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{yt.total.toLocaleString()}</div>
-                <div style={{fontSize:11,color:C.text3,marginBottom:4}}>{yt.bkgs} bookings</div>
-                {prevYr&&<PctBadge val={pct(yt.total,prevYr.total)}/>}
+                <div style={{fontSize:11,color:C.text3,marginBottom:5}}>{yt.bkgs} bookings</div>
+                {prevYr&&<><PctBadge val={pct(yt.total,prevYr.total)}/><span style={{fontSize:10,color:C.text3,marginLeft:4}}>vs {yt.yr-1}</span></>}
               </div>
             );
           })}
         </div>
 
-        {/* YoY bar chart — grouped by month */}
-        <div style={S.slabel}>รายได้รายเดือน เปรียบเทียบ {yoyYears.sort((a,b)=>b-a).join(" vs ")}</div>
+        <div style={S.slabel}>YoY แผนภูมิรายเดือน</div>
         <div style={{...S.cardPad,marginBottom:14}}>
-          {/* Legend */}
           <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
-            {yoyYears.sort((a,b)=>b-a).map((yr,i)=>(
+            {yoyYears.sort((a,b)=>b-a).map(yr=>(
               <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
-                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]}}/>
+                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent}}/>
                 {yr}
               </div>
             ))}
           </div>
-          {yoyData.map((d,mi)=>(
-            <div key={mi} style={{marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:4}}>{d.monthFull}</div>
-              {yoyYears.sort((a,b)=>b-a).map((yr,yi)=>{
-                const val=d[yr]||0;
-                const pct2=val/maxYoy*100;
-                const inside=pct2>30;
-                const colIdx=yoyYears.indexOf(yr);
-                const color=YEAR_COLORS[colIdx]||C.accent;
-                const prevYrVal=yoyYears.includes(yr-1)?d[yr-1]||0:null;
-                return(
-                  <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                    <div style={{fontSize:10,fontWeight:600,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
-                    <div style={{flex:1,height:22,background:C.bg,borderRadius:5,overflow:"hidden",position:"relative"}}>
-                      <div style={{height:"100%",borderRadius:5,background:color,width:`${pct2}%`,opacity:0.85,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
-                        {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
-                      </div>
-                      {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
-                      {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
-                    </div>
-                    {prevYrVal!==null&&<div style={{width:54,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(val,prevYrVal)}/></div>}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-
-        {/* YoY table — month by month comparison */}
-        <div style={S.slabel}>ตารางเปรียบเทียบ YoY</div>
-        <div style={{overflowX:"auto",marginBottom:14}}>
-          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,180+yoyYears.length*100)}}>
-            {/* Header */}
-            <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
-              <div style={{width:52,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
-              {yoyYears.sort((a,b)=>b-a).map(yr=>(
-                <div key={yr} style={{flex:1,fontSize:10,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent,textAlign:"right"}}>{yr}</div>
-              ))}
-              {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3,textAlign:"right"}}>YoY %</div>}
-            </div>
-            {yoyData.map((d,mi)=>{
-              const sortedYrs=yoyYears.sort((a,b)=>b-a);
-              const latestYr=sortedYrs[0];
-              const prevYr=sortedYrs[1];
-              const yoyChange=prevYr?pct(d[latestYr]||0,d[prevYr]||0):null;
-              const isCurrentMonth=new Date().getMonth()===mi;
-              return(
-                <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
-                  <div style={{width:52,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>{d.month}</div>
-                  {sortedYrs.map(yr=>(
-                    <div key={yr} style={{flex:1,fontSize:12,fontWeight:700,textAlign:"right",color:(d[yr]||0)>0?C.text:C.text3}}>
-                      {(d[yr]||0)>0?`฿${(d[yr]).toLocaleString()}`:"—"}
-                    </div>
-                  ))}
-                  {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={yoyChange}/></div>}
-                </div>
-              );
-            })}
-            {/* Year total row */}
-            <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
-              <div style={{width:52,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
-              {yoyYears.sort((a,b)=>b-a).map(yr=>(
-                <div key={yr} style={{flex:1,fontSize:12,fontWeight:800,textAlign:"right",color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent}}>
-                  ฿{yearTotals.find(y=>y.yr===yr)?.total.toLocaleString()||"0"}
-                </div>
-              ))}
-              {yoyYears.length>=2&&(()=>{
-                const s=yoyYears.sort((a,b)=>b-a);
-                const t0=yearTotals.find(y=>y.yr===s[0])?.total||0;
-                const t1=yearTotals.find(y=>y.yr===s[1])?.total||0;
-                return <div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(t0,t1)}/></div>;
-              })()}
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* ══ CHECK-IN TAB ═══════════════════════════════════════════ */}
-    {dashTab==="checkin"&&(
-      <div style={{padding:"14px 16px 0"}}>
-
-        {/* Explanation banner */}
-        <div style={{background:"#fff8f0",border:"1px solid #ffcc88",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#886600"}}>
-          <b>📍 นับรายได้ตามเดือน Check-in</b> — booking ที่ check-in เดือนไหน รายได้ทั้งหมดจะถูกนับเป็นเดือนนั้น (ไม่แบ่งตามคืนที่พัก)
-        </div>
-
-        {/* Multi-year picker */}
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>
-            รายได้ตาม Check-in — เลือกได้ทุกปี 2018–2030
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
-            {availYears.map(yr=>{
-              const sel=ciYears.includes(yr);
-              const colIdx=ciYears.indexOf(yr);
-              return(
-                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleCiYear(yr)}>
-                  {yr}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{fontSize:11,color:C.text3}}>{ciYears.length} ปีที่เลือก — {[...ciYears].sort((a,b)=>b-a).join(", ")}</div>
-          <div style={{display:"flex",gap:8,marginTop:8}}>
-            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setCiYears(availYears)}>เลือกทั้งหมด</button>
-            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setCiYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
-          </div>
-        </div>
-
-        {/* Year summary cards */}
-        <div style={S.slabel}>สรุปรายปี (นับตาม Check-in)</div>
-        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(ciYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
-          {[...ciYears].sort((a,b)=>b-a).map(yr=>{
-            const total=Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,yr,m)).reduce((a,b)=>a+b,0);
-            const totalPrev=Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,yr-1,m)).reduce((a,b)=>a+b,0);
-            const bkgsTotal=Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0);
-            const colIdx=ciYears.indexOf(yr);
-            return(
-              <div key={yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[colIdx]}`}}>
-                <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[colIdx],marginBottom:4}}>{yr}</div>
-                <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{total.toLocaleString()}</div>
-                <div style={{fontSize:11,color:C.text3,marginBottom:5}}>{bkgsTotal} bookings</div>
-                <PctBadge val={pct(total,totalPrev)}/>
-                <span style={{fontSize:10,color:C.text3,marginLeft:4}}>vs {yr-1}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Monthly bar chart */}
-        <div style={S.slabel}>
-          รายได้รายเดือน (Check-in) — {[...ciYears].sort((a,b)=>b-a).join(" vs ")}
-        </div>
-        <div style={{...S.cardPad,marginBottom:14}}>
-          {/* Legend */}
-          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
-            {[...ciYears].sort((a,b)=>b-a).map(yr=>(
-              <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
-                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]}}/>
-                {yr}
-              </div>
-            ))}
-          </div>
-          {/* Bars per month */}
-          {Array.from({length:12},(_,mi)=>{
+          {yoyData.map((d,mi)=>{
             const isCurrentMonth=new Date().getMonth()===mi;
-            const sortedYrs=[...ciYears].sort((a,b)=>b-a);
-            const globalMax=Math.max(...Array.from({length:12},(_,m2)=>Math.max(...sortedYrs.map(y=>getMonthRevenueByCheckin(bookings,y,m2)))),1);
+            const sortedYrs=[...yoyYears].sort((a,b)=>b-a);
             return(
               <div key={mi} style={{marginBottom:12}}>
                 <div style={{fontSize:11,fontWeight:isCurrentMonth?800:600,color:isCurrentMonth?C.accent:C.text2,marginBottom:4}}>
-                  {MONTHS_FULL[mi]}{isCurrentMonth?" ◀":""}
+                  {d.monthFull}{isCurrentMonth?" ◀":""}
                 </div>
                 {sortedYrs.map((yr,yi)=>{
-                  const val=getMonthRevenueByCheckin(bookings,yr,mi);
-                  const bk=getMonthBookings(bookings,yr,mi);
-                  const pct2=val/globalMax*100;
-                  const inside=pct2>32;
-                  const color=YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length];
-                  const prevYrInSel=sortedYrs[yi+1];
-                  const prevVal=prevYrInSel!==undefined?getMonthRevenueByCheckin(bookings,prevYrInSel,mi):null;
+                  const val=d[yr]||0;
+                  const p2=val/maxYoy*100;
+                  const inside=p2>30;
+                  const color=YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent;
                   return(
                     <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                       <div style={{fontSize:10,fontWeight:700,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
-                      <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
-                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${pct2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                      <div style={{flex:1,height:22,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${p2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
                           {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
                         </div>
-                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${p2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
                         {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
-                      </div>
-                      <div style={{width:20,flexShrink:0,textAlign:"center",fontSize:10,color:C.text3}}>{bk>0?bk:""}</div>
-                      <div style={{width:50,flexShrink:0,textAlign:"right"}}>
-                        {prevVal!==null&&<PctBadge val={pct(val,prevVal)}/>}
                       </div>
                     </div>
                   );
@@ -3399,60 +3414,52 @@ function DashboardPage({bookings,customers,onExportBookings}){
           })}
         </div>
 
-        {/* Detail Table */}
-        <div style={S.slabel}>ตารางเปรียบเทียบ (Check-in)</div>
+        <div style={S.slabel}>ตาราง YoY</div>
         <div style={{overflowX:"auto",marginBottom:24}}>
-          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+ciYears.length*110)}}>
-            {/* Header */}
+          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+yoyYears.length*110)}}>
             <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
               <div style={{width:54,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
-              {[...ciYears].sort((a,b)=>b-a).map((yr,i)=>(
-                <div key={yr} style={{flex:1,textAlign:"right",fontSize:10,fontWeight:800,color:YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]}}>
+              {[...yoyYears].sort((a,b)=>b-a).map((yr,i)=>(
+                <div key={yr} style={{flex:1,textAlign:"right",fontSize:10,fontWeight:800,color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent}}>
                   {yr}
-                  {i>0&&<div style={{fontSize:9,fontWeight:500,color:C.text3}}>vs {[...ciYears].sort((a,b)=>b-a)[i-1]}</div>}
+                  {i>0&&<div style={{fontSize:9,color:C.text3}}>vs {[...yoyYears].sort((a,b)=>b-a)[i-1]}</div>}
                 </div>
               ))}
+              {yoyYears.length>=2&&<div style={{width:56,flexShrink:0,textAlign:"right",fontSize:10,fontWeight:700,color:C.text3}}>%</div>}
             </div>
-            {/* Rows */}
-            {Array.from({length:12},(_,mi)=>{
+            {yoyData.map((d,mi)=>{
               const isCurrentMonth=new Date().getMonth()===mi;
-              const sortedYrs=[...ciYears].sort((a,b)=>b-a);
+              const sortedYrs=[...yoyYears].sort((a,b)=>b-a);
               return(
                 <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
                   <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>
-                    {MONTHS[mi]}{isCurrentMonth&&" ◀"}
+                    {d.month}{isCurrentMonth&&" ◀"}
                   </div>
-                  {sortedYrs.map((yr,i)=>{
-                    const val=getMonthRevenueByCheckin(bookings,yr,mi);
-                    const prevYr=sortedYrs[i+1];
-                    const prevVal=prevYr!==undefined?getMonthRevenueByCheckin(bookings,prevYr,mi):null;
-                    return(
-                      <div key={yr} style={{flex:1,textAlign:"right"}}>
-                        <div style={{fontSize:12,fontWeight:700,color:val>0?YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]:C.text3}}>
-                          {val>0?`฿${val.toLocaleString()}`:"—"}
-                        </div>
-                        {prevVal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(val,prevVal)}/></div>}
-                      </div>
-                    );
-                  })}
+                  {sortedYrs.map((yr,i)=>(
+                    <div key={yr} style={{flex:1,textAlign:"right",fontSize:12,fontWeight:700,color:d[yr]>0?YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent:C.text3}}>
+                      {d[yr]>0?`฿${d[yr].toLocaleString()}`:"—"}
+                    </div>
+                  ))}
+                  {yoyYears.length>=2&&(()=>{
+                    const s=sortedYrs;
+                    return <div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(d[s[0]]||0,d[s[1]]||0)}/></div>;
+                  })()}
                 </div>
               );
             })}
-            {/* Total row */}
             <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
               <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
-              {[...ciYears].sort((a,b)=>b-a).map((yr,i)=>{
-                const total=Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,yr,m)).reduce((a,b)=>a+b,0);
-                const sortedYrs=[...ciYears].sort((a,b)=>b-a);
-                const prevYr=sortedYrs[i+1];
-                const prevTotal=prevYr!==undefined?Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,prevYr,m)).reduce((a,b)=>a+b,0):null;
-                return(
-                  <div key={yr} style={{flex:1,textAlign:"right"}}>
-                    <div style={{fontSize:12,fontWeight:800,color:YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]}}>฿{total.toLocaleString()}</div>
-                    {prevTotal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(total,prevTotal)}/></div>}
-                  </div>
-                );
-              })}
+              {[...yoyYears].sort((a,b)=>b-a).map((yr,i)=>(
+                <div key={yr} style={{flex:1,fontSize:12,fontWeight:800,textAlign:"right",color:YEAR_COLORS[yoyYears.indexOf(yr)%YEAR_COLORS.length]||C.accent}}>
+                  ฿{yearTotals.find(y=>y.yr===yr)?.total.toLocaleString()||"0"}
+                </div>
+              ))}
+              {yoyYears.length>=2&&(()=>{
+                const s=[...yoyYears].sort((a,b)=>b-a);
+                const t0=yearTotals.find(y=>y.yr===s[0])?.total||0;
+                const t1=yearTotals.find(y=>y.yr===s[1])?.total||0;
+                return <div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(t0,t1)}/></div>;
+              })()}
             </div>
           </div>
         </div>
