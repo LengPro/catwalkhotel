@@ -2746,6 +2746,18 @@ function getMonthBookings(bookings, year, month){
   const ds=d=>fmtD(d);
   return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).length;
 }
+function getMonthRevenueByCheckin(bookings, year, month){
+  const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'00')}-${String(d.getDate()).padStart(2,'00')}`;
+  const s=new Date(year,month,1);
+  const e=new Date(year,month+1,0);
+  const sStr=fmtD(s);
+  const eStr=fmtD(e);
+  return bookings.filter(b=>b.checkin>=sStr&&b.checkin<=eStr).reduce((sum,b)=>{
+    const net=b.net||0;
+    const ccFee=b.payMethod==='Credit Card'?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
+    return sum+(net-ccFee);
+  },0);
+}
 function pct(a,b){ if(!b) return null; return Math.round((a-b)/b*100); }
 function PctBadge({val}){
   if(val===null) return <span style={{fontSize:11,color:"#bbb"}}>—</span>;
@@ -2769,6 +2781,12 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const toggleYear=yr=>{
     if(yoyYears.includes(yr)) { if(yoyYears.length>1) setYoyYears(y=>y.filter(x=>x!==yr)); }
     else setYoyYears(y=>[...y,yr].sort((a,b)=>b-a));
+  };
+  // Check-in tab: pick years (reuse same multi-year pattern as MoM)
+  const [ciYears,setCiYears]=useState([new Date().getFullYear(),new Date().getFullYear()-1]);
+  const toggleCiYear=yr=>{
+    if(ciYears.includes(yr)){ if(ciYears.length>1) setCiYears(y=>y.filter(x=>x!==yr)); }
+    else setCiYears(y=>[...y,yr]);
   };
 
   useEffect(()=>setOffset(0),[period]);
@@ -2876,7 +2894,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
       </div>
       {/* Main tab: Overview / MoM / YoY */}
       <div style={{display:"flex",gap:8,marginTop:12}}>
-        {[["overview","📊 Overview"],["mom","📈 MoM"],["yoy","📅 YoY"]].map(([v,l])=>(
+        {[["overview","📊 Overview"],["mom","📈 MoM"],["yoy","📅 YoY"],["checkin","📍 Check-in"]].map(([v,l])=>(
           <button key={v} style={{flex:1,padding:"10px 4px",background:dashTab===v?C.text:C.white,color:dashTab===v?"#fff":C.text2,border:`1px solid ${dashTab===v?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer"}} onClick={()=>setDashTab(v)}>{l}</button>
         ))}
       </div>
@@ -3269,6 +3287,172 @@ function DashboardPage({bookings,customers,onExportBookings}){
                 const t1=yearTotals.find(y=>y.yr===s[1])?.total||0;
                 return <div style={{width:56,flexShrink:0,textAlign:"right"}}><PctBadge val={pct(t0,t1)}/></div>;
               })()}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ══ CHECK-IN TAB ═══════════════════════════════════════════ */}
+    {dashTab==="checkin"&&(
+      <div style={{padding:"14px 16px 0"}}>
+
+        {/* Explanation banner */}
+        <div style={{background:"#fff8f0",border:"1px solid #ffcc88",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#886600"}}>
+          <b>📍 นับรายได้ตามเดือน Check-in</b> — booking ที่ check-in เดือนไหน รายได้ทั้งหมดจะถูกนับเป็นเดือนนั้น (ไม่แบ่งตามคืนที่พัก)
+        </div>
+
+        {/* Multi-year picker */}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:8}}>
+            รายได้ตาม Check-in — เลือกได้ทุกปี 2018–2030
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:6}}>
+            {availYears.map(yr=>{
+              const sel=ciYears.includes(yr);
+              const colIdx=ciYears.indexOf(yr);
+              return(
+                <button key={yr} style={{padding:"7px 14px",background:sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.bg,color:sel?"#fff":C.text2,border:`1px solid ${sel?YEAR_COLORS[colIdx%YEAR_COLORS.length]:C.border}`,borderRadius:10,fontFamily:"inherit",fontSize:13,fontWeight:sel?700:500,cursor:"pointer"}} onClick={()=>toggleCiYear(yr)}>
+                  {yr}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11,color:C.text3}}>{ciYears.length} ปีที่เลือก — {[...ciYears].sort((a,b)=>b-a).join(", ")}</div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setCiYears(availYears)}>เลือกทั้งหมด</button>
+            <button style={{...S.btnG,fontSize:11,padding:"5px 12px"}} onClick={()=>setCiYears([new Date().getFullYear()])}>ล้างทั้งหมด</button>
+          </div>
+        </div>
+
+        {/* Year summary cards */}
+        <div style={S.slabel}>สรุปรายปี (นับตาม Check-in)</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(ciYears.length,3)},1fr)`,gap:8,marginBottom:14}}>
+          {[...ciYears].sort((a,b)=>b-a).map(yr=>{
+            const total=Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,yr,m)).reduce((a,b)=>a+b,0);
+            const totalPrev=Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,yr-1,m)).reduce((a,b)=>a+b,0);
+            const bkgsTotal=Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0);
+            const colIdx=ciYears.indexOf(yr);
+            return(
+              <div key={yr} style={{...S.statCard,borderTop:`3px solid ${YEAR_COLORS[colIdx]}`}}>
+                <div style={{fontSize:11,fontWeight:800,color:YEAR_COLORS[colIdx],marginBottom:4}}>{yr}</div>
+                <div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-0.02em"}}>฿{total.toLocaleString()}</div>
+                <div style={{fontSize:11,color:C.text3,marginBottom:5}}>{bkgsTotal} bookings</div>
+                <PctBadge val={pct(total,totalPrev)}/>
+                <span style={{fontSize:10,color:C.text3,marginLeft:4}}>vs {yr-1}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Monthly bar chart */}
+        <div style={S.slabel}>
+          รายได้รายเดือน (Check-in) — {[...ciYears].sort((a,b)=>b-a).join(" vs ")}
+        </div>
+        <div style={{...S.cardPad,marginBottom:14}}>
+          {/* Legend */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+            {[...ciYears].sort((a,b)=>b-a).map(yr=>(
+              <div key={yr} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700}}>
+                <div style={{width:12,height:12,borderRadius:3,background:YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]}}/>
+                {yr}
+              </div>
+            ))}
+          </div>
+          {/* Bars per month */}
+          {Array.from({length:12},(_,mi)=>{
+            const isCurrentMonth=new Date().getMonth()===mi;
+            const sortedYrs=[...ciYears].sort((a,b)=>b-a);
+            const globalMax=Math.max(...Array.from({length:12},(_,m2)=>Math.max(...sortedYrs.map(y=>getMonthRevenueByCheckin(bookings,y,m2)))),1);
+            return(
+              <div key={mi} style={{marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:isCurrentMonth?800:600,color:isCurrentMonth?C.accent:C.text2,marginBottom:4}}>
+                  {MONTHS_FULL[mi]}{isCurrentMonth?" ◀":""}
+                </div>
+                {sortedYrs.map((yr,yi)=>{
+                  const val=getMonthRevenueByCheckin(bookings,yr,mi);
+                  const bk=getMonthBookings(bookings,yr,mi);
+                  const pct2=val/globalMax*100;
+                  const inside=pct2>32;
+                  const color=YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length];
+                  const prevYrInSel=sortedYrs[yi+1];
+                  const prevVal=prevYrInSel!==undefined?getMonthRevenueByCheckin(bookings,prevYrInSel,mi):null;
+                  return(
+                    <div key={yr} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <div style={{fontSize:10,fontWeight:700,color:color,width:36,flexShrink:0,textAlign:"right"}}>{yr}</div>
+                      <div style={{flex:1,height:24,background:C.bg,borderRadius:6,overflow:"hidden",position:"relative"}}>
+                        <div style={{height:"100%",borderRadius:6,background:color,opacity:0.85,width:`${pct2}%`,transition:"width 0.4s",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6}}>
+                          {inside&&val>0&&<span style={{fontSize:9,fontWeight:700,color:"#fff"}}>฿{val.toLocaleString()}</span>}
+                        </div>
+                        {!inside&&val>0&&<span style={{position:"absolute",left:`calc(${pct2}% + 5px)`,top:"50%",transform:"translateY(-50%)",fontSize:9,fontWeight:700,color:C.text2}}>฿{val.toLocaleString()}</span>}
+                        {val===0&&<span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:9,color:C.text3}}>—</span>}
+                      </div>
+                      <div style={{width:20,flexShrink:0,textAlign:"center",fontSize:10,color:C.text3}}>{bk>0?bk:""}</div>
+                      <div style={{width:50,flexShrink:0,textAlign:"right"}}>
+                        {prevVal!==null&&<PctBadge val={pct(val,prevVal)}/>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Detail Table */}
+        <div style={S.slabel}>ตารางเปรียบเทียบ (Check-in)</div>
+        <div style={{overflowX:"auto",marginBottom:24}}>
+          <div style={{...S.card,overflow:"hidden",minWidth:Math.max(320,140+ciYears.length*110)}}>
+            {/* Header */}
+            <div style={{display:"flex",padding:"8px 14px",background:C.bg,borderBottom:`1px solid ${C.borderLight}`}}>
+              <div style={{width:54,flexShrink:0,fontSize:10,fontWeight:700,color:C.text3}}>เดือน</div>
+              {[...ciYears].sort((a,b)=>b-a).map((yr,i)=>(
+                <div key={yr} style={{flex:1,textAlign:"right",fontSize:10,fontWeight:800,color:YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]}}>
+                  {yr}
+                  {i>0&&<div style={{fontSize:9,fontWeight:500,color:C.text3}}>vs {[...ciYears].sort((a,b)=>b-a)[i-1]}</div>}
+                </div>
+              ))}
+            </div>
+            {/* Rows */}
+            {Array.from({length:12},(_,mi)=>{
+              const isCurrentMonth=new Date().getMonth()===mi;
+              const sortedYrs=[...ciYears].sort((a,b)=>b-a);
+              return(
+                <div key={mi} style={{display:"flex",padding:"9px 14px",borderBottom:mi<11?`1px solid ${C.borderLight}`:"none",background:isCurrentMonth?"#fff8fb":"transparent",alignItems:"center"}}>
+                  <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:isCurrentMonth?800:500,color:isCurrentMonth?C.accent:C.text}}>
+                    {MONTHS[mi]}{isCurrentMonth&&" ◀"}
+                  </div>
+                  {sortedYrs.map((yr,i)=>{
+                    const val=getMonthRevenueByCheckin(bookings,yr,mi);
+                    const prevYr=sortedYrs[i+1];
+                    const prevVal=prevYr!==undefined?getMonthRevenueByCheckin(bookings,prevYr,mi):null;
+                    return(
+                      <div key={yr} style={{flex:1,textAlign:"right"}}>
+                        <div style={{fontSize:12,fontWeight:700,color:val>0?YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]:C.text3}}>
+                          {val>0?`฿${val.toLocaleString()}`:"—"}
+                        </div>
+                        {prevVal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(val,prevVal)}/></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            {/* Total row */}
+            <div style={{display:"flex",padding:"10px 14px",background:C.bg,borderTop:`2px solid ${C.border}`,alignItems:"center"}}>
+              <div style={{width:54,flexShrink:0,fontSize:12,fontWeight:800,color:C.text}}>รวม</div>
+              {[...ciYears].sort((a,b)=>b-a).map((yr,i)=>{
+                const total=Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,yr,m)).reduce((a,b)=>a+b,0);
+                const sortedYrs=[...ciYears].sort((a,b)=>b-a);
+                const prevYr=sortedYrs[i+1];
+                const prevTotal=prevYr!==undefined?Array.from({length:12},(_,m)=>getMonthRevenueByCheckin(bookings,prevYr,m)).reduce((a,b)=>a+b,0):null;
+                return(
+                  <div key={yr} style={{flex:1,textAlign:"right"}}>
+                    <div style={{fontSize:12,fontWeight:800,color:YEAR_COLORS[ciYears.indexOf(yr)%YEAR_COLORS.length]}}>฿{total.toLocaleString()}</div>
+                    {prevTotal!==null&&<div style={{marginTop:2}}><PctBadge val={pct(total,prevTotal)}/></div>}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
