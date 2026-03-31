@@ -1076,7 +1076,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       return(<div key={d} style={{
                         width:54,flexShrink:0,height:38,
                         background:isHome?"#f3e5f5":getRoomColor(room.id)+"25",
-                        borderRight:`1px solid ${isMonth1?"#bbb":getRoomColor(room.id)+"30"}`,
+                        borderRight:isEnd?`3px solid ${isHome?"#7b1fa2":getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":`1px solid ${getRoomColor(room.id)+"30"}`),
                         borderLeft:isStart?`3px solid ${isHome?"#7b1fa2":getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":"none"),
                         cursor:"pointer",
                         display:"flex",alignItems:"center",justifyContent:"center",
@@ -1160,7 +1160,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                     return(<div key={d} style={{
                       width:54,flexShrink:0,height:vr.type==="taxi"?52:38,
                       background:vr.bg,
-                      borderRight:`1px solid ${isMonth1?"#bbb":vr.color+"30"}`,
+                      borderRight:isEnd?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":`1px solid ${vr.color+"30"}`),
                       borderLeft:isStart?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":"none"),
                       cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
                       borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
