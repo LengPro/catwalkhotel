@@ -2796,7 +2796,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
   // ── Helpers: Revenue mode (pro-rata) ──
   const ds=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const getRange=()=>{
-    const now=new Date(new Date().getTime()+7*60*60*1000);now.setHours(0,0,0,0);
+    const _bkk=new Date(new Date().getTime()+7*60*60*1000);const _bkkStr=_bkk.toISOString().slice(0,10);const now=new Date(_bkkStr+"T00:00:00");
     if(period==="day"){const d=new Date(now);d.setDate(now.getDate()+offset);return{start:d,end:d,label:`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`};}
     if(period==="week"){const m=new Date(now);m.setDate(now.getDate()-((now.getDay()+6)%7)+offset*7);const s=new Date(m);s.setDate(m.getDate()+6);return{start:m,end:s,label:`${m.getDate()} ${MONTHS[m.getMonth()]} – ${s.getDate()} ${MONTHS[s.getMonth()]} ${s.getFullYear()}`};}
     if(period==="month"){const s=new Date(now.getFullYear(),now.getMonth()+offset,1);const e=new Date(now.getFullYear(),now.getMonth()+offset+1,0);return{start:s,end:e,label:`${MONTHS_FULL[s.getMonth()]} ${s.getFullYear()}`};}
