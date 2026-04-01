@@ -1532,7 +1532,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1541,6 +1541,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const selectedRooms=form.roomIds||[];
   const numRooms=Math.max(selectedRooms.length,1);
   const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
+  const extraFeeAmt=Math.max(0,parseFloat(form.extraFee)||0);
   const homePriceLump=Math.max(0,parseFloat(form.homePrice)||0); // total price, not per-night
   const getPriceForSize=sz=>sz==="H"?0:(PRICES[sz]||PRICES.S); // @Home handled separately
   // catPerRoom: {roomId: numCats} — default spread cats evenly, user can adjust
@@ -1566,14 +1567,14 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const suggestedLitterAmt=form.litter?lRoundsTotal*LITTER_FEE*lCatsTotal:0;
   const customLitterVal=parseFloat(form.litterCustom)||0;
   const totalLitterAmt=form.litter?(customLitterVal>0?customLitterVal:suggestedLitterAmt):0;
-  // discount applies to (room base + litter), petTaxi excluded from discount
+  // discount applies to (room base + litter + extraFee), petTaxi excluded from discount
   const disc=parseFloat(form.discount)||0;
   const roomBaseNoLitter=(rid)=>{
     if(rid==="@HOME") return homePriceLump; // lump sum — already total
     const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
   };
   const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false);return p.base;})():homePriceLump);
-  const discountableBase=totalRoomBase+totalLitterAmt;
+  const discountableBase=totalRoomBase+totalLitterAmt+extraFeeAmt;
   const discAmt2=parseFloat((discountableBase*disc/100).toFixed(2));
   const totalNet=parseFloat((discountableBase-discAmt2+petTaxiAmt).toFixed(2));
   const net=totalNet;
@@ -1889,7 +1890,19 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           )}
         </div>
 
-        {/* 3. Discount */}
+        {/* 3. Extra Fee */}
+        <div style={{...S.fg,padding:"12px 14px",background:extraFeeAmt>0?"#e8f5e9":C.bg,borderRadius:12,border:`1px solid ${extraFeeAmt>0?"#43a04740":C.border}`,marginBottom:10}}>
+          <div style={{fontSize:14,fontWeight:700,color:extraFeeAmt>0?"#2e7d32":C.text,marginBottom:8}}>➕ ค่าใช้จ่ายอื่นๆ</div>
+          <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:extraFeeAmt>0?"#43a04760":C.border,marginBottom:extraFeeAmt>0?8:0}} min="0" placeholder="0 (ไม่มี)" value={form.extraFee||""} onChange={e=>set("extraFee",e.target.value)}/>
+          {extraFeeAmt>0&&(
+            <input type="text" style={{...S.inp}} placeholder="ระบุรายการ เช่น ค่าอาหารพิเศษ" value={form.extraFeeNote||""} onChange={e=>set("extraFeeNote",e.target.value)}/>
+          )}
+          {extraFeeAmt>0&&(
+            <div style={{fontSize:11,color:"#2e7d32",marginTop:6}}>+฿{fmt2(extraFeeAmt)} รวมในยอดและคำนวณส่วนลดด้วย</div>
+          )}
+        </div>
+
+        {/* 4. Discount */}
         <div style={S.fg}>
           <div style={S.lbl}>ส่วนลด (Discount %)</div>
           <select style={S.sel} value={form.discount} onChange={e=>set("discount",e.target.value)}>
@@ -1977,10 +1990,18 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               </div>
             )}
 
+            {/* ค่าใช้จ่ายอื่นๆ */}
+            {extraFeeAmt>0&&(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:13,color:"#2e7d32"}}>➕ {form.extraFeeNote||"ค่าใช้จ่ายอื่นๆ"}</span>
+                <span style={{fontSize:13,fontWeight:600,color:"#2e7d32"}}>+฿{fmt2(extraFeeAmt)}</span>
+              </div>
+            )}
+
             {/* ส่วนลด */}
             {discAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}% (ห้อง+ทราย)</span>
+                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}% (ห้อง+ทราย+เพิ่ม)</span>
                 <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(discAmt)}</span>
               </div>
             )}
@@ -2032,7 +2053,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
           </div>
         )}
-        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,petTaxiDay:petTaxiAmt>0?(form.petTaxiDay||"checkin"):"",depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||"",homePriceTotal:form.size==="H"?homePriceLump:0})}>          {booking?"Save Changes":"Add Booking"}
+        <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave({...form,id:booking?.id||uid(),createdAt:booking?.createdAt||new Date().toISOString(),net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,petTaxiDay:petTaxiAmt>0?(form.petTaxiDay||"checkin"):"",extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,remaining,ccFeeAmt,roomId:selectedRooms[0]||"",homePriceTotal:form.size==="H"?homePriceLump:0})}>          {booking?"Save Changes":"Add Booking"}
         </button>
       </div>
     </div>
