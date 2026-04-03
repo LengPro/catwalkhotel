@@ -2879,8 +2879,9 @@ function getMonthRevenue(bookings, year, month){
     const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const net=b.net||0;
     const taxi=b.petTaxiAmt||0;
+    const depFee=b.depositCcFee||0;
     const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
-    const perDay=(net-taxi-ccFee)/totalDays;
+    const perDay=(net-taxi-depFee-ccFee)/totalDays;
     const overlapStart=b.checkin>sStr?b.checkin:sStr;
     const overlapEnd=b.checkout<eStr?b.checkout:eStr;
     const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
@@ -2903,8 +2904,9 @@ function getMonthRevenueByCheckin(bookings, year, month){
   return bookings.filter(b=>b.checkin>=sStr&&b.checkin<=eStr).reduce((sum,b)=>{
     const net=b.net||0;
     const taxi=b.petTaxiAmt||0;
+    const depFee=b.depositCcFee||0;
     const ccFee=b.payMethod==='Credit Card'?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
-    return sum+(net-taxi-ccFee);
+    return sum+(net-taxi-depFee-ccFee);
   },0);
 }
 function pct(a,b){ if(!b) return null; return Math.round((a-b)/b*100); }
@@ -2957,12 +2959,12 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const netPerDay=b=>{
     const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const taxi=b.petTaxiAmt||0;
-    const fullNet=b.payMethod==="Credit Card"
-      ?parseFloat(((b.net||0)-taxi-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2))
-      :(b.net||0)-taxi;
+    const depFee=b.depositCcFee||0;
+    const remFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
+    const fullNet=parseFloat(((b.net||0)-taxi-depFee-remFee).toFixed(2));
     return fullNet/totalDays;
   };
-  const actualNet=b=>{const taxi=b.petTaxiAmt||0;return b.payMethod==="Credit Card"?parseFloat(((b.net||0)-taxi-(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2)))).toFixed(2)):(b.net||0)-taxi;};
+  const actualNet=b=>{const taxi=b.petTaxiAmt||0;const depFee=b.depositCcFee||0;const remFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;return parseFloat(((b.net||0)-taxi-depFee-remFee).toFixed(2));};
   const getRevenueForDateRange=(rangeStart,rangeEnd,bkList)=>
     (bkList||bookings).reduce((sum,b)=>{
       if(!b.checkin||!b.checkout) return sum;
@@ -2977,14 +2979,15 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const getNetByCheckin=b=>{
     const net=b.net||0;
     const taxi=b.petTaxiAmt||0;
-    const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
-    return net-taxi-ccFee;
+    const depFee=b.depositCcFee||0;
+    const remFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
+    return net-taxi-depFee-remFee;
   };
   // bookings whose checkin falls in [startStr,endStr]
   const inRangeCheckin=bookings.filter(b=>b.checkin>=startStr&&b.checkin<=endStr);
   const revenueCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
   const unpaidCheckin=parseFloat(inRangeCheckin.filter(b=>!b.paid).reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
-  const ccFeeTotalCheckin=parseFloat(inRangeCheckin.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0).toFixed(2));
+  const ccFeeTotalCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+(b.depositCcFee||0)+(b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0),0).toFixed(2));
 
   // bars for checkin overview
   let barsCheckin=[];
