@@ -2106,20 +2106,44 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             )}
 
             {/* ── CC fee section (internal) ── */}
-            {isCreditCard&&ccFeeAmt>0&&(
+            {(depositCcFee>0||ccFeeAmt>0)&&(
               <div style={{marginTop:10,padding:"10px 12px",background:"#fff8f0",borderRadius:8,border:"1px solid #ff950030"}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:6}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                  <span style={{fontSize:12,color:C.text2}}>ยอดที่จ่ายบัตร</span>
-                  <span style={{fontSize:12,fontWeight:600}}>฿{fmt2(remaining)}</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontSize:12,color:C.orange}}>หัก CC fee {CREDIT_CARD_FEE_PCT}%</span>
-                  <span style={{fontSize:12,fontWeight:600,color:C.orange}}>-฿{fmt2(ccFeeAmt)}</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:`1px dashed ${C.border}`}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:8}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
+                {depositCcFee>0&&(
+                  <div style={{marginBottom:ccFeeAmt>0?8:0,paddingBottom:ccFeeAmt>0?8:0,borderBottom:ccFeeAmt>0?`1px dashed ${C.border}`:"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontSize:12,color:C.text2}}>มัดจำ (Credit)</span>
+                      <span style={{fontSize:12,fontWeight:600}}>฿{fmt2(depositAmt)}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontSize:12,color:C.orange}}>หัก CC fee {CREDIT_CARD_FEE_PCT}%</span>
+                      <span style={{fontSize:12,fontWeight:600,color:C.orange}}>-฿{fmt2(depositCcFee)}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,color:C.text2}}>รับจริงจากมัดจำ</span>
+                      <span style={{fontSize:12,fontWeight:700,color:C.green}}>฿{fmt2(depositAmt-depositCcFee)}</span>
+                    </div>
+                  </div>
+                )}
+                {ccFeeAmt>0&&(
+                  <div style={{marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontSize:12,color:C.text2}}>ยอดที่จ่ายบัตร</span>
+                      <span style={{fontSize:12,fontWeight:600}}>฿{fmt2(remaining)}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontSize:12,color:C.orange}}>หัก CC fee {CREDIT_CARD_FEE_PCT}%</span>
+                      <span style={{fontSize:12,fontWeight:600,color:C.orange}}>-฿{fmt2(ccFeeAmt)}</span>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,color:C.text2}}>รับจริงจากส่วนที่เหลือ</span>
+                      <span style={{fontSize:12,fontWeight:700,color:C.green}}>฿{fmt2(remaining-ccFeeAmt)}</span>
+                    </div>
+                  </div>
+                )}
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:`2px solid ${C.border}`}}>
                   <span style={{fontSize:13,fontWeight:800}}>ร้านได้รับสุทธิ</span>
-                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(depositAmt+shopReceives)}</span>
+                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(net-depositCcFee-ccFeeAmt)}</span>
                 </div>
               </div>
             )}
