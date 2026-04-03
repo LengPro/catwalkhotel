@@ -232,7 +232,7 @@ const calcPrice=(n,size,numCats,discount,litter,rateDate=today(),priceOverride=n
   return{base,discAmt,net,litterAmt,litterWeeks,extraCats,pricePerNight:nightlyRate};
 };
 const fmt2=v=>typeof v==="number"?v.toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}):v;
-const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:"",notes:""});
+const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:[],notes:""});
 
 // ── Room availability ─────────────────────────────────────────────────
 function getRoomBookings(roomId, bookings) {
@@ -307,7 +307,7 @@ function exportCustomersCSV(customers,bookings){
     const spent=cb.reduce((a,b)=>a+(b.net||0),0);
     const lastVisit=cb.length>0?cb.sort((a,b)=>b.checkin>a.checkin?1:-1)[0].checkin:"";
     const cats=c.cats||[];
-    const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",cats[i]?.vaccinePassport?"Yes":"No"]);
+    const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",((Array.isArray(cats[i]?.vaccinePassport)?cats[i].vaccinePassport.length>0:!!cats[i]?.vaccinePassport)?"Yes":"No")]);
     return[c.id,c.nickname||"",c.fullname||"",c.phone||"",c.line||"",c.address||"",c.idCard?"Yes":"No",c.createdAt?.split("T")[0]||"",c.notes||"",...cc,cb.length,fmt2(spent),lastVisit];
   });
   dlCSV([h,...rows],`catwalk-customers-${today()}.csv`);
@@ -661,7 +661,22 @@ function CatEditor({cat,index,total,onChange,onRemove}){
           <div style={{flex:1}}><FileUpload value={cat.photo} onChange={v=>set("photo",v)} label="Cat Photo" icon="🐱"/></div>
         </div>
       </div>
-      <div style={S.fg}><div style={S.lbl}>Vaccine Passport</div><FileUpload value={cat.vaccinePassport} onChange={v=>set("vaccinePassport",v)} label="Vaccine Passport" icon="💉"/></div>
+      <div style={S.fg}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div style={S.lbl}>Vaccine Passport (max 5 photos)</div>
+          <span style={{fontSize:11,color:C.text3}}>{(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).length}/5</span>
+        </div>
+        {(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).map((src,idx)=>(
+          <div key={idx} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,background:C.greenBg,border:`1px solid ${C.green}40`,borderRadius:9,padding:"6px 10px"}}>
+            <img src={src} style={{width:36,height:36,objectFit:"cover",borderRadius:6,flexShrink:0}} alt={`passport-${idx+1}`}/>
+            <span style={{fontSize:12,fontWeight:600,color:C.green,flex:1}}>Photo {idx+1}</span>
+            <button style={{...S.btnG,padding:"2px 8px",fontSize:11}} onClick={()=>{const arr=(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).filter((_,i)=>i!==idx);set("vaccinePassport",arr);}}>✕</button>
+          </div>
+        ))}
+        {(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).length<5&&(
+          <VaccinePhotoAdd onAdd={v=>{const arr=[...(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]),v];set("vaccinePassport",arr);}}/>
+        )}
+      </div>
       <div style={S.fg}><div style={S.lbl}>Notes</div><input style={S.inp} placeholder="Allergies, special food..." value={cat.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
     </div>
   </div>);
@@ -671,6 +686,37 @@ function CatEditor({cat,index,total,onChange,onRemove}){
 function Toast({msg,onHide}){
   useEffect(()=>{if(msg){const t=setTimeout(onHide,2500);return()=>clearTimeout(t);}},[msg]);
   return <div style={{position:"fixed",bottom:24,left:"50%",transform:`translateX(-50%) translateY(${msg?0:8}px)`,background:C.text,color:"#fff",padding:"10px 20px",borderRadius:100,fontSize:13,fontWeight:600,opacity:msg?1:0,pointerEvents:"none",transition:"all 0.2s",whiteSpace:"nowrap",zIndex:300,boxShadow:C.shadowMd}}>{msg}</div>;
+}
+
+// ── VaccinePhotoAdd ───────────────────────────────────────────────────
+function VaccinePhotoAdd({onAdd}){
+  const ref=React.useRef();
+  const hf=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1200;
+        let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+        const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+        canvas.getContext("2d").drawImage(img,0,0,w,h);
+        onAdd(canvas.toDataURL("image/jpeg",0.75));
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value="";
+  };
+  return(
+    <div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",background:C.bg}} onClick={()=>ref.current.click()}>
+      <span style={{fontSize:18}}>💉</span>
+      <span style={{fontSize:12,color:C.text2,flex:1}}>Add vaccine passport photo</span>
+      <span style={{fontSize:11,color:C.text3}}>Tap</span>
+      <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={hf}/>
+    </div>
+  );
 }
 
 // ── ImageViewer ───────────────────────────────────────────────────────
@@ -2248,7 +2294,17 @@ function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}
             <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800}}>{cat.name}</div><div style={{fontSize:12,color:C.text3}}>{cat.breed||"Cat"}</div>{cat.notes&&<div style={{fontSize:12,color:C.text2,marginTop:2,fontStyle:"italic"}}>{cat.notes}</div>}</div>
             {i>0&&<span style={S.chip(C.orange)}>+฿{EXTRA_CAT_FEE}/night</span>}
           </div>
-          {cat.vaccinePassport?<div style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>setViewer({src:cat.vaccinePassport,title:`${cat.name} – Vaccine Passport`})}><span>💉</span><span style={{fontSize:12,fontWeight:600,color:C.green,flex:1}}>Vaccine Passport on file</span><span style={{fontSize:11,color:C.text3}}>View</span></div>:<div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",fontSize:12,color:C.text3}}>💉 No vaccine passport</div>}
+          {(()=>{const vp=Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:(cat.vaccinePassport?[cat.vaccinePassport]:[]);return vp.length>0?(
+            <div>
+              {vp.map((src,idx)=>(
+                <div key={idx} style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:idx<vp.length-1?6:0}} onClick={()=>setViewer({src,title:`${cat.name} – Vaccine Passport ${vp.length>1?idx+1:""}`})}>
+                  <span>💉</span>
+                  <span style={{fontSize:12,fontWeight:600,color:C.green,flex:1}}>Vaccine Passport{vp.length>1?` (${idx+1}/${vp.length})`:" on file"}</span>
+                  <span style={{fontSize:11,color:C.text3}}>View</span>
+                </div>
+              ))}
+            </div>
+          ):<div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",fontSize:12,color:C.text3}}>💉 No vaccine passport</div>;})()}
         </div>))}
         <div style={{display:"flex",gap:8,marginTop:8,marginBottom:14}}>
           <button style={{...S.btnP,flex:1}} onClick={onNewBooking}>+ New Booking</button>
@@ -2395,13 +2451,13 @@ function importCustomersFromCSV(rows, existingCustomers){
       const catName=(r[`cat${ci} name`]||r[`cat${ci}name`]||r[`cat${ci}_name`]||r[`cat ${ci} name`]||"").trim();
       const catBreed=(r[`cat${ci} breed`]||r[`cat${ci}breed`]||r[`cat${ci}_breed`]||r[`cat ${ci} breed`]||"").trim();
       const catNotes=(r[`cat${ci} notes`]||r[`cat${ci}notes`]||"").trim();
-      if(catName) cats.push({id:uid(),name:catName,breed:catBreed,notes:catNotes,photo:"",vaccinePassport:""});
+      if(catName) cats.push({id:uid(),name:catName,breed:catBreed,notes:catNotes,photo:"",vaccinePassport:[]});
     }
     // Also handle single "cat name" column
     if(cats.length===0){
       const singleCat=(r["cat name"]||r["cat"]||r["ชื่อแมว"]||"").trim();
       const singleBreed=(r["breed"]||r["สายพันธุ์"]||"").trim();
-      if(singleCat) cats.push({id:uid(),name:singleCat,breed:singleBreed,notes:"",photo:"",vaccinePassport:""});
+      if(singleCat) cats.push({id:uid(),name:singleCat,breed:singleBreed,notes:"",photo:"",vaccinePassport:[]});
     }
     newCustomers.push({
       id:uid(),
@@ -2410,7 +2466,7 @@ function importCustomersFromCSV(rows, existingCustomers){
       line:(r["line id"]||r["line"]||r["line_id"]||"").trim(),
       address:(r["address"]||r["ที่อยู่"]||"").trim(),
       notes:(r["notes"]||r["หมายเหตุ"]||"").trim(),
-      cats:cats.length>0?cats:[{id:uid(),name:"",breed:"",notes:"",photo:"",vaccinePassport:""}],
+      cats:cats.length>0?cats:[{id:uid(),name:"",breed:"",notes:"",photo:"",vaccinePassport:[]}],
       idCard:"",
       createdAt:new Date().toISOString(),
     });
@@ -3693,7 +3749,7 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
     const nameKey=name.toLowerCase();
     if(!custMap[nameKey]){
       const cats=[];
-      if(cat1Name) cats.push({id:uid(),name:cat1Name,breed:cat1Breed,notes:"",photo:"",vaccinePassport:""});
+      if(cat1Name) cats.push({id:uid(),name:cat1Name,breed:cat1Breed,notes:"",photo:"",vaccinePassport:[]});
       if(cat2Name) cats.push({id:uid(),name:cat2Name,breed:cat2Breed,notes:"",photo:"",vaccinePassport:""});
       if(cat3Name) cats.push({id:uid(),name:cat3Name,breed:cat3Breed,notes:"",photo:"",vaccinePassport:""});
       const newCust={
