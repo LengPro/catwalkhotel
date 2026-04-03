@@ -1514,7 +1514,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
                 <span style={{fontSize:14,fontWeight:800}}>{t.total}</span>
                 <span style={{fontSize:16,fontWeight:800,color:"#ff383c"}}>฿{fmt2(net)}</span>
               </div>
-              {deposit>0&&<Row label={t.deposit} value={`฿${fmt2(deposit)}`} color="#2e7d32"/>}
+              {deposit>0&&<Row label={t.deposit} value={`฿${fmt2(deposit)}${booking.depositPayMethod&&booking.depositPayMethod!=="Transfer"?" ("+booking.depositPayMethod+")":""}`} color="#2e7d32"/>}
               {remaining>0&&<Row label={t.remaining} value={`฿${fmt2(remaining)}`} bold color="#e53935"/>}
               {remaining===0&&<Row label={t.paid} value={`฿${fmt2(net)}`} bold color="#2e7d32"/>}
               <Row label={t.payMethod} value={booking.payMethod||"—"}/>
@@ -1561,7 +1561,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1620,6 +1620,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const discAmt=discAmt2;
   const {litterAmt,litterWeeks}=n>0&&numCats>0?calcPrice(n,form.size,numCats,0,form.litter,pricingDate):{litterAmt:0,litterWeeks:0};
   const depositAmt=Math.max(0,parseFloat(form.deposit)||0);
+  const depositCcFee=form.depositPayMethod==="Credit Card"&&depositAmt>0?parseFloat((depositAmt*CREDIT_CARD_FEE_PCT/100).toFixed(2)):0;
   const remaining=parseFloat(Math.max(0,net-depositAmt).toFixed(2));
   const ccFeeAmt=isCreditCard&&remaining>0?parseFloat((remaining*CREDIT_CARD_FEE_PCT/100).toFixed(2)):0;
   const shopReceives=parseFloat((remaining-ccFeeAmt).toFixed(2));
@@ -1969,6 +1970,23 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {depositAmt>0&&net>0&&<span style={{...S.chip(C.orange),marginLeft:"auto"}}>จ่ายไปแล้ว {Math.round(depositAmt/net*100)}%</span>}
           </div>
           <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:depositAmt>0?C.orange+"80":C.border}} min="0" placeholder="0" value={form.deposit||""} onChange={e=>set("deposit",e.target.value)}/>
+          {depositAmt>0&&(
+            <div style={{marginTop:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:6}}>วิธีชำระมัดจำ</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                {PAY_METHODS.map(m=>(
+                  <button key={m} style={{padding:"8px 4px",background:form.depositPayMethod===m?C.orange:C.bg,color:form.depositPayMethod===m?"#fff":C.text2,border:`1px solid ${form.depositPayMethod===m?C.orange:C.border}`,borderRadius:8,fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer"}} onClick={()=>set("depositPayMethod",m)}>
+                    {m==="Transfer"?"💸 Transfer":m==="Cash"?"💵 Cash":"💳 Credit"}
+                  </button>
+                ))}
+              </div>
+              {form.depositPayMethod==="Credit Card"&&(
+                <div style={{marginTop:6,padding:"6px 10px",background:"#fff3e0",borderRadius:8,border:"1px solid "+C.orange+"50",fontSize:11,color:C.orange,fontWeight:600}}>
+                  ค่าธรรมเนียม Credit 1.07% = ฿{fmt2(depositCcFee)} → รับจริง ฿{fmt2(depositAmt-depositCcFee)}
+                </div>
+              )}
+            </div>
+          )}
           {depositAmt>0&&net>0&&(
             <div style={{marginTop:8,display:"flex",justifyContent:"space-between",fontSize:12,color:C.text2}}>
               <span>ยอดรวม ฿{fmt2(net)}</span>
@@ -2115,7 +2133,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             createdAt:booking?.createdAt||new Date().toISOString(),
             net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,
             petTaxiDay:petTaxiAmt>0?(form.petTaxiDay||"checkin"):"",
-            extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,remaining,ccFeeAmt,
+            extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,depositPayMethod:form.depositPayMethod||"Transfer",depositCcFee,remaining,ccFeeAmt,
             roomId:persistedRoomIds[0]||"",
             roomIds:persistedRoomIds,
             homePriceTotal:form.size==="H"?homePriceLump:0,
