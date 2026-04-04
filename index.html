@@ -674,7 +674,7 @@ function CatEditor({cat,index,total,onChange,onRemove}){
           </div>
         ))}
         {(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).length<5&&(
-          <VaccinePhotoAdd onAdd={v=>{const arr=[...(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]),v];set("vaccinePassport",arr);}}/>
+          {(()=>{const vp=Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[];const rem=5-vp.length;return rem>0&&<VaccinePhotoAdd maxRemaining={rem} onAddMultiple={imgs=>{const arr=[...vp,...imgs].slice(0,5);set("vaccinePassport",arr);}}/>;})()}
         )}
       </div>
       <div style={S.fg}><div style={S.lbl}>Notes</div><input style={S.inp} placeholder="Allergies, special food..." value={cat.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
@@ -689,10 +689,9 @@ function Toast({msg,onHide}){
 }
 
 // ── VaccinePhotoAdd ───────────────────────────────────────────────────
-function VaccinePhotoAdd({onAdd}){
+function VaccinePhotoAdd({onAddMultiple,maxRemaining}){
   const ref=React.useRef();
-  const hf=e=>{
-    const file=e.target.files[0];if(!file)return;
+  const compressOne=(file)=>new Promise(resolve=>{
     const reader=new FileReader();
     reader.onload=ev=>{
       const img=new Image();
@@ -702,19 +701,25 @@ function VaccinePhotoAdd({onAdd}){
         if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
         const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
         canvas.getContext("2d").drawImage(img,0,0,w,h);
-        onAdd(canvas.toDataURL("image/jpeg",0.75));
+        resolve(canvas.toDataURL("image/jpeg",0.75));
       };
       img.src=ev.target.result;
     };
     reader.readAsDataURL(file);
+  });
+  const hf=async e=>{
+    const files=Array.from(e.target.files).slice(0,maxRemaining);
+    if(!files.length)return;
+    const results=await Promise.all(files.map(compressOne));
+    onAddMultiple(results);
     e.target.value="";
   };
   return(
     <div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",background:C.bg}} onClick={()=>ref.current.click()}>
       <span style={{fontSize:18}}>💉</span>
-      <span style={{fontSize:12,color:C.text2,flex:1}}>Add vaccine passport photo</span>
+      <span style={{fontSize:12,color:C.text2,flex:1}}>Add vaccine passport photo{maxRemaining>1?" (select multiple)":""}</span>
       <span style={{fontSize:11,color:C.text3}}>Tap</span>
-      <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={hf}/>
+      <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={hf}/>
     </div>
   );
 }
