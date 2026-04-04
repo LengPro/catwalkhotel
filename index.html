@@ -1623,7 +1623,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",discountItems:["rooms"],deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1672,9 +1672,12 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
   };
   const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false,pricingDate);return p.base;})():homePriceLump);
-  const discountableBase=totalRoomBase+totalLitterAmt+extraFeeAmt;
-  const discAmt2=parseFloat((discountableBase*disc/100).toFixed(2));
-  const totalNet=parseFloat((discountableBase-discAmt2+petTaxiAmt).toFixed(2));
+  const discItems=form.discountItems||["rooms"];
+  const discBase=(discItems.includes("rooms")?totalRoomBase:0)+(discItems.includes("litter")?totalLitterAmt:0)+(discItems.includes("other")?extraFeeAmt:0)+(discItems.includes("taxi")?petTaxiAmt:0);
+  const nonDiscBase=(discItems.includes("rooms")?0:totalRoomBase)+(discItems.includes("litter")?0:totalLitterAmt)+(discItems.includes("other")?0:extraFeeAmt)+(discItems.includes("taxi")?0:petTaxiAmt);
+  const discountableBase=discBase;
+  const discAmt2=parseFloat((discBase*disc/100).toFixed(2));
+  const totalNet=parseFloat((discBase-discAmt2+nonDiscBase).toFixed(2));
   const net=totalNet;
   const isCreditCard=form.payMethod==="Credit Card";
   // base = room+litter before discount; discAmt = actual discount amount (room+litter)
@@ -2019,9 +2022,29 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* 4. Discount */}
         <div style={S.fg}>
           <div style={S.lbl}>ส่วนลด (Discount %)</div>
-          <select style={S.sel} value={form.discount} onChange={e=>set("discount",e.target.value)}>
-            {["0","5","10","15","20","25","30","40","50"].map(v=><option key={v} value={v}>{v}%{v==="0"?" — ไม่มีส่วนลด":""}</option>)}
-          </select>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:form.discount!=="0"?10:0}}>
+            {["0","5","10","15","20","25","30","40","50"].map(v=>(
+              <button key={v} style={{padding:"10px 4px",background:form.discount===v?C.text:C.bg,color:form.discount===v?"#fff":C.text2,border:`1px solid ${form.discount===v?C.text:C.border}`,borderRadius:9,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",textAlign:"center"}} onClick={()=>set("discount",v)}>
+                {v==="0"?"ไม่ลด":v+"%"}
+              </button>
+            ))}
+          </div>
+          {form.discount!=="0"&&(
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:6}}>ลดรายการ</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6}}>
+                {[{key:"rooms",label:"🏠 ห้องพัก"},{key:"litter",label:"🪣 ทรายแมว"},{key:"taxi",label:"🚕 Pet Taxi"},{key:"other",label:"➕ ค่าอื่นๆ"}].map(({key,label})=>{
+                  const items=form.discountItems||["rooms"];
+                  const on=items.includes(key);
+                  return(
+                    <button key={key} style={{padding:"9px 8px",background:on?C.accentBg:C.bg,color:on?C.accent:C.text3,border:`1px solid ${on?C.accent+"60":C.border}`,borderRadius:9,fontFamily:"inherit",fontSize:12,fontWeight:700,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:6}} onClick={()=>{const cur=form.discountItems||["rooms"];set("discountItems",on?cur.filter(x=>x!==key):[...cur,key]);}}>
+                      <span style={{fontSize:15,flexShrink:0}}>{on?"✓":"○"}</span>{label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 4. Deposit */}
@@ -2135,7 +2158,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {/* ส่วนลด */}
             {discAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}% (ห้อง+ทราย+เพิ่ม)</span>
+                <span style={{fontSize:13,color:C.red}}>🏷 ส่วนลด {form.discount}% ({(form.discountItems||["rooms"]).map(k=>k==="rooms"?"ห้อง":k==="litter"?"ทราย":k==="taxi"?"Taxi":"อื่นๆ").join("+")})</span>
                 <span style={{fontSize:13,fontWeight:600,color:C.red}}>-฿{fmt2(discAmt)}</span>
               </div>
             )}
