@@ -2299,42 +2299,9 @@ function CustomerSheet({customer,onSave,onClose}){
 // ════════════════════════════════════════════════════════════════
 function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}){
   const [viewer,setViewer]=useState(null);
-  const [bFilter,setBFilter]=useState("upcoming");
-  const today=todayStr();
-  const allCb=bookings.filter(b=>b.customerId===customer.id);
-  const totalSpent=allCb.reduce((a,b)=>a+(b.net||0),0);
+  const cb=bookings.filter(b=>b.customerId===customer.id).sort((a,b)=>b.checkin.localeCompare(a.checkin));
+  const totalSpent=cb.reduce((a,b)=>a+(b.net||0),0);
   const cats=customer.cats||[];
-
-  // Apply filter
-  let cb=[...allCb];
-  if(bFilter==="upcoming"){
-    cb=cb.filter(b=>b.checkout>=today).sort((a,b)=>a.checkin.localeCompare(b.checkin));
-  } else if(bFilter==="high"){
-    cb=cb.sort((a,b)=>(b.net||0)-(a.net||0));
-  } else if(bFilter==="low"){
-    cb=cb.sort((a,b)=>(a.net||0)-(b.net||0));
-  } else if(bFilter&&bFilter.startsWith("year-")){
-    const yr=bFilter.replace("year-","");
-    cb=cb.filter(b=>b.checkin.startsWith(yr)).sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  } else if(bFilter&&bFilter.startsWith("month-")){
-    const mo=bFilter.replace("month-","");
-    cb=cb.filter(b=>b.checkin.slice(0,7)===mo).sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  } else if(bFilter==="cat1"){
-    cb=cb.filter(b=>(b.selectedCatIds||[]).length===1).sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  } else if(bFilter==="cat2"){
-    cb=cb.filter(b=>(b.selectedCatIds||[]).length===2).sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  } else if(bFilter==="cat3"){
-    cb=cb.filter(b=>(b.selectedCatIds||[]).length===3).sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  } else if(bFilter==="cat4"){
-    cb=cb.filter(b=>(b.selectedCatIds||[]).length>=4).sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  } else {
-    cb=cb.sort((a,b)=>b.checkin.localeCompare(a.checkin));
-  }
-
-  // Build year/month options from allCb
-  const years=[...new Set(allCb.map(b=>b.checkin.slice(0,4)))].sort((a,b)=>b-a);
-  const months=[...new Set(allCb.map(b=>b.checkin.slice(0,7)))].sort((a,b)=>b.localeCompare(a));
-
   return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
     <div style={S.sheet}>
       <div style={S.sheetHandle}/>
@@ -2374,31 +2341,7 @@ function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}
           <button style={S.btnG} onClick={onEdit}>Edit</button>
           <button style={S.btnD} onClick={onDelete}>Delete</button>
         </div>
-        {allCb.length>0&&(<>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-            <div style={S.slabel}>Booking History ({cb.length}/{allCb.length})</div>
-          </div>
-          {/* Filter bar */}
-          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:8,marginBottom:4,WebkitOverflowScrolling:"touch"}}>
-            {[
-              {key:"upcoming",label:"📅 Upcoming"},
-              {key:"all",label:"All"},
-              {key:"high",label:"฿ High→Low"},
-              {key:"low",label:"฿ Low→High"},
-              ...years.map(y=>({key:"year-"+y,label:y})),
-              ...months.map(m=>({key:"month-"+m,label:m.slice(0,7)})),
-              {key:"cat1",label:"1 🐱"},
-              {key:"cat2",label:"2 🐱"},
-              {key:"cat3",label:"3 🐱"},
-              {key:"cat4",label:"4+ 🐱"},
-            ].map(f=>(
-              <button key={f.key} onClick={()=>setBFilter(f.key)} style={{flexShrink:0,padding:"5px 10px",borderRadius:20,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",background:bFilter===f.key?C.accent:C.bg,color:bFilter===f.key?"#fff":C.text2,whiteSpace:"nowrap"}}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          {cb.length===0&&<div style={{textAlign:"center",padding:"20px 0",color:C.text3,fontSize:13}}>No bookings match this filter</div>}
-          {cb.map(b=>(<div key={b.id} style={{...S.cardPad,marginBottom:10}}>
+        {cb.length>0&&(<><div style={S.slabel}>Booking History</div>{cb.map(b=>(<div key={b.id} style={{...S.cardPad,marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
             <div>
               <div style={{fontSize:13,fontWeight:700}}>{fmt(b.checkin)} → {fmt(b.checkout)}</div>
@@ -4136,6 +4079,65 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
         </div>
       </div>
 
+      {/* ── Push Notifications ── */}
+      <div style={S.slabel}>🔔 Push Notifications</div>
+      <div style={{...S.card,overflow:'hidden',marginBottom:16}}>
+        <div style={{padding:'14px 16px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700}}>แจ้งเตือน Check-in พรุ่งนี้</div>
+              <div style={{fontSize:11,color:C.text3}}>รับ push notification ทุกคืน 20:00 — ต้อง Add to Home Screen ก่อน</div>
+            </div>
+            <button
+              id="pwa-notify-btn"
+              style={{...S.btnB,fontSize:12,padding:'8px 14px'}}
+              onClick={async ()=>{
+                try {
+                  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    alert('กรุณาเปิดจาก Home Screen (Add to Home Screen) ก่อนครับ');
+                    return;
+                  }
+                  const reg = await navigator.serviceWorker.ready;
+                  const existing = await reg.pushManager.getSubscription();
+                  if (existing) {
+                    setToast('✅ เปิดรับแจ้งเตือนอยู่แล้ว!');
+                    return;
+                  }
+                  const permission = await Notification.requestPermission();
+                  if (permission !== 'granted') {
+                    setToast('❌ ไม่ได้รับอนุญาต — กรุณาอนุญาตใน Settings');
+                    return;
+                  }
+                  const sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: 'BEZfmnCIy0MJB2oHOpEH1wcLmnelG2I5yJs8cai6wCGaaVs517R238jnvGhk3Zi7O2kzeKMOvM4XmF2-KwsGhvM'
+                  });
+                  const res = await fetch('https://catwalk-push.nvvcv7ds48.workers.dev/subscribe', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({subscription: sub})
+                  });
+                  if (res.ok) {
+                    setToast('✅ เปิดรับแจ้งเตือนสำเร็จ! จะแจ้งทุกคืน 20:00');
+                  } else {
+                    setToast('❌ เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
+                  }
+                } catch(e) {
+                  setToast('❌ ' + e.message);
+                }
+              }}
+            >🔔 เปิดรับแจ้งเตือน</button>
+          </div>
+          <div style={{fontSize:11,color:C.text3,lineHeight:1.7}}>
+            <div style={{fontWeight:700,color:C.text2,marginBottom:4}}>วิธีใช้:</div>
+            <div>{'1. Safari → Share → Add to Home Screen'}</div>
+            <div>{'2. เปิด app จาก Home Screen'}</div>
+            <div>{'3. กดปุ่ม เปิดรับแจ้งเตือน → Allow'}</div>
+            <div>{'4. จะได้รับแจ้งเตือนทุกคืน 20:00 ถ้ามี booking check-in พรุ่งนี้'}</div>
+          </div>
+        </div>
+      </div>
+
       {/* ── Calendar Subscribe ── */}
       <div style={S.slabel}>📅 Calendar Sync</div>
       <div style={{...S.card,overflow:'hidden',marginBottom:16}}>
@@ -4397,6 +4399,16 @@ const onDeleteCustomer=useCallback(async id=>{
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+// Register Service Worker for PWA Push Notifications
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('SW registered:', reg.scope))
+      .catch(err => console.log('SW registration failed:', err));
+  });
+}
 </script>
 </body>
 </html>
