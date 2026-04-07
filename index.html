@@ -2812,7 +2812,7 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
   const byFilter=customers.filter(c=>{
     const cb=bookings.filter(b=>b.customerId===c.id);
     const catCount=(c.cats||[]).length;
-    if(filter==="upcoming") return cb.some(b=>b.checkout>=now);
+    if(filter==="upcoming") return true;
     if(filter==="1cat") return catCount===1;
     if(filter==="2cat") return catCount===2;
     if(filter==="3cat") return catCount===3;
