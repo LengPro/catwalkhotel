@@ -2859,11 +2859,11 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
           )}
         </div>
       </div>
+      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["highlow","High→Low"],["1cat","1 Cat"],["2cat","2 Cats"],["3cat","3 Cats"],["4cat","4+ Cats"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();}}>{l}</button>)}</div>
       <div style={{position:"relative",marginTop:12}}>
         <input style={{...S.inp,paddingRight:search?36:14}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
         {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
       </div>
-      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["highlow","High→Low"],["1cat","1 Cat"],["2cat","2 Cats"],["3cat","3 Cats"],["4cat","4+ Cats"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();}}>{l}</button>)}</div>
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
       {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>🐱</div>No customers found</div>
