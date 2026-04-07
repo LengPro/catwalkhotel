@@ -2805,9 +2805,29 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
   const [editCust,setEditCust]=useState(null);
   const [detailCust,setDetailCust]=useState(null);
   const [bookingFor,setBookingFor]=useState(null);
+  const [filter,setFilter]=useState("upcoming");
   const [selectMode,setSelectMode]=useState(false);
   const [selected,setSelected]=useState([]);
-  const filtered=customers.filter(c=>c.nickname.toLowerCase().includes(search.toLowerCase())||(c.cats||[]).some(cat=>cat.name.toLowerCase().includes(search.toLowerCase()))||(c.phone||"").includes(search));
+  const now=today();
+  const byFilter=customers.filter(c=>{
+    const cb=bookings.filter(b=>b.customerId===c.id);
+    const catCount=(c.cats||[]).length;
+    if(filter==="upcoming") return cb.some(b=>b.checkout>=now);
+    if(filter==="1cat") return catCount===1;
+    if(filter==="2cat") return catCount===2;
+    if(filter==="3cat") return catCount===3;
+    if(filter==="4cat") return catCount>=4;
+    return true; // "all" / high-to-low handled in sort
+  });
+  const filtered=byFilter.filter(c=>c.nickname.toLowerCase().includes(search.toLowerCase())||(c.cats||[]).some(cat=>cat.name.toLowerCase().includes(search.toLowerCase()))||(c.phone||"").includes(search))
+    .sort((a,b)=>{
+      if(filter==="highlow"){
+        const aCount=bookings.filter(bk=>bk.customerId===a.id).length;
+        const bCount=bookings.filter(bk=>bk.customerId===b.id).length;
+        return bCount-aCount;
+      }
+      return 0;
+    });
 
   const toggleSelect=id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const toggleSelectAll=()=>setSelected(s=>s.length===filtered.length?[]:filtered.map(c=>c.id));
@@ -2843,6 +2863,7 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
         <input style={{...S.inp,paddingRight:search?36:14}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
         {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
       </div>
+      <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["highlow","High→Low"],["1cat","1 Cat"],["2cat","2 Cats"],["3cat","3 Cats"],["4cat","4+ Cats"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();}}>{l}</button>)}</div>
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
       {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>🐱</div>No customers found</div>
