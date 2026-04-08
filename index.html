@@ -233,6 +233,7 @@ const getLitterLabel=(n,numCats,dateStr)=>{
   const rounds=n>0?Math.ceil(n/6):0;
   return `${rounds} รอบ × ฿${feePerRound} × ${numCats} ตัว`;
 };
+const getPriceTableForDate=(dateStr)=>{
   const date=(dateStr&&/^\d{4}-\d{2}-\d{2}$/.test(dateStr))?dateStr:today();
   return PRICE_PERIODS.find(p=>p.start<=date&&(!p.end||date<=p.end))?.prices||PRICES;
 };
