@@ -4005,8 +4005,7 @@ function PricingPeriodsPanel({pricingDoc,onSavePricing,setToast}){
             {/* ── Litter Periods ── */}
             <div style={{fontWeight:800,fontSize:13,color:C.accent,marginBottom:10}}>🪣 Cat Litter Pricing Periods</div>
             <div style={{background:C.blueBg,borderRadius:8,padding:"8px 12px",fontSize:11,color:C.blue,marginBottom:12,lineHeight:1.7}}>
-              <b>per6nights</b> = คิดราคา 1 รอบต่อ 6 คืน (เช่น ฿60 / 6 คืน / ตัว)<br/>
-              <b>perNight</b> = คิดรายคืน (เช่น ฿70 / คืน / ตัว)
+              <b>per6nights</b> = คิดราคา 1 รอบต่อ 6 คืน (เช่น ฿60 / 6 คืน / ตัว)
             </div>
             {litterPeriods.map((p,i)=>(
               <div key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
@@ -4448,27 +4447,6 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
         <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 28 Mar 2026 · 23:30 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync</div>
-        <div style={{borderTop:`1px solid ${C.borderLight}`,paddingTop:8}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.text2,marginBottom:6}}>📋 Updates — 28 Mar 2026</div>
-          {[
-            {time:"23:30",text:"🚕 Pet Taxi เลือกวันส่ง Check-in / Check-out / ทั้งสองวัน"},
-            {time:"22:45",text:"📅 ปฏิทิน Rooms — ล็อกวันที่ค้างเมื่อเลื่อนลง"},
-            {time:"23:00",text:"📆 Check-in และ Check-out วันเดียวกันได้ (Day Use = 1 คืน)"},
-            {time:"20:00",text:"🏠 @Home ใส่ราคารวมทั้งหมด (ไม่คูณคืน)"},
-            {time:"19:00",text:"💰 ส่วนลดรวมค่าห้อง + ทรายแมว"},
-            {time:"18:30",text:"📥 แก้ Combined Template import — booking ไม่หาย"},
-            {time:"18:00",text:"📊 Export .xlsx (Numbers) มี 2 sheets + styling"},
-            {time:"16:00",text:"🪣 ทรายแมว UI ใหม่ — เลือกราคาได้, แสดงสูตรชัดเจน"},
-            {time:"15:00",text:"🪣 แก้ทรายคูณจำนวนแมว (฿60 × แมว × รอบ)"},
-            {time:"14:45",text:"🖼 เปลี่ยน Nav Icons ทั้ง 5 เมนู"},
-            {time:"13:00",text:"🐛 แก้ Bug ทรายแมวคูณ numCats ผิด"},
-          ].map(({time,text})=>(
-            <div key={time} style={{display:"flex",gap:8,marginBottom:5,alignItems:"flex-start"}}>
-              <span style={{fontSize:10,color:C.text3,flexShrink:0,marginTop:1,fontFamily:"monospace"}}>{time}</span>
-              <span style={{fontSize:11,color:C.text2,lineHeight:1.4}}>{text}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   </div>);
