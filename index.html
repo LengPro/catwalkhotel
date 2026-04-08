@@ -1965,7 +1965,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               <input type="checkbox" checked={form.litter||false} onChange={e=>{set("litter",e.target.checked);if(!e.target.checked)set("litterCustom",0);}} style={{width:18,height:18,accentColor:C.blue,flexShrink:0}}/>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:form.litter?C.blue:C.text}}>🪣 ทรายแมว (Cat Litter)</div>
-                <div style={{fontSize:11,color:C.text3,marginTop:1}}>{_lp.basis==="perNight"?:}</div>
+                <div style={{fontSize:11,color:C.text3,marginTop:1}}>{_lp.basis==="perNight"?`฿${_lp.feePerRound} / คืน / แมว 1 ตัว`:`฿${_lp.feePerRound} / 6 คืน / แมว 1 ตัว`}</div>
               </div>
               {form.litter&&lTotal>0&&<span style={{...S.chip(C.blue),fontSize:14,fontWeight:800}}>+฿{fmt2(lTotal)}</span>}
             </div>
