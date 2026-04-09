@@ -295,7 +295,7 @@ function exportBookingsCSV(bookings,customers){
     // Rooms
     "Room ID","Room IDs (multi)","Room Size","Num Rooms",
     // Pricing
-    "Price/Night","Base Price","Cat Litter","Pet Taxi","Discount %","Discount Amt","Net Total","CC Fee","Shop Receives",
+    "Price/Night","Base Price","Cat Litter","Pet Taxi","Extra Fee","Extra Fee Note","Discount %","Discount Amt","Net Total","CC Fee","Shop Receives",
     // Payment
     "Payment Method","Deposit","Remaining","Fully Paid",
     // Meta
@@ -319,6 +319,7 @@ function exportBookingsCSV(bookings,customers){
       b.id, b.checkin, b.checkout, n,
       b.roomId||rooms[0]||"", rooms.join("|"), sz, rooms.length,
       pricePerNight, b.base||0, b.litter?"Yes":"No", b.petTaxiAmt||0,
+      b.extraFeeAmt||0, b.extraFeeNote||"",
       b.discount||0, b.discAmt||0, fmt2(net), fmt2(ccFee), fmt2(dep+(rem-ccFee)),
       b.payMethod||"", fmt2(dep), fmt2(rem), b.paid?"Yes":"No",
       b.notes||"", b.createdAt?.split("T")[0]||""
@@ -352,7 +353,7 @@ function exportAllCSV(customers,bookings){
     "Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed",
     "Room ID","Room IDs","Room Size",
     "Check-in","Check-out",
-    "Cat Litter","Pet Taxi","Discount %","Deposit","Payment Method","Fully Paid",
+    "Cat Litter","Pet Taxi","Extra Fee","Extra Fee Note","Discount %","Deposit","Payment Method","Fully Paid",
     "Booking Notes",
     // read-only calculated columns (not used on re-import)
     "Cat Names","Num Cats","Num Rooms","Nights","Price/Night","Base Price","Discount Amt","Net Total","CC Fee","Shop Receives","Remaining","Created"
@@ -372,7 +373,7 @@ function exportAllCSV(customers,bookings){
       cats[0]?.name||"", cats[0]?.breed||"", cats[1]?.name||"", cats[1]?.breed||"", cats[2]?.name||"", cats[2]?.breed||"",
       b.roomId||rooms[0]||"", rooms.join("|"), sz,
       b.checkin, b.checkout,
-      b.litter?"Yes":"No", b.petTaxiAmt||0, b.discount||0, fmt2(dep), b.payMethod||"", b.paid?"Yes":"No",
+      b.litter?"Yes":"No", b.petTaxiAmt||0, b.extraFeeAmt||0, b.extraFeeNote||"", b.discount||0, fmt2(dep), b.payMethod||"", b.paid?"Yes":"No",
       b.notes||"",
       selCats, nc, rooms.length, n,
       pricePerNight, b.base||0, b.discAmt||0, fmt2(net), fmt2(ccFee), fmt2(dep+(rem-ccFee)), fmt2(rem),
@@ -2517,11 +2518,11 @@ function downloadTemplateBookingCSV(){
 }
 
 function downloadTemplateCombinedCSV(){
-  const h=["Customer Nickname","Full Name","Phone","Line ID","Address","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Cat Litter","Pet Taxi","Discount %","Deposit","Payment Method","Fully Paid","Booking Notes"];
+  const h=["Customer Nickname","Full Name","Phone","Line ID","Address","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Cat Litter","Pet Taxi","Extra Fee","Extra Fee Note","Discount %","Deposit","Payment Method","Fully Paid","Booking Notes"];
   const ex=[
-    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-04-01","2026-04-07","Yes","0","10","500","Transfer","No",""],
-    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-05-10","2026-05-15","No","0","0","0","Transfer","Yes",""],
-    ["K.Joy","คุณจอย","0898765432","","","","Taro","Maine Coon","","","","","B-S6","B-S6","S","2026-04-05","2026-04-10","No","0","0","0","Cash","Yes",""]
+    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-04-01","2026-04-07","Yes","0","200","ค่าอาหารพิเศษ","10","500","Transfer","No",""],
+    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-05-10","2026-05-15","No","0","0","","0","0","Transfer","Yes",""],
+    ["K.Joy","คุณจอย","0898765432","","","","Taro","Maine Coon","","","","","B-S6","B-S6","S","2026-04-05","2026-04-10","No","0","0","","0","0","Cash","Yes",""]
   ];
   dlCSV([h,...ex],"catwalk-combined-template.csv");
 }
@@ -2546,11 +2547,11 @@ function downloadTemplateBookingXLSX(){
 }
 
 function downloadTemplateCombinedXLSX(){
-  const h=["Customer Nickname","Full Name","Phone","Line ID","Address","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Cat Litter","Pet Taxi","Discount %","Deposit","Payment Method","Fully Paid","Booking Notes"];
+  const h=["Customer Nickname","Full Name","Phone","Line ID","Address","Customer Notes","Cat1 Name","Cat1 Breed","Cat2 Name","Cat2 Breed","Cat3 Name","Cat3 Breed","Room ID","Room IDs","Room Size","Check-in","Check-out","Cat Litter","Pet Taxi","Extra Fee","Extra Fee Note","Discount %","Deposit","Payment Method","Fully Paid","Booking Notes"];
   const ex=[
-    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-04-01","2026-04-07","Yes","0","10","500","Transfer","No",""],
-    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-05-10","2026-05-15","No","0","0","0","Transfer","Yes",""],
-    ["K.Joy","คุณจอย","0898765432","","","","Taro","Maine Coon","","","","","B-S6","B-S6","S","2026-04-05","2026-04-10","No","0","0","0","Cash","Yes",""]
+    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-04-01","2026-04-07","Yes","0","200","ค่าอาหารพิเศษ","10","500","Transfer","No",""],
+    ["K.Nong","คุณน้อง","0812345678","@nong","10/5 สุขุมวิท กรุงเทพ","แมวแพ้ปลาทู","Mochi","Scottish Fold","Luna","Persian","","","A-S1","A-S1","S","2026-05-10","2026-05-15","No","0","0","","0","0","Transfer","Yes",""],
+    ["K.Joy","คุณจอย","0898765432","","","","Taro","Maine Coon","","","","","B-S6","B-S6","S","2026-04-05","2026-04-10","No","0","0","","0","0","Cash","Yes",""]
   ];
   dlXLSX([h,...ex],"Combined","catwalk-combined-template.xlsx");
 }
@@ -2615,6 +2616,8 @@ function importBookingsFromCSV(rows, customers){
     const payMethod=r["payment method"]||r["payment"]||"Cash";
     const paid=(r["paid (yes/no)"]||r["paid"]||"").toLowerCase()==="yes";
     const litter=(r["cat litter (yes/no)"]||r["cat litter"]||r["litter"]||"").toLowerCase()==="yes";
+    const extraFeeAmt=parseFloat(r["extra fee"]||r["extrafee"]||"0")||0;
+    const extraFeeNote=(r["extra fee note"]||r["extrafeenote"]||"").trim();
     const notes=(r["notes"]||r["หมายเหตุ"]||"").trim();
     const n=nights(checkin,checkout);
     const selectedCatIds=(cust.cats||[]).filter(c=>c.name).map(c=>c.id);
@@ -2634,7 +2637,7 @@ function importBookingsFromCSV(rows, customers){
       checkin, checkout, size, roomId:validRoom?roomId:"",
       discount:String(discount), payMethod, paid, litter, notes,
       base, discAmt, net, litterAmt, litterWeeks,
-      pricePerNight,
+      pricePerNight, extraFeeAmt, extraFeeNote,
       depositAmt, remaining,
       numCats, createdAt:new Date().toISOString(),
     });
@@ -2721,7 +2724,7 @@ function ImportSheet({mode, customers, onImportCustomers, onImportBookings, onCl
               ):(
                 <div>{"Download template CSV → กรอกข้อมูล Booking → Import"}
                   <div style={{marginTop:4,color:C.orange,fontWeight:600}}>⚠️ ต้องมีชื่อลูกค้าในระบบก่อน (Nickname ต้องตรง)</div>
-                  <div style={{marginTop:4,fontWeight:600,color:C.blue}}>คอลัมน์: Customer Nickname, Cat Names, Room ID, Room IDs, Room Size, Check-in, Check-out, Cat Litter, Pet Taxi, Discount %, Deposit, Payment Method, Fully Paid, Booking Notes</div>
+                  <div style={{marginTop:4,fontWeight:600,color:C.blue}}>คอลัมน์: Customer Nickname, Cat Names, Room ID, Room IDs, Room Size, Check-in, Check-out, Cat Litter, Pet Taxi, Extra Fee, Extra Fee Note, Discount %, Deposit, Payment Method, Fully Paid, Booking Notes</div>
                 </div>
               )}
             </div>
@@ -4094,6 +4097,8 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
     const paid=(r["fully paid"]||r["paid (yes/no)"]||r["paid"]||r["ชำระแล้ว"]||"").toLowerCase()==="yes";
     const litter=(r["cat litter"]||r["cat litter (yes/no)"]||r["litter"]||r["ทราย"]||"").toLowerCase()==="yes";
     const petTaxi=parseFloat(r["pet taxi"]||"0")||0;
+    const extraFee=parseFloat(r["extra fee"]||r["extrafee"]||r["extra_fee"]||"0")||0;
+    const extraFeeNote=(r["extra fee note"]||r["extrafeenote"]||r["extra_fee_note"]||"").trim();
     const notes=(r["booking notes"]||r["notes"]||r["หมายเหตุ"]||"").trim();
 
     if(!name){ errors.push(`Row ${rowNum}: ไม่มีชื่อลูกค้า`); return; }
@@ -4165,6 +4170,7 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
         selectedCatIds,numCats,
         discount:String(discount),base,discAmt,net,pricePerNight,
         litter,litterAmt,litterWeeks,petTaxiAmt:petTaxi,
+        extraFeeAmt:extraFee,extraFeeNote,
         depositAmt:deposit,remaining,paid,
         payMethod,notes,
         createdAt:new Date().toISOString(),
@@ -4389,7 +4395,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           </button>
         </div>
         <div style={{marginTop:10,padding:"10px 12px",background:C.bg,borderRadius:10,fontSize:11,color:C.text2,lineHeight:1.6}}>
-          คอลัมน์: <b>Customer Nickname, Full Name, Phone, Line ID, Address, Customer Notes, Cat1-3 Name/Breed, Room ID, Room IDs, Room Size, Check-in, Check-out, Cat Litter, Pet Taxi, Discount %, Deposit, Payment Method, Fully Paid, Booking Notes</b>
+          คอลัมน์: <b>Customer Nickname, Full Name, Phone, Line ID, Address, Customer Notes, Cat1-3 Name/Breed, Room ID, Room IDs, Room Size, Check-in, Check-out, Cat Litter, Pet Taxi, Extra Fee, Extra Fee Note, Discount %, Deposit, Payment Method, Fully Paid, Booking Notes</b>
         </div>
         <div style={{marginTop:10,display:"flex",gap:8}}>
           <button style={{...S.btnG,flex:1,fontSize:12}} onClick={()=>{downloadTemplateCustXLSX();setToast("✅ Downloaded customers .xlsx template!");}}>
