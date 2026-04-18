@@ -2458,13 +2458,20 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             ...form,
             id:booking?.id||uid(),
             createdAt:booking?.createdAt||new Date().toISOString(),
-            updatedAt:new Date().toISOString(), // Always update timestamp on save
+            updatedAt:new Date().toISOString(),
             net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,
             petTaxiDay:petTaxiAmt>0?(form.petTaxiDay||"checkin"):"",
             extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,depositPayMethod:form.depositPayMethod||"Transfer",depositCcFee,remaining,ccFeeAmt,
             roomId:persistedRoomIds[0]||"",
             roomIds:persistedRoomIds,
             extraRooms:(extraRooms||[]).map(er=>({...er,roomIds:(er.roomIds||[]).filter(Boolean)})).filter(er=>(er.roomIds||[]).length>0&&er.checkin&&er.checkout),
+            // Extend checkout to cover all extraRoom periods
+            checkout:(()=>{
+              const validExtra=(extraRooms||[]).filter(er=>(er.roomIds||[]).length>0&&er.checkout);
+              if(validExtra.length===0) return form.checkout;
+              const allDates=[form.checkout,...validExtra.map(er=>er.checkout)];
+              return allDates.reduce((latest,d)=>d>latest?d:latest, form.checkout);
+            })(),
             homePriceTotal:form.size==="H"?homePriceLump:0,
             pricePerNight:form.size==="H"?0:getPriceForSize(form.size),
           };
@@ -3136,7 +3143,15 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   const [selected,setSelected]=useState([]);
   const now=today();
 
-  const byFilter=bookings.filter(b=>filter==="upcoming"?b.checkout>=now:filter==="past"?b.checkout<now:true);
+  const getEffectiveCheckout=b=>{
+    const extras=(b.extraRooms||[]).filter(er=>(er.roomIds||[]).length>0&&er.checkout);
+    if(extras.length===0) return b.checkout;
+    return [b.checkout,...extras.map(er=>er.checkout)].reduce((a,d)=>d>a?d:a,b.checkout);
+  };
+  const byFilter=bookings.filter(b=>{
+    const ec=getEffectiveCheckout(b);
+    return filter==="upcoming"?ec>=now:filter==="past"?ec<now:true;
+  });
   const filtered=byFilter.filter(b=>{
     if(!search.trim()) return true;
     const s=search.toLowerCase().trim();
@@ -3175,7 +3190,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>=now).length} active now</div></div>
+        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&getEffectiveCheckout(b)>=now).length} active now</div></div>
         <div style={{display:"flex",gap:6}}>
           {!selectMode?(
             <>
@@ -3204,7 +3219,9 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
         :filtered.map(b=>{
           const cust=customers.find(c=>c.id===b.customerId);
           const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
-          const n=nights(b.checkin,b.checkout); const isActive=b.checkin<=now&&b.checkout>=now;
+          // Effective checkout = latest of main checkout or any extraRoom checkout
+          const effectiveCheckout=getEffectiveCheckout(b);
+          const n=nights(b.checkin,effectiveCheckout); const isActive=b.checkin<=now&&effectiveCheckout>=now;
           const room=ROOMS.find(r=>r.id===b.roomId);
           const isSel=selected.includes(b.id);
           return(<div key={b.id} style={{...S.card,marginBottom:10,borderLeft:isActive?`3px solid ${C.accent}`:"",outline:isSel?`2px solid ${C.accent}`:"none",background:isSel?C.accentBg:C.white}} onClick={selectMode?()=>toggleSelect(b.id):undefined}>
@@ -3225,7 +3242,12 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 </div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:700}}>{cust?.nickname||"?"} <span style={{fontWeight:600,color:C.text2}}>({cats.length>0?cats.map(c=>c.name).join(", "):(b.catName||"Cat")})</span></div>
-                  <div style={{fontSize:12,color:C.text2}}>{fmt(b.checkin)} → {fmt(b.checkout)} · {n} night{n>1?"s":""}</div>
+                  <div style={{fontSize:12,color:C.text2}}>{fmt(b.checkin)} → {fmt(effectiveCheckout)} · {n} night{n>1?"s":""}</div>
+                  {(b.extraRooms||[]).length>0&&!selectMode&&(
+                    <div style={{fontSize:11,color:C.purple,marginTop:2}}>
+                      🔄 {(b.extraRooms||[]).length} ช่วงย้ายห้อง · {(b.extraRooms||[]).map(er=>(er.roomIds||[]).join("+")).join(", ")}
+                    </div>
+                  )}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>{b.discount>0&&<div style={{fontSize:11,color:C.red}}>-{b.discount}%</div>}</div>
               </div>
@@ -4670,7 +4692,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 19 Apr 2026 · 00:25 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 19 Apr 2026 · 00:55 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
