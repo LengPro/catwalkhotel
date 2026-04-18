@@ -214,7 +214,7 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2);
 const today=()=>{const d=new Date();const bkk=new Date(d.getTime()+7*60*60*1000);return bkk.toISOString().split("T")[0];};
 const fmt=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); return`${x.getDate()} ${MONTHS[x.getMonth()]} ${x.getFullYear()}`; };
 const fmtShort=(d)=>{ if(!d) return"—"; const x=new Date(d+"T12:00:00"); return`${x.getDate()}/${x.getMonth()+1}`; };
-const nights=(a,b)=>Math.abs(Math.round((new Date(b)-new Date(a))/(864e5)));
+const nights=(a,b)=>Math.max(1,Math.round((new Date(b)-new Date(a))/(864e5)));
 const addDays=(d,n)=>{ const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
 const getLitterFeeForDate=(dateStr)=>{
   const date=(dateStr&&/^\d{4}-\d{2}-\d{2}$/.test(dateStr))?dateStr:today();
@@ -272,15 +272,9 @@ function getRoomBookings(roomId, bookings) {
 }
 function isRoomAvailable(roomId, checkin, checkout, bookings, excludeId=null) {
   const rb = getRoomBookings(roomId, bookings).filter(b => b.id !== excludeId);
-  // Normalize date range for backwards booking
-  const newStart = checkin < checkout ? checkin : checkout;
-  const newEnd = checkin < checkout ? checkout : checkin;
   for (const b of rb) {
-    // Normalize existing booking dates
-    const bStart = b.checkin < b.checkout ? b.checkin : b.checkout;
-    const bEnd = b.checkin < b.checkout ? b.checkout : b.checkin;
     // Allow same-day checkout+checkin (staying on = checkout of prev == checkin of next)
-    if (bStart < newEnd && bEnd > newStart) return false;
+    if (b.checkin < checkout && b.checkout > checkin) return false;
   }
   return true;
 }
@@ -820,14 +814,20 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
       onChange({checkin:dateStr,checkout:""});
       setPicking("checkout");
     } else {
-      // Allow any date for checkout (even before checkin for backwards booking)
-      onChange({checkin,checkout:dateStr});
-      setPicking("checkin");
-      setShow(false);
+      if(dateStr<checkin){
+        // selected earlier than checkin — restart
+        onChange({checkin:dateStr,checkout:""});
+        setPicking("checkout");
+      } else {
+        // same day or later → allow (same day = 1 คืน day use)
+        onChange({checkin,checkout:dateStr});
+        setPicking("checkin");
+        setShow(false);
+      }
     }
   };
 
-  const n=checkin&&checkout?Math.abs(Math.round((new Date(checkout)-new Date(checkin))/(864e5))):0;
+  const n=checkin&&checkout?Math.max(1,Math.round((new Date(checkout)-new Date(checkin))/(864e5))):0;
 
   return(
     <div>
@@ -844,7 +844,7 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
             <div style={{fontSize:14,fontWeight:800,color:checkout?C.blue:C.text3}}>{checkout?fmt(checkout):"— —"}</div>
           </div>
         </div>
-        {checkin&&checkout&&<div style={{...S.chip(C.text),marginLeft:8}}>{n}คืน</div>}
+        {n>0&&<div style={{...S.chip(C.text),marginLeft:8}}>{n}คืน</div>}
       </div>
 
       {/* Infinite scroll calendar panel */}
@@ -853,20 +853,14 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
           {/* Header */}
           <div style={{background:C.accentBg,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10,borderBottom:`1px solid ${C.accent}20`}}>
             <div style={{fontSize:12,fontWeight:700,color:C.accent}}>
-              {picking==="checkin"?"📅 เลือก Check-in":"📅 เลือก Check-out"}
-              {checkin&&picking==="checkout"&&<span style={{fontWeight:600,color:C.text2}}> (จาก {fmt(checkin)})</span>}
+              {picking==="checkin"?startLabel:endLabel}
+              {checkin&&picking==="checkout"?` (จาก ${fmt(checkin)})` :""}
             </div>
             <div style={{display:"flex",gap:6}}>
               <button style={{...S.btnG,fontSize:11,padding:"5px 10px"}} onClick={()=>{onChange({checkin:"",checkout:""});setPicking("checkin");}}>ล้าง</button>
               <button style={{...S.btnG,fontSize:11,padding:"5px 10px"}} onClick={()=>setShow(false)}>เสร็จ</button>
             </div>
           </div>
-          {/* Help text for backwards booking */}
-          {checkin&&picking==="checkout"&&(
-            <div style={{padding:"8px 14px",background:"#fff8f0",borderBottom:`1px solid ${C.orange}30`,fontSize:11,color:C.text2,lineHeight:1.5}}>
-              💡 <b>สามารถเลือก Check-out ก่อน Check-in ได้</b> (backwards booking) ระบบจะคำนวณจำนวนคืนอัตโนมัติ
-            </div>
-          )}
           {/* Day of week header */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"6px 8px 2px",background:"#fafafa",borderBottom:`1px solid ${C.borderLight}`,position:"sticky",top:43,zIndex:9}}>
             {["อา","จ","อ","พ","พฤ","ศ","ส"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:C.text3}}>{d}</div>)}
@@ -949,11 +943,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   },[viewDate,daysShow]);
 
   const todayStr=today();
-  const occupiedRoomsToday=bookings.filter(b=>{
-    const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-    const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-    return bStart<=todayStr&&bEnd>=todayStr;
-  })
+  const occupiedRoomsToday=bookings.filter(b=>b.checkin<=todayStr&&b.checkout>=todayStr)
     .reduce((acc,b)=>{(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId].filter(Boolean)).forEach(r=>acc.add(r));return acc;},new Set()).size;
 
   // Scroll today into view on mount / date change
@@ -964,12 +954,10 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   },[viewDate,dateArr]);
 
   function getBookingForRoomDate(roomId,dateStr){
-    return bookings.find(b=>{
-      const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-      const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-      return (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
-        &&bStart<=dateStr&&bEnd>=dateStr;
-    });
+    return bookings.find(b=>
+      (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
+      &&b.checkin<=dateStr&&b.checkout>=dateStr
+    );
   }
 
   const availCheckin=checkAvail.checkin;
@@ -1068,13 +1056,13 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
       <div style={{...S.card,padding:14,marginBottom:0}}>
         {/* Date Range Picker for availability */}
         {(()=>{
-          const availN=checkAvail.checkin&&checkAvail.checkout?Math.abs(Math.round((new Date(checkAvail.checkout)-new Date(checkAvail.checkin))/(864e5))):0;
+          const availN=checkAvail.checkin&&checkAvail.checkout?Math.max(1,Math.round((new Date(checkAvail.checkout)-new Date(checkAvail.checkin))/(864e5))):0;
           return(
             <div style={{marginBottom:8}}>
               <InfiniteScrollCalendar
                 checkin={checkAvail.checkin}
                 checkout={checkAvail.checkout}
-                allowPast={false}
+                allowPast={true}
                 onChange={({checkin,checkout})=>setCheckAvail(v=>({...v,checkin,checkout}))}
               />
             </div>
@@ -1259,13 +1247,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
           ].map(({vr,getBookings})=>{
             const vrBookings=getBookings();
             const getVRBookingForDate=(dateStr)=>{
-              if(vr.type!=="taxi"){
-                return vrBookings.find(b=>{
-                  const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-                  const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-                  return bStart<=dateStr&&bEnd>=dateStr;
-                });
-              }
+              if(vr.type!=="taxi") return vrBookings.find(b=>b.checkin<=dateStr&&b.checkout>=dateStr);
               // Pet Taxi: show only on selected day(s)
               return vrBookings.find(b=>{
                 const day=b.petTaxiDay||"checkin";
@@ -1682,7 +1664,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const cats=cust?.cats||[];
   const numCats=form.selectedCatIds?.length||0;
   const isLegacySize=form.size==="L";
-  const n=form.checkin&&form.checkout?nights(form.checkin,form.checkout):0;
+  const n=form.checkin&&form.checkout&&form.checkin<=form.checkout?nights(form.checkin,form.checkout):0;
   const selectedRooms=form.roomIds||[];
   const numRooms=Math.max(selectedRooms.length,1);
   const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
@@ -1745,13 +1727,13 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const ids=form.roomIds||[];
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   };
-  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
+  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
   const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
   useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
 
   // Available rooms for selected dates+type
   // For @Home (H): always available — use virtual @HOME room
-  const availRooms=form.checkin&&form.checkout
+  const availRooms=form.checkin&&form.checkout&&form.checkin<=form.checkout
     ? form.size==="H"
       ? [{id:"@HOME",zone:"special",type:"H",label:"@Home"}]
       : form.size==="L"
@@ -1885,7 +1867,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         <InfiniteScrollCalendar
           checkin={form.checkin}
           checkout={form.checkout}
-          allowPast={!!booking}
+          allowPast={true}
           onChange={({checkin,checkout})=>{set("checkin",checkin);set("checkout",checkout);}}
         />
         {/* Size */}
@@ -1926,7 +1908,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             <div style={{padding:"12px 14px",background:"#fff8f0",borderRadius:10,fontSize:13,fontWeight:600,color:C.orange,border:`1px solid ${C.orange}20`}}>
               📚 ข้อมูลย้อนหลังไซส์ L จะถูกบันทึกตามราคาเดิม โดยไม่ผูกกับรายการห้องปัจจุบัน
             </div>
-          ):form.checkin&&form.checkout?(
+          ):form.checkin&&form.checkout&&form.checkin<=form.checkout?(
             availRooms.length>0?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
                 {availRooms.map(r=>{
@@ -3008,7 +2990,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
   return(<div>
     <div style={S.header}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>{const bStart=b.checkin<b.checkout?b.checkin:b.checkout;const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;return bStart<=now&&bEnd>=now;}).length} active now</div></div>
+        <div><div style={S.htitle}>Bookings</div><div style={S.hSub}>{bookings.length} total · {bookings.filter(b=>b.checkin<=now&&b.checkout>=now).length} active now</div></div>
         <div style={{display:"flex",gap:6}}>
           {!selectMode?(
             <>
@@ -3037,10 +3019,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
         :filtered.map(b=>{
           const cust=customers.find(c=>c.id===b.customerId);
           const cats=(cust?.cats||[]).filter(c=>(b.selectedCatIds||[]).includes(c.id));
-          const n=nights(b.checkin,b.checkout);
-          const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-          const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-          const isActive=bStart<=now&&bEnd>=now;
+          const n=nights(b.checkin,b.checkout); const isActive=b.checkin<=now&&b.checkout>=now;
           const room=ROOMS.find(r=>r.id===b.roomId);
           const isSel=selected.includes(b.id);
           return(<div key={b.id} style={{...S.card,marginBottom:10,borderLeft:isActive?`3px solid ${C.accent}`:"",outline:isSel?`2px solid ${C.accent}`:"none",background:isSel?C.accentBg:C.white}} onClick={selectMode?()=>toggleSelect(b.id):undefined}>
@@ -3120,22 +3099,15 @@ function getMonthRevenue(bookings, year, month){
   const e=new Date(year,month+1,0);
   const sStr=fmtD(s);
   const eStr=fmtD(e);
-  return bookings.filter(b=>{
-    const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-    const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-    return bStart<=eStr&&bEnd>=sStr;
-  }).reduce((sum,b)=>{
-    const totalDays=Math.abs(Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5)))+1;
+  return bookings.filter(b=>b.checkin<=eStr&&b.checkout>=sStr).reduce((sum,b)=>{
+    const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const net=b.net||0;
     const taxi=b.petTaxiAmt||0;
     const depFee=b.depositCcFee||0;
     const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
     const perDay=(net-taxi-depFee-ccFee)/totalDays;
-    // Handle backwards booking: ensure start <= end for overlap
-    const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-    const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-    const overlapStart=bStart>sStr?bStart:sStr;
-    const overlapEnd=bEnd<eStr?bEnd:eStr;
+    const overlapStart=b.checkin>sStr?b.checkin:sStr;
+    const overlapEnd=b.checkout<eStr?b.checkout:eStr;
     const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
     return sum+perDay*Math.max(0,overlapDays);
   },0);
@@ -3209,7 +3181,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const startStr=ds(start),endStr=ds(end);
 
   const netPerDay=b=>{
-    const totalDays=Math.abs(Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5)))+1;
+    const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const taxi=b.petTaxiAmt||0;
     const depFee=b.depositCcFee||0;
     const remFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,(b.net||0)-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
@@ -3220,11 +3192,8 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const getRevenueForDateRange=(rangeStart,rangeEnd,bkList)=>
     (bkList||bookings).reduce((sum,b)=>{
       if(!b.checkin||!b.checkout) return sum;
-      // Normalize booking dates for backwards booking
-      const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-      const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-      const overlapStart=bStart>rangeStart?bStart:rangeStart;
-      const overlapEnd=bEnd<rangeEnd?bEnd:rangeEnd;
+      const overlapStart=b.checkin>rangeStart?b.checkin:rangeStart;
+      const overlapEnd=b.checkout<rangeEnd?b.checkout:rangeEnd;
       if(overlapStart>overlapEnd) return sum;
       const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
       return sum+netPerDay(b)*Math.max(0,overlapDays);
@@ -3295,29 +3264,22 @@ function DashboardPage({bookings,customers,onExportBookings}){
 
   // ── Revenue-mode overview ──
   const inRange=period==="day"
-    ?bookings.filter(b=>{const bStart=b.checkin<b.checkout?b.checkin:b.checkout;const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;return bStart<=endStr&&bEnd>=endStr;})
-    :bookings.filter(b=>{const bStart=b.checkin<b.checkout?b.checkin:b.checkout;const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;return bStart<=endStr&&bEnd>=startStr;});
+    ?bookings.filter(b=>b.checkin<=endStr&&b.checkout>=endStr)
+    :bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   const revenue=period==="day"
     ?parseFloat(inRange.reduce((a,b)=>a+netPerDay(b),0).toFixed(2))
     :parseFloat(getRevenueForDateRange(startStr,endStr).toFixed(2));
-  const revenueBookings=period==="day"?inRange:bookings.filter(b=>{const bStart=b.checkin<b.checkout?b.checkin:b.checkout;const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;return bStart<=endStr&&bEnd>=startStr;});
+  const revenueBookings=period==="day"?inRange:bookings.filter(b=>b.checkin<=endStr&&b.checkout>=startStr);
   const ccFeeTotal=parseFloat((period==="day"
     ?inRange.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>{
-        const totalDays=Math.abs(nights(b.checkin,b.checkout))+1;
+        const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
         return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/totalDays;
       },0)
     :revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0)
   ).toFixed(2));
   const unpaid=parseFloat((period==="day"
     ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b),0)
-    :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>{
-        const bStart=b.checkin<b.checkout?b.checkin:b.checkout;
-        const bEnd=b.checkin<b.checkout?b.checkout:b.checkin;
-        const overlapStart=bStart>startStr?bStart:startStr;
-        const overlapEnd=bEnd<endStr?bEnd:endStr;
-        const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
-        return a+netPerDay(b)*overlapDays;
-      },0)
+    :revenueBookings.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b)*(Math.round((new Date(b.checkout<endStr?b.checkout:endStr)-new Date(b.checkin>startStr?b.checkin:startStr))/(864e5))+1),0)
   ).toFixed(2));
   const totalNights=period==="day"?inRange.length:inRange.reduce((a,b)=>a+nights(b.checkin,b.checkout),0);
   const totalCats=inRange.reduce((a,b)=>a+(b.selectedCatIds?.length||1),0);
@@ -4523,8 +4485,8 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 16:10 (ICT)</div>
-        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Backwards Booking Support</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 16:20 (ICT)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates</div>
       </div>
     </div>
   </div>);
