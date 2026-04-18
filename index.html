@@ -1676,7 +1676,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const cats=cust?.cats||[];
   const numCats=form.selectedCatIds?.length||0;
   const isLegacySize=form.size==="L";
-  const n=form.checkin&&form.checkout&&form.checkin<=form.checkout?nights(form.checkin,form.checkout):0;
+  const n=form.checkin&&form.checkout?nights(form.checkin,form.checkout):0;
   const selectedRooms=form.roomIds||[];
   const numRooms=Math.max(selectedRooms.length,1);
   const petTaxiAmt=Math.max(0,parseFloat(form.petTaxi)||0);
@@ -1739,13 +1739,13 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const ids=form.roomIds||[];
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   };
-  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
+  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
   const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
   useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
 
   // Available rooms for selected dates+type
   // For @Home (H): always available — use virtual @HOME room
-  const availRooms=form.checkin&&form.checkout&&form.checkin<=form.checkout
+  const availRooms=form.checkin&&form.checkout
     ? form.size==="H"
       ? [{id:"@HOME",zone:"special",type:"H",label:"@Home"}]
       : form.size==="L"
@@ -1920,7 +1920,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             <div style={{padding:"12px 14px",background:"#fff8f0",borderRadius:10,fontSize:13,fontWeight:600,color:C.orange,border:`1px solid ${C.orange}20`}}>
               📚 ข้อมูลย้อนหลังไซส์ L จะถูกบันทึกตามราคาเดิม โดยไม่ผูกกับรายการห้องปัจจุบัน
             </div>
-          ):form.checkin&&form.checkout&&form.checkin<=form.checkout?(
+          ):form.checkin&&form.checkout?(
             availRooms.length>0?(
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
                 {availRooms.map(r=>{
@@ -4517,8 +4517,8 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 13 Apr 2026 · 23:00 (ICT)</div>
-        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 14:30 (ICT)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Backwards Booking Support</div>
       </div>
     </div>
   </div>);
