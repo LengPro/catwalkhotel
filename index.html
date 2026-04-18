@@ -1709,9 +1709,9 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   // Litter fee (period-aware; user can override via litterCustom)
   const _litterPeriod=getLitterFeeForDate(pricingDate);
   // Price = sum of each room with its own cat count + pet taxi
-  const calcRoomNet=(rid,periodNights)=>{
+  const calcRoomNet=(rid,periodNights,roomType)=>{
     const r=ROOMS.find(x=>x.id===rid);
-    const sz=r?.type||form.size;
+    const sz=roomType||r?.type||"S"; // Use passed roomType, or room type, or default S
     const pricePerNight=getPriceForSize(sz);
     const roomCats=getCatsForRoom(rid);
     const extraCats=Math.max(0,roomCats-1);
@@ -1721,33 +1721,31 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const discAmt2=parseFloat((base*(parseFloat(form.discount)||0)/100).toFixed(2));
     return{net:parseFloat((base-discAmt2).toFixed(2)),base,extraCats,roomCats,la,pricePerNight,nights:nightsToUse};
   };
-  const lCatsTotal=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
+  const lCatsTotal=(form.roomPeriods||[]).length>0
+    ?(form.roomPeriods||[]).reduce((s,p)=>s+getCatsForRoom(p.roomId),0)
+    :Math.max(1,numCats);
   const lRoundsTotal=n>0?(_litterPeriod.basis==="perNight"?n:Math.ceil(n/6)):0;
   const suggestedLitterAmt=form.litter?getLitterAmt(n,lCatsTotal,pricingDate):0;
   const customLitterVal=parseFloat(form.litterCustom)||0;
   const totalLitterAmt=form.litter?(customLitterVal>0?customLitterVal:suggestedLitterAmt):0;
   // discount applies to (room base + litter + extraFee), petTaxi excluded from discount
   const disc=parseFloat(form.discount)||0;
-  const roomBaseNoLitter=(rid,periodNights)=>{
+  const roomBaseNoLitter=(rid,periodNights,roomType)=>{
     if(rid==="@HOME") return homePriceLump; // lump sum — already total
-    const r=calcRoomNet(rid,periodNights);
+    const r=calcRoomNet(rid,periodNights,roomType);
     return (periodNights!==undefined?periodNights:n)*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
   };
   
-  // Calculate total using roomPeriods if available, otherwise use legacy roomIds
+  // Calculate total using roomPeriods only (new format)
   const totalRoomBase=(()=>{
     const periods=form.roomPeriods||[];
-    if(periods.length>0){
-      // New format: sum each room period
-      return periods.reduce((sum,p)=>{
-        const pNights=getRoomPeriodNights(p);
-        return sum+roomBaseNoLitter(p.roomId,pNights);
-      },0);
-    }
-    // Legacy format: all rooms use total nights
-    return selectedRooms.length>0
-      ?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0)
-      :(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false,pricingDate);return p.base;})():homePriceLump);
+    if(periods.length===0) return 0;
+    // New format: sum each room period
+    return periods.reduce((sum,p)=>{
+      if(!p.roomId) return sum; // Skip periods without room selected
+      const pNights=getRoomPeriodNights(p);
+      return sum+roomBaseNoLitter(p.roomId,pNights,p.type);
+    },0);
   })();
   const discItems=form.discountItems||["rooms"];
   const discBase=(discItems.includes("rooms")?totalRoomBase:0)+(discItems.includes("litter")?totalLitterAmt:0)+(discItems.includes("other")?extraFeeAmt:0)+(discItems.includes("taxi")?petTaxiAmt:0);
@@ -2083,10 +2081,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
 
         {/* 1. Cat Litter */}
         {(()=>{
-          const lCats=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
           const _lp=getLitterFeeForDate(pricingDate);
-          const lRounds=n>0?(_lp.basis==="perNight"?n:Math.ceil(n/6)):0;
-          const suggestedAmt=n>0?getLitterAmt(n,lCats,pricingDate):0;
+          const totalNights=getTotalPeriodNights()||n;
+          const lRounds=totalNights>0?(_lp.basis==="perNight"?totalNights:Math.ceil(totalNights/6)):0;
+          const suggestedAmt=totalNights>0?getLitterAmt(totalNights,lCatsTotal,pricingDate):0;
           const customVal=parseFloat(form.litterCustom)||0;
           const lTotal=form.litter?(customVal>0?customVal:suggestedAmt):0;
           const isCustom=form.litter&&customVal>0&&customVal!==suggestedAmt;
@@ -2106,25 +2104,25 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {form.litter&&(
               <div style={{marginTop:12}}>
                 {/* Suggest info box */}
-                {n>0&&lRounds>0?(
+                {totalNights>0&&lRounds>0?(
                   <div style={{background:"#dbeafe",borderRadius:8,padding:"8px 10px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:15}}>💡</span>
                     <div style={{fontSize:12,color:"#1e40af"}}>
                       <b>แนะนำ ฿{fmt2(suggestedAmt)}</b>
-                      <span style={{fontWeight:400,marginLeft:4}}>({getLitterLabel(n,lCats,pricingDate)})</span>
+                      <span style={{fontWeight:400,marginLeft:4}}>({getLitterLabel(totalNights,lCatsTotal,pricingDate)})</span>
                     </div>
                   </div>
                 ):(
                   <div style={{background:"#fff3cd",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:12,color:"#856404"}}>
-                    ⚠️ เลือกวันพักและแมวก่อน เพื่อดูราคาแนะนำ
+                    ⚠️ เลือกวันพักและห้องก่อน เพื่อดูราคาแนะนำ
                   </div>
                 )}
                 {/* Preset buttons */}
                 <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกราคาทราย (฿ รวมทั้งหมด)</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                   {presets.map(v=>{
-                    const isSuggested=n>0&&v===suggestedAmt;
-                    const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&n>0);
+                    const isSuggested=totalNights>0&&v===suggestedAmt;
+                    const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&totalNights>0);
                     return(
                       <button key={v} onClick={()=>set("litterCustom",isSelected?0:v)}
                         style={{padding:"8px 14px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
@@ -2271,25 +2269,29 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           <textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Special requests, หมายเหตุเพิ่มเติมสำหรับการจองนี้..."/>
         </div>
         {/* Price breakdown */}
-        {n>0&&numCats>0&&selectedRooms.length>0&&(
+        {n>0&&numCats>0&&(form.roomPeriods||[]).length>0&&(
           <div style={{background:C.bg,borderRadius:12,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.border}`}}>
 
             {/* ── Step-by-step rows ── */}
-            {selectedRooms.map((rid,ri)=>{
+            {(form.roomPeriods||[]).map((period,idx)=>{
+              const rid=period.roomId;
+              if(!rid) return null; // Skip periods without room
+              const pNights=getRoomPeriodNights(period);
               const isHome=rid==="@HOME";
               const isLegacy=rid==="@LEGACY-L";
-              const {pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid);
-              const roomAmt=isHome?homePriceLump:n*(pricePerNight+ec*EXTRA_CAT_FEE);
+              const {pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid,pNights,period.type);
+              const roomAmt=isHome?homePriceLump:pNights*(pricePerNight+ec*EXTRA_CAT_FEE);
               const roomLabel=isHome
                 ?`฿${fmt2(homePriceLump)} รวมทั้งหมด · ${rc} แมว`
                 :isLegacy
-                  ?`${n}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว · ราคา legacy`
-                :`${n}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว`;
+                  ?`${pNights}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว · ราคา legacy`
+                :`${pNights}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว`;
+              const dateRange=period.startDate&&period.endDate?` (${fmt(period.startDate)}-${fmt(period.endDate)})`:"";
               return(
-                <div key={rid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
                     <span style={{fontSize:13,fontWeight:700,color:isLegacy?C.orange:getRoomColor(rid)}}>{isLegacy?"Legacy L":rid}</span>
-                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{roomLabel}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{roomLabel}{dateRange}</span>
                   </div>
                   <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(roomAmt)}</span>
                 </div>
@@ -2299,7 +2301,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {/* ทรายแมว */}
             {form.litter&&totalLitterAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({getLitterLabel(n,selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):numCats,pricingDate)})</span>
+                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({getLitterLabel(getTotalPeriodNights(),lCatsTotal,pricingDate)})</span>
                 <span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{fmt2(totalLitterAmt)}</span>
               </div>
             )}
@@ -4640,7 +4642,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:15 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:30 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Room Periods · Allow Past Dates</div>
       </div>
     </div>
