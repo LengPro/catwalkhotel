@@ -268,32 +268,13 @@ const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:[],notes:"
 
 // ── Room availability ─────────────────────────────────────────────────
 function getRoomBookings(roomId, bookings) {
-  return bookings.filter(b => {
-    // Check roomPeriods first
-    if(b.roomPeriods&&b.roomPeriods.length>0){
-      return b.roomPeriods.some(p=>p.roomId===roomId);
-    }
-    // Legacy: check roomId/roomIds
-    return b.roomId === roomId || (b.roomIds||[]).includes(roomId);
-  });
+  return bookings.filter(b => b.roomId === roomId || (b.roomIds||[]).includes(roomId));
 }
 function isRoomAvailable(roomId, checkin, checkout, bookings, excludeId=null) {
-  const allBookings = bookings.filter(b => b.id !== excludeId);
-  for (const b of allBookings) {
-    // Check roomPeriods if available
-    if(b.roomPeriods&&b.roomPeriods.length>0){
-      for(const period of b.roomPeriods){
-        if(period.roomId===roomId){
-          // Allow same-day checkout+checkin
-          if(period.startDate < checkout && period.endDate > checkin) return false;
-        }
-      }
-    } else {
-      // Legacy format
-      if(b.roomId===roomId||(b.roomIds||[]).includes(roomId)){
-        if (b.checkin < checkout && b.checkout > checkin) return false;
-      }
-    }
+  const rb = getRoomBookings(roomId, bookings).filter(b => b.id !== excludeId);
+  for (const b of rb) {
+    // Allow same-day checkout+checkin (staying on = checkout of prev == checkin of next)
+    if (b.checkin < checkout && b.checkout > checkin) return false;
   }
   return true;
 }
@@ -973,17 +954,10 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   },[viewDate,dateArr]);
 
   function getBookingForRoomDate(roomId,dateStr){
-    return bookings.find(b=>{
-      // Check if booking has roomPeriods (new format)
-      if(b.roomPeriods&&b.roomPeriods.length>0){
-        return b.roomPeriods.some(period=>
-          period.roomId===roomId&&period.startDate<=dateStr&&period.endDate>=dateStr
-        );
-      }
-      // Legacy format: check roomId/roomIds
-      return(b.roomId===roomId||(b.roomIds||[]).includes(roomId))
-        &&b.checkin<=dateStr&&b.checkout>=dateStr;
-    });
+    return bookings.find(b=>
+      (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
+      &&b.checkin<=dateStr&&b.checkout>=dateStr
+    );
   }
 
   const availCheckin=checkAvail.checkin;
@@ -1088,7 +1062,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               <InfiniteScrollCalendar
                 checkin={checkAvail.checkin}
                 checkout={checkAvail.checkout}
-                allowPast={true}
+                allowPast={false}
                 onChange={({checkin,checkout})=>setCheckAvail(v=>({...v,checkin,checkout}))}
               />
             </div>
@@ -1684,7 +1658,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],roomPeriods:[],discount:"0",discountItems:["rooms"],deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",discountItems:["rooms"],deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1709,44 +1683,29 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   // Litter fee (period-aware; user can override via litterCustom)
   const _litterPeriod=getLitterFeeForDate(pricingDate);
   // Price = sum of each room with its own cat count + pet taxi
-  const calcRoomNet=(rid,periodNights,roomType)=>{
+  const calcRoomNet=(rid)=>{
     const r=ROOMS.find(x=>x.id===rid);
-    const sz=roomType||r?.type||"S"; // Use passed roomType, or room type, or default S
+    const sz=r?.type||form.size;
     const pricePerNight=getPriceForSize(sz);
     const roomCats=getCatsForRoom(rid);
     const extraCats=Math.max(0,roomCats-1);
-    const nightsToUse=periodNights!==undefined?periodNights:n;
-    const la=form.litter?getLitterAmt(nightsToUse,roomCats,pricingDate):0;
-    const base=nightsToUse*(pricePerNight+extraCats*EXTRA_CAT_FEE)+la;
+    const la=form.litter?getLitterAmt(n,roomCats,pricingDate):0;
+    const base=n*(pricePerNight+extraCats*EXTRA_CAT_FEE)+la;
     const discAmt2=parseFloat((base*(parseFloat(form.discount)||0)/100).toFixed(2));
-    return{net:parseFloat((base-discAmt2).toFixed(2)),base,extraCats,roomCats,la,pricePerNight,nights:nightsToUse};
+    return{net:parseFloat((base-discAmt2).toFixed(2)),base,extraCats,roomCats,la,pricePerNight};
   };
-  const lCatsTotal=(form.roomPeriods||[]).length>0
-    ?(form.roomPeriods||[]).reduce((s,p)=>s+getCatsForRoom(p.roomId),0)
-    :Math.max(1,numCats);
+  const lCatsTotal=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
   const lRoundsTotal=n>0?(_litterPeriod.basis==="perNight"?n:Math.ceil(n/6)):0;
   const suggestedLitterAmt=form.litter?getLitterAmt(n,lCatsTotal,pricingDate):0;
   const customLitterVal=parseFloat(form.litterCustom)||0;
   const totalLitterAmt=form.litter?(customLitterVal>0?customLitterVal:suggestedLitterAmt):0;
   // discount applies to (room base + litter + extraFee), petTaxi excluded from discount
   const disc=parseFloat(form.discount)||0;
-  const roomBaseNoLitter=(rid,periodNights,roomType)=>{
+  const roomBaseNoLitter=(rid)=>{
     if(rid==="@HOME") return homePriceLump; // lump sum — already total
-    const r=calcRoomNet(rid,periodNights,roomType);
-    return (periodNights!==undefined?periodNights:n)*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
+    const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
   };
-  
-  // Calculate total using roomPeriods only (new format)
-  const totalRoomBase=(()=>{
-    const periods=form.roomPeriods||[];
-    if(periods.length===0) return 0;
-    // New format: sum each room period
-    return periods.reduce((sum,p)=>{
-      if(!p.roomId) return sum; // Skip periods without room selected
-      const pNights=getRoomPeriodNights(p);
-      return sum+roomBaseNoLitter(p.roomId,pNights,p.type);
-    },0);
-  })();
+  const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false,pricingDate);return p.base;})():homePriceLump);
   const discItems=form.discountItems||["rooms"];
   const discBase=(discItems.includes("rooms")?totalRoomBase:0)+(discItems.includes("litter")?totalLitterAmt:0)+(discItems.includes("other")?extraFeeAmt:0)+(discItems.includes("taxi")?petTaxiAmt:0);
   const nonDiscBase=(discItems.includes("rooms")?0:totalRoomBase)+(discItems.includes("litter")?0:totalLitterAmt)+(discItems.includes("other")?0:extraFeeAmt)+(discItems.includes("taxi")?0:petTaxiAmt);
@@ -1768,41 +1727,9 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const ids=form.roomIds||[];
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   };
-  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(form.roomPeriods||[]).length>0&&(form.roomPeriods||[]).every(p=>p.roomId&&p.startDate&&p.endDate);
+  const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
   const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
   useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
-
-  // Room Periods helpers
-  const addRoomPeriod=()=>{
-    const periods=form.roomPeriods||[];
-    const newPeriod={
-      roomId:"",
-      type:"S", // Default to S type
-      startDate:form.checkin||"",
-      endDate:form.checkout||""
-    };
-    set("roomPeriods",[...periods,newPeriod]);
-  };
-  
-  const removeRoomPeriod=(index)=>{
-    const periods=form.roomPeriods||[];
-    set("roomPeriods",periods.filter((_,i)=>i!==index));
-  };
-  
-  const updateRoomPeriod=(index,field,value)=>{
-    const periods=[...(form.roomPeriods||[])];
-    periods[index]={...periods[index],[field]:value};
-    set("roomPeriods",periods);
-  };
-  
-  const getRoomPeriodNights=(period)=>{
-    if(!period.startDate||!period.endDate) return 0;
-    return nights(period.startDate,period.endDate);
-  };
-  
-  const getTotalPeriodNights=()=>{
-    return(form.roomPeriods||[]).reduce((sum,p)=>sum+getRoomPeriodNights(p),0);
-  };
 
   // Available rooms for selected dates+type
   // For @Home (H): always available — use virtual @HOME room
@@ -1838,23 +1765,6 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   useEffect(()=>{
     if(booking?.roomId&&!(booking?.roomIds?.length)){
       set("roomIds",[booking.roomId]);
-    }
-  },[]);
-
-  // Migrate old roomIds format to roomPeriods format
-  useEffect(()=>{
-    if(booking&&form.roomIds?.length>0&&(!form.roomPeriods||form.roomPeriods.length===0)){
-      // Old format: all rooms share same checkin/checkout
-      const periods=form.roomIds.map(roomId=>{
-        const room=ROOMS.find(r=>r.id===roomId);
-        return{
-          roomId,
-          type:room?.type||form.size||"S", // Get type from room or fallback to booking size
-          startDate:form.checkin,
-          endDate:form.checkout
-        };
-      });
-      set("roomPeriods",periods);
     }
   },[]);
 
@@ -1957,120 +1867,82 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         <InfiniteScrollCalendar
           checkin={form.checkin}
           checkout={form.checkout}
-          allowPast={true}
+          allowPast={!!booking}
           onChange={({checkin,checkout})=>{set("checkin",checkin);set("checkout",checkout);}}
         />
-        {/* Room Periods — Multiple rooms with custom date ranges */}
-        <div style={S.fg}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <div style={S.lbl}>🏠 ห้องพัก & ช่วงเวลา</div>
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              {(form.roomPeriods||[]).length>0&&<span style={S.chip(C.accent)}>{(form.roomPeriods||[]).length} ช่วง · {getTotalPeriodNights()} คืน</span>}
-              <button style={{...S.btnP,fontSize:12,padding:"6px 12px"}} onClick={addRoomPeriod}>+ เพิ่มห้อง</button>
+        {/* Size */}
+        <div style={S.fg}><div style={S.lbl}>Room Type</div>
+          {isLegacySize&&(
+            <div style={{marginBottom:8,padding:"10px 12px",background:"#fff8f0",border:`1px solid ${C.orange}30`,borderRadius:10,fontSize:12,color:C.text2}}>
+              Booking นี้ใช้ห้องไซส์ <b>L</b> แบบย้อนหลัง ระบบยังเก็บและคำนวณราคาให้ได้ แต่จะไม่เปิดห้อง L เป็นตัวเลือกใหม่ในระบบปัจจุบัน
             </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            {["S","M","H"].map(sz=><button key={sz} style={{padding:"11px",background:form.size===sz?C.text:C.bg,color:form.size===sz?"#fff":C.text2,border:`1px solid ${form.size===sz?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}} onClick={()=>set("size",sz)}>
+              <span style={{fontSize:14,fontWeight:800}}>{sz==="S"?"Room S":sz==="M"?"Room M":"@Home"}</span>
+              <span style={{fontSize:12,fontWeight:600,opacity:0.8}}>{sz==="H"?"ราคากำหนดเอง":`฿${getPriceForSize(sz)}/night`}</span>
+            </button>)}
           </div>
-
-          {/* Room Periods List */}
-          {(form.roomPeriods||[]).length===0?(
-            <div style={{padding:"24px 14px",background:C.bg,borderRadius:10,fontSize:13,color:C.text3,textAlign:"center"}}>
-              <div style={{fontSize:32,marginBottom:8}}>🏠</div>
-              <div>คลิก "+ เพิ่มห้อง" เพื่อเริ่มต้น</div>
+          {form.size==="H"&&(
+            <div style={{marginTop:8}}>
+              <input
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                style={{...S.inp,borderColor:C.accent}}
+                placeholder="ราคารวมทั้งหมด (฿)"
+                value={form.homePrice||""}
+                onChange={e=>set("homePrice",e.target.value)}
+              />
+              <div style={{fontSize:11,color:C.text3,marginTop:4}}>ใส่ราคารวมทั้งหมดสำหรับ @Home (ไม่คูณคืน)</div>
             </div>
-          ):(
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {(form.roomPeriods||[]).map((period,idx)=>{
-                const periodNights=getRoomPeriodNights(period);
-                const room=ROOMS.find(r=>r.id===period.roomId);
-                const roomType=period.type||(room?.type)||"S"; // Use period.type, fallback to room type or default S
-                const roomsForType=form.checkin&&form.checkout&&period.startDate&&period.endDate
-                  ?ROOMS.filter(r=>r.type===roomType&&isRoomAvailable(r.id,period.startDate,period.endDate,bookings,booking?.id))
-                  :[];
-                
+          )}
+        </div>
+        {/* Room selector — multi-select */}
+        <div style={S.fg}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+            <div style={S.lbl}>เลือกห้อง * (เลือกได้หลายห้อง)</div>
+            {selectedRooms.length>0&&<span style={S.chip(C.accent)}>{selectedRooms.length} ห้อง</span>}
+          </div>
+          {isLegacySize?(
+            <div style={{padding:"12px 14px",background:"#fff8f0",borderRadius:10,fontSize:13,fontWeight:600,color:C.orange,border:`1px solid ${C.orange}20`}}>
+              📚 ข้อมูลย้อนหลังไซส์ L จะถูกบันทึกตามราคาเดิม โดยไม่ผูกกับรายการห้องปัจจุบัน
+            </div>
+          ):form.checkin&&form.checkout&&form.checkin<=form.checkout?(
+            availRooms.length>0?(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+                {availRooms.map(r=>{
+                  const sel=selectedRooms.includes(r.id);
+                  return(
+                    <button key={r.id} style={{padding:"10px 4px",background:sel?getRoomColor(r.id):getRoomBg(r.id),color:sel?"#fff":getRoomColor(r.id),border:`2px solid ${sel?getRoomColor(r.id):getRoomColor(r.id)+"40"}`,borderRadius:10,fontFamily:"inherit",fontSize:12,fontWeight:800,cursor:"pointer",textAlign:"center"}} onClick={()=>toggleRoom(r.id)}>
+                      {r.label}
+                      {sel&&<div style={{fontSize:9,marginTop:2}}>✓</div>}
+                    </button>
+                  );
+                })}
+              </div>
+            ):<div style={{padding:"12px 14px",background:C.accentBg,borderRadius:10,fontSize:13,fontWeight:600,color:C.accent}}>❌ No {form.size} rooms available for these dates</div>
+          ):<div style={{padding:"12px 14px",background:C.bg,borderRadius:10,fontSize:13,color:C.text3}}>Enter dates to see available rooms</div>}
+          {selectedRooms.length>0&&numCats>0&&(
+            <div style={{marginTop:8,background:C.bg,borderRadius:10,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+              <div style={{padding:"8px 12px",background:C.blueBg,fontSize:11,fontWeight:700,color:C.blue}}>
+                🐱 จำนวนแมวต่อห้อง {isLegacySize?"(ข้อมูลย้อนหลังไซส์ L ปรับจำนวนแมวได้เอง)":"(ห้อง S รับสูงสุด 2 ตัว, ห้อง M รับสูงสุด 3 ตัว)"}
+              </div>
+              {selectedRooms.map(rid=>{
+                const r=ROOMS.find(x=>x.id===rid);
+                const sz=r?.type||form.size;
+                const maxCats=sz==="M"?3:sz==="L"?Math.max(4,numCats):2;
+                const cur=getCatsForRoom(rid);
                 return(
-                  <div key={idx} style={{background:C.white,border:`2px solid ${period.roomId?getRoomColor(period.roomId)+"60":C.border}`,borderRadius:12,overflow:"hidden"}}>
-                    {/* Header */}
-                    <div style={{padding:"10px 14px",background:period.roomId?getRoomBg(period.roomId):C.bg,borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:14,fontWeight:800,color:period.roomId?getRoomColor(period.roomId):C.text2}}>
-                          {period.roomId||"ห้อง..."}
-                        </span>
-                        {periodNights>0&&<span style={S.chip(C.text)}>{periodNights} คืน</span>}
-                      </div>
-                      <button style={{...S.btnG,fontSize:11,padding:"4px 8px",color:C.text3}} onClick={()=>removeRoomPeriod(idx)}>✕</button>
-                    </div>
-                    
-                    {/* Room Type Selector */}
-                    <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.borderLight}`}}>
-                      <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>ประเภทห้อง</div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-                        {["S","M","H"].map(sz=>(
-                          <button key={sz} style={{padding:"8px",background:roomType===sz?C.text:C.bg,color:roomType===sz?"#fff":C.text2,border:`1px solid ${roomType===sz?C.text:C.border}`,borderRadius:8,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:700}} onClick={()=>{
-                            // Save type to period and clear roomId when changing type
-                            updateRoomPeriod(idx,"type",sz);
-                            updateRoomPeriod(idx,"roomId","");
-                          }}>
-                            {sz==="S"?"S":sz==="M"?"M":"@Home"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Room Selector */}
-                    <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.borderLight}`}}>
-                      <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกห้อง</div>
-                      {period.startDate&&period.endDate?(
-                        roomsForType.length>0?(
-                          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
-                            {roomsForType.map(r=>{
-                              const sel=period.roomId===r.id;
-                              return(
-                                <button key={r.id} style={{padding:"8px 4px",background:sel?getRoomColor(r.id):getRoomBg(r.id),color:sel?"#fff":getRoomColor(r.id),border:`2px solid ${sel?getRoomColor(r.id):getRoomColor(r.id)+"40"}`,borderRadius:8,fontFamily:"inherit",fontSize:11,fontWeight:800,cursor:"pointer",textAlign:"center"}} onClick={()=>updateRoomPeriod(idx,"roomId",r.id)}>
-                                  {r.label}
-                                  {sel&&<div style={{fontSize:8,marginTop:1}}>✓</div>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ):(
-                          <div style={{padding:"10px",background:C.accentBg,borderRadius:8,fontSize:12,color:C.accent,textAlign:"center"}}>
-                            ❌ ไม่มีห้อง {roomType} ว่างในช่วงนี้
-                          </div>
-                        )
-                      ):(
-                        <div style={{padding:"10px",background:C.bg,borderRadius:8,fontSize:12,color:C.text3,textAlign:"center"}}>
-                          กรุณาเลือกวันที่ก่อน
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Date Range */}
-                    <div style={{padding:"10px 14px"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>ช่วงเวลา</div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"center"}}>
-                        <div>
-                          <input 
-                            type="date" 
-                            value={period.startDate||""} 
-                            onChange={e=>updateRoomPeriod(idx,"startDate",e.target.value)}
-                            min={form.checkin||""}
-                            max={period.endDate||form.checkout||""}
-                            style={{...S.inp,padding:"8px 10px",fontSize:12}}
-                          />
-                          <div style={{fontSize:10,color:C.text3,marginTop:2}}>Check-in</div>
-                        </div>
-                        <div style={{fontSize:16,color:C.text3}}>→</div>
-                        <div>
-                          <input 
-                            type="date" 
-                            value={period.endDate||""} 
-                            onChange={e=>updateRoomPeriod(idx,"endDate",e.target.value)}
-                            min={period.startDate||form.checkin||""}
-                            max={form.checkout||""}
-                            style={{...S.inp,padding:"8px 10px",fontSize:12}}
-                          />
-                          <div style={{fontSize:10,color:C.text3,marginTop:2}}>Check-out</div>
-                        </div>
-                      </div>
+                  <div key={rid} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderTop:`1px solid ${C.borderLight}`}}>
+                    <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
+                    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      {Array.from({length:maxCats},(_,i)=>i+1).map(v=>(
+                        <button key={v} style={{width:32,height:32,borderRadius:8,border:`1px solid ${cur===v?getRoomColor(rid):C.border}`,background:cur===v?getRoomColor(rid):"transparent",color:cur===v?"#fff":C.text2,fontFamily:"inherit",fontSize:13,fontWeight:800,cursor:"pointer"}} onClick={()=>set("catPerRoom",{...(form.catPerRoom||{}),[rid]:v})}>
+                          {v}
+                        </button>
+                      ))}
+                      <span style={{fontSize:11,color:C.text3,marginLeft:4}}>แมว</span>
                     </div>
                   </div>
                 );
@@ -2081,10 +1953,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
 
         {/* 1. Cat Litter */}
         {(()=>{
+          const lCats=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
           const _lp=getLitterFeeForDate(pricingDate);
-          const totalNights=getTotalPeriodNights()||n;
-          const lRounds=totalNights>0?(_lp.basis==="perNight"?totalNights:Math.ceil(totalNights/6)):0;
-          const suggestedAmt=totalNights>0?getLitterAmt(totalNights,lCatsTotal,pricingDate):0;
+          const lRounds=n>0?(_lp.basis==="perNight"?n:Math.ceil(n/6)):0;
+          const suggestedAmt=n>0?getLitterAmt(n,lCats,pricingDate):0;
           const customVal=parseFloat(form.litterCustom)||0;
           const lTotal=form.litter?(customVal>0?customVal:suggestedAmt):0;
           const isCustom=form.litter&&customVal>0&&customVal!==suggestedAmt;
@@ -2104,25 +1976,25 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {form.litter&&(
               <div style={{marginTop:12}}>
                 {/* Suggest info box */}
-                {totalNights>0&&lRounds>0?(
+                {n>0&&lRounds>0?(
                   <div style={{background:"#dbeafe",borderRadius:8,padding:"8px 10px",marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:15}}>💡</span>
                     <div style={{fontSize:12,color:"#1e40af"}}>
                       <b>แนะนำ ฿{fmt2(suggestedAmt)}</b>
-                      <span style={{fontWeight:400,marginLeft:4}}>({getLitterLabel(totalNights,lCatsTotal,pricingDate)})</span>
+                      <span style={{fontWeight:400,marginLeft:4}}>({getLitterLabel(n,lCats,pricingDate)})</span>
                     </div>
                   </div>
                 ):(
                   <div style={{background:"#fff3cd",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:12,color:"#856404"}}>
-                    ⚠️ เลือกวันพักและห้องก่อน เพื่อดูราคาแนะนำ
+                    ⚠️ เลือกวันพักและแมวก่อน เพื่อดูราคาแนะนำ
                   </div>
                 )}
                 {/* Preset buttons */}
                 <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกราคาทราย (฿ รวมทั้งหมด)</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                   {presets.map(v=>{
-                    const isSuggested=totalNights>0&&v===suggestedAmt;
-                    const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&totalNights>0);
+                    const isSuggested=n>0&&v===suggestedAmt;
+                    const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&n>0);
                     return(
                       <button key={v} onClick={()=>set("litterCustom",isSelected?0:v)}
                         style={{padding:"8px 14px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
@@ -2269,29 +2141,25 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           <textarea style={S.ta} rows={2} value={form.notes||""} onChange={e=>set("notes",e.target.value)} placeholder="Special requests, หมายเหตุเพิ่มเติมสำหรับการจองนี้..."/>
         </div>
         {/* Price breakdown */}
-        {n>0&&numCats>0&&(form.roomPeriods||[]).length>0&&(
+        {n>0&&numCats>0&&selectedRooms.length>0&&(
           <div style={{background:C.bg,borderRadius:12,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.border}`}}>
 
             {/* ── Step-by-step rows ── */}
-            {(form.roomPeriods||[]).map((period,idx)=>{
-              const rid=period.roomId;
-              if(!rid) return null; // Skip periods without room
-              const pNights=getRoomPeriodNights(period);
+            {selectedRooms.map((rid,ri)=>{
               const isHome=rid==="@HOME";
               const isLegacy=rid==="@LEGACY-L";
-              const {pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid,pNights,period.type);
-              const roomAmt=isHome?homePriceLump:pNights*(pricePerNight+ec*EXTRA_CAT_FEE);
+              const {pricePerNight,extraCats:ec,roomCats:rc}=calcRoomNet(rid);
+              const roomAmt=isHome?homePriceLump:n*(pricePerNight+ec*EXTRA_CAT_FEE);
               const roomLabel=isHome
                 ?`฿${fmt2(homePriceLump)} รวมทั้งหมด · ${rc} แมว`
                 :isLegacy
-                  ?`${pNights}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว · ราคา legacy`
-                :`${pNights}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว`;
-              const dateRange=period.startDate&&period.endDate?` (${fmt(period.startDate)}-${fmt(period.endDate)})`:"";
+                  ?`${n}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว · ราคา legacy`
+                :`${n}คืน × ฿${pricePerNight}${ec>0?` + ${ec} แมวเพิ่ม (+฿${ec*EXTRA_CAT_FEE}/คืน)`:""} · ${rc} แมว`;
               return(
-                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div key={rid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
                     <span style={{fontSize:13,fontWeight:700,color:isLegacy?C.orange:getRoomColor(rid)}}>{isLegacy?"Legacy L":rid}</span>
-                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{roomLabel}{dateRange}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{roomLabel}</span>
                   </div>
                   <span style={{fontSize:13,fontWeight:700}}>฿{fmt2(roomAmt)}</span>
                 </div>
@@ -2301,7 +2169,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {/* ทรายแมว */}
             {form.litter&&totalLitterAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({getLitterLabel(getTotalPeriodNights(),lCatsTotal,pricingDate)})</span>
+                <span style={{fontSize:13,color:C.text2}}>🪣 ทรายแมว ({getLitterLabel(n,selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):numCats,pricingDate)})</span>
                 <span style={{fontSize:13,fontWeight:600,color:C.blue}}>+฿{fmt2(totalLitterAmt)}</span>
               </div>
             )}
@@ -2402,9 +2270,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           </div>
         )}
         <button style={{...S.btnP,width:"100%",opacity:valid?1:0.4}} onClick={()=>valid&&onSave((()=>{
-          // Sync roomPeriods to roomIds for backwards compatibility
-          const roomIdsFromPeriods=(form.roomPeriods||[]).map(p=>p.roomId).filter(Boolean);
-          const persistedRoomIds=roomIdsFromPeriods.filter(rid=>rid!=="@LEGACY-L");
+          const persistedRoomIds=selectedRooms.filter(rid=>rid!=="@LEGACY-L");
           return{
             ...form,
             id:booking?.id||uid(),
@@ -2414,7 +2280,6 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,depositPayMethod:form.depositPayMethod||"Transfer",depositCcFee,remaining,ccFeeAmt,
             roomId:persistedRoomIds[0]||"",
             roomIds:persistedRoomIds,
-            roomPeriods:form.roomPeriods||[],
             homePriceTotal:form.size==="H"?homePriceLump:0,
             pricePerNight:form.size==="H"?0:getPriceForSize(form.size),
           };
@@ -3235,34 +3100,12 @@ function getMonthRevenue(bookings, year, month){
   const sStr=fmtD(s);
   const eStr=fmtD(e);
   return bookings.filter(b=>b.checkin<=eStr&&b.checkout>=sStr).reduce((sum,b)=>{
+    const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
     const net=b.net||0;
     const taxi=b.petTaxiAmt||0;
     const depFee=b.depositCcFee||0;
     const ccFee=b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||Math.max(0,net-(b.depositAmt||0)))*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0;
-    const netRevenue=net-taxi-depFee-ccFee;
-    
-    // If booking has roomPeriods, distribute revenue proportionally by period nights
-    if(b.roomPeriods&&b.roomPeriods.length>0){
-      const totalPeriodNights=b.roomPeriods.reduce((s,p)=>{
-        const pn=Math.max(1,Math.round((new Date(p.endDate+"T12:00:00")-new Date(p.startDate+"T12:00:00"))/(864e5)));
-        return s+pn;
-      },0);
-      const perNight=netRevenue/Math.max(1,totalPeriodNights);
-      
-      // Sum revenue from periods that overlap with this month
-      const monthRevenue=b.roomPeriods.reduce((psum,period)=>{
-        const pStart=period.startDate>sStr?period.startDate:sStr;
-        const pEnd=period.endDate<eStr?period.endDate:eStr;
-        if(pStart>pEnd) return psum;
-        const overlapDays=Math.round((new Date(pEnd+"T12:00:00")-new Date(pStart+"T12:00:00"))/(864e5))+1;
-        return psum+perNight*Math.max(0,overlapDays);
-      },0);
-      return sum+monthRevenue;
-    }
-    
-    // Legacy format: spread across all days
-    const totalDays=Math.max(1,Math.round((new Date(b.checkout+"T12:00:00")-new Date(b.checkin+"T12:00:00"))/(864e5))+1);
-    const perDay=netRevenue/totalDays;
+    const perDay=(net-taxi-depFee-ccFee)/totalDays;
     const overlapStart=b.checkin>sStr?b.checkin:sStr;
     const overlapEnd=b.checkout<eStr?b.checkout:eStr;
     const overlapDays=Math.round((new Date(overlapEnd+"T12:00:00")-new Date(overlapStart+"T12:00:00"))/(864e5))+1;
@@ -4642,8 +4485,8 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:30 (ICT)</div>
-        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Room Periods · Allow Past Dates</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 13 Apr 2026 · 23:00 (ICT)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync</div>
       </div>
     </div>
   </div>);
