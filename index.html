@@ -853,14 +853,20 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
           {/* Header */}
           <div style={{background:C.accentBg,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10,borderBottom:`1px solid ${C.accent}20`}}>
             <div style={{fontSize:12,fontWeight:700,color:C.accent}}>
-              {picking==="checkin"?startLabel:endLabel}
-              {checkin&&picking==="checkout"?` (จาก ${fmt(checkin)})` :""}
+              {picking==="checkin"?"📅 เลือก Check-in":"📅 เลือก Check-out"}
+              {checkin&&picking==="checkout"&&<span style={{fontWeight:600,color:C.text2}}> (จาก {fmt(checkin)})</span>}
             </div>
             <div style={{display:"flex",gap:6}}>
               <button style={{...S.btnG,fontSize:11,padding:"5px 10px"}} onClick={()=>{onChange({checkin:"",checkout:""});setPicking("checkin");}}>ล้าง</button>
               <button style={{...S.btnG,fontSize:11,padding:"5px 10px"}} onClick={()=>setShow(false)}>เสร็จ</button>
             </div>
           </div>
+          {/* Help text for backwards booking */}
+          {checkin&&picking==="checkout"&&(
+            <div style={{padding:"8px 14px",background:"#fff8f0",borderBottom:`1px solid ${C.orange}30`,fontSize:11,color:C.text2,lineHeight:1.5}}>
+              💡 <b>สามารถเลือก Check-out ก่อน Check-in ได้</b> (backwards booking) ระบบจะคำนวณจำนวนคืนอัตโนมัติ
+            </div>
+          )}
           {/* Day of week header */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"6px 8px 2px",background:"#fafafa",borderBottom:`1px solid ${C.borderLight}`,position:"sticky",top:43,zIndex:9}}>
             {["อา","จ","อ","พ","พฤ","ศ","ส"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:C.text3}}>{d}</div>)}
@@ -4517,7 +4523,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 14:30 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 16:10 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Backwards Booking Support</div>
       </div>
     </div>
