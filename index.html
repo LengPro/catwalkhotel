@@ -268,13 +268,25 @@ const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:[],notes:"
 
 // ── Room availability ─────────────────────────────────────────────────
 function getRoomBookings(roomId, bookings) {
-  return bookings.filter(b => b.roomId === roomId || (b.roomIds||[]).includes(roomId));
+  return bookings.filter(b => {
+    if(b.roomId === roomId || (b.roomIds||[]).includes(roomId)) return true;
+    // Check extraRooms
+    return (b.extraRooms||[]).some(er=>(er.roomIds||[]).includes(roomId));
+  });
 }
 function isRoomAvailable(roomId, checkin, checkout, bookings, excludeId=null) {
-  const rb = getRoomBookings(roomId, bookings).filter(b => b.id !== excludeId);
+  const rb = bookings.filter(b=>b.id!==excludeId);
   for (const b of rb) {
-    // Allow same-day checkout+checkin (staying on = checkout of prev == checkin of next)
-    if (b.checkin < checkout && b.checkout > checkin) return false;
+    // Check main rooms
+    if(b.roomId===roomId||(b.roomIds||[]).includes(roomId)){
+      if (b.checkin < checkout && b.checkout > checkin) return false;
+    }
+    // Check extraRooms
+    for(const er of (b.extraRooms||[])){
+      if((er.roomIds||[]).includes(roomId)){
+        if(er.checkin < checkout && er.checkout > checkin) return false;
+      }
+    }
   }
   return true;
 }
@@ -954,10 +966,12 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
   },[viewDate,dateArr]);
 
   function getBookingForRoomDate(roomId,dateStr){
-    return bookings.find(b=>
-      (b.roomId===roomId||(b.roomIds||[]).includes(roomId))
-      &&b.checkin<=dateStr&&b.checkout>=dateStr
-    );
+    return bookings.find(b=>{
+      // Check main rooms
+      if((b.roomId===roomId||(b.roomIds||[]).includes(roomId))&&b.checkin<=dateStr&&b.checkout>=dateStr) return true;
+      // Check extraRooms
+      return (b.extraRooms||[]).some(er=>(er.roomIds||[]).includes(roomId)&&er.checkin<=dateStr&&er.checkout>=dateStr);
+    });
   }
 
   const availCheckin=checkAvail.checkin;
@@ -1658,7 +1672,7 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // BOOKING FORM with room selector
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
-  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],discount:"0",discountItems:["rooms"],deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
+  const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],extraRooms:[],discount:"0",discountItems:["rooms"],deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1705,7 +1719,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     if(rid==="@HOME") return homePriceLump; // lump sum — already total
     const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
   };
-  const totalRoomBase=selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false,pricingDate);return p.base;})():homePriceLump);
+  const totalRoomBase=(selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+roomBaseNoLitter(rid),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false,pricingDate);return p.base;})():homePriceLump))+totalExtraRoomsBase;
   const discItems=form.discountItems||["rooms"];
   const discBase=(discItems.includes("rooms")?totalRoomBase:0)+(discItems.includes("litter")?totalLitterAmt:0)+(discItems.includes("other")?extraFeeAmt:0)+(discItems.includes("taxi")?petTaxiAmt:0);
   const nonDiscBase=(discItems.includes("rooms")?0:totalRoomBase)+(discItems.includes("litter")?0:totalLitterAmt)+(discItems.includes("other")?0:extraFeeAmt)+(discItems.includes("taxi")?0:petTaxiAmt);
@@ -1727,6 +1741,27 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const ids=form.roomIds||[];
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   };
+
+  // ── Extra Rooms (room change during stay) ──
+  const extraRooms=form.extraRooms||[];
+  const addExtraRoom=()=>{
+    const er={id:uid(),size:"S",roomIds:[],checkin:form.checkin||"",checkout:form.checkout||""};
+    set("extraRooms",[...extraRooms,er]);
+  };
+  const removeExtraRoom=(eid)=>set("extraRooms",extraRooms.filter(e=>e.id!==eid));
+  const updateExtraRoom=(eid,patch)=>set("extraRooms",extraRooms.map(e=>e.id===eid?{...e,...patch}:e));
+  const getExtraNights=(er)=>er.checkin&&er.checkout&&er.checkin<=er.checkout?nights(er.checkin,er.checkout):0;
+  const calcExtraRoomBase=(er)=>{
+    const n2=getExtraNights(er);
+    return (er.roomIds||[]).reduce((sum,rid)=>{
+      const r=ROOMS.find(x=>x.id===rid);
+      const sz=r?.type||er.size||"S";
+      const ppn=getPriceForDate(er.checkin||pricingDate,sz);
+      return sum+n2*ppn;
+    },0);
+  };
+  const totalExtraRoomsBase=extraRooms.reduce((sum,er)=>sum+calcExtraRoomBase(er),0);
+
   const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
   const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
   useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
@@ -1951,6 +1986,103 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           )}
         </div>
 
+        {/* ── Extra Rooms (room change during stay) ── */}
+        {form.checkin&&form.checkout&&form.checkin<=form.checkout&&(form.roomIds||[]).length>0&&(
+          <div style={S.fg}>
+            {/* Existing extra rooms */}
+            {extraRooms.map((er,idx)=>{
+              const n2=getExtraNights(er);
+              const erAvailRooms=er.checkin&&er.checkout&&er.checkin<=er.checkout
+                ?er.size==="H"?[{id:"@HOME",type:"H",label:"@Home"}]
+                :ROOMS.filter(r=>r.type===er.size&&isRoomAvailable(r.id,er.checkin,er.checkout,bookings,booking?.id))
+                :[];
+              const erBase=calcExtraRoomBase(er);
+              return(
+                <div key={er.id} style={{background:"#f8f4ff",border:`2px solid ${C.purple}40`,borderRadius:14,overflow:"hidden",marginBottom:10}}>
+                  {/* Header */}
+                  <div style={{padding:"10px 14px",background:`${C.purple}15`,borderBottom:`1px solid ${C.purple}20`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:14}}>🔄</span>
+                      <span style={{fontSize:13,fontWeight:800,color:C.purple}}>ย้ายห้อง ช่วงที่ {idx+2}</span>
+                      {n2>0&&<span style={S.chip(C.purple)}>{n2} คืน</span>}
+                      {erBase>0&&<span style={S.chip(C.green)}>+฿{fmt2(erBase)}</span>}
+                    </div>
+                    <button style={{...S.btnG,fontSize:11,padding:"4px 10px",color:C.red,borderColor:`${C.red}40`}} onClick={()=>removeExtraRoom(er.id)}>✕ ลบ</button>
+                  </div>
+
+                  <div style={{padding:"12px 14px"}}>
+                    {/* Date range for this period */}
+                    <div style={{marginBottom:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>ช่วงเวลาที่ย้ายห้อง</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:8,alignItems:"center"}}>
+                        <div>
+                          <input type="date" value={er.checkin||""} min={form.checkin} max={form.checkout}
+                            onChange={e=>updateExtraRoom(er.id,{checkin:e.target.value,roomIds:[]})}
+                            style={{...S.inp,padding:"8px 10px",fontSize:12,borderColor:er.checkin?C.purple:C.border}}/>
+                          <div style={{fontSize:10,color:C.text3,marginTop:2}}>เริ่มย้าย</div>
+                        </div>
+                        <div style={{fontSize:16,color:C.text3}}>→</div>
+                        <div>
+                          <input type="date" value={er.checkout||""} min={er.checkin||form.checkin} max={form.checkout}
+                            onChange={e=>updateExtraRoom(er.id,{checkout:e.target.value,roomIds:[]})}
+                            style={{...S.inp,padding:"8px 10px",fontSize:12,borderColor:er.checkout?C.purple:C.border}}/>
+                          <div style={{fontSize:10,color:C.text3,marginTop:2}}>ออกจากห้องนี้</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Room type */}
+                    <div style={{marginBottom:10}}>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>ประเภทห้องที่ย้ายไป</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                        {["S","M","H"].map(sz=>(
+                          <button key={sz} style={{padding:"8px",background:er.size===sz?C.purple:"#f8f4ff",color:er.size===sz?"#fff":C.text2,border:`1px solid ${er.size===sz?C.purple:C.border}`,borderRadius:8,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:700}}
+                            onClick={()=>updateExtraRoom(er.id,{size:sz,roomIds:[]})}>
+                            {sz==="S"?"Room S":sz==="M"?"Room M":"@Home"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Room selector */}
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกห้อง</div>
+                      {er.checkin&&er.checkout?(
+                        erAvailRooms.length>0?(
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                            {erAvailRooms.map(r=>{
+                              const sel=(er.roomIds||[]).includes(r.id);
+                              return(
+                                <button key={r.id} style={{padding:"8px 4px",background:sel?getRoomColor(r.id):getRoomBg(r.id),color:sel?"#fff":getRoomColor(r.id),border:`2px solid ${sel?getRoomColor(r.id):getRoomColor(r.id)+"40"}`,borderRadius:8,fontFamily:"inherit",fontSize:11,fontWeight:800,cursor:"pointer",textAlign:"center"}}
+                                  onClick={()=>{
+                                    const ids=er.roomIds||[];
+                                    updateExtraRoom(er.id,{roomIds:ids.includes(r.id)?ids.filter(x=>x!==r.id):[...ids,r.id]});
+                                  }}>
+                                  {r.label}{sel&&<div style={{fontSize:8,marginTop:1}}>✓</div>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ):(
+                          <div style={{padding:"10px",background:C.accentBg,borderRadius:8,fontSize:12,color:C.accent,textAlign:"center"}}>❌ ไม่มีห้อง {er.size} ว่างในช่วงนี้</div>
+                        )
+                      ):(
+                        <div style={{padding:"10px",background:C.bg,borderRadius:8,fontSize:12,color:C.text3,textAlign:"center"}}>กรุณาเลือกวันที่ก่อน</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Add extra room button */}
+            <button style={{width:"100%",padding:"11px",background:"transparent",color:C.purple,border:`2px dashed ${C.purple}60`,borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}
+              onClick={addExtraRoom}>
+              🔄 + เพิ่มช่วงย้ายห้อง
+            </button>
+          </div>
+        )}
+
         {/* 1. Cat Litter */}
         {(()=>{
           const lCats=selectedRooms.length>0?selectedRooms.reduce((s,rid)=>s+getCatsForRoom(rid),0):Math.max(1,numCats);
@@ -2166,6 +2298,22 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               );
             })}
 
+            {/* Extra Rooms rows */}
+            {extraRooms.map((er,idx)=>{
+              const n2=getExtraNights(er);
+              const erBase=calcExtraRoomBase(er);
+              return (er.roomIds||[]).length>0&&n2>0?(
+                <div key={er.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                  <div>
+                    <span style={{fontSize:11,color:C.purple,fontWeight:700,marginRight:6}}>🔄</span>
+                    <span style={{fontSize:13,fontWeight:700,color:C.purple}}>{er.roomIds.join(", ")}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n2}คืน · {fmt(er.checkin)}–{fmt(er.checkout)}</span>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:700,color:C.purple}}>฿{fmt2(erBase)}</span>
+                </div>
+              ):null;
+            })}
+
             {/* ทรายแมว */}
             {form.litter&&totalLitterAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
@@ -2281,6 +2429,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,depositPayMethod:form.depositPayMethod||"Transfer",depositCcFee,remaining,ccFeeAmt,
             roomId:persistedRoomIds[0]||"",
             roomIds:persistedRoomIds,
+            extraRooms:(extraRooms||[]).map(er=>({...er,roomIds:(er.roomIds||[]).filter(Boolean)})).filter(er=>(er.roomIds||[]).length>0&&er.checkin&&er.checkout),
             homePriceTotal:form.size==="H"?homePriceLump:0,
             pricePerNight:form.size==="H"?0:getPriceForSize(form.size),
           };
@@ -4486,8 +4635,8 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:50 (ICT)</div>
-        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 23:30 (ICT)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
   </div>);
