@@ -1779,6 +1779,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     const periods=form.roomPeriods||[];
     const newPeriod={
       roomId:"",
+      type:"S", // Default to S type
       startDate:form.checkin||"",
       endDate:form.checkout||""
     };
@@ -1846,11 +1847,15 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   useEffect(()=>{
     if(booking&&form.roomIds?.length>0&&(!form.roomPeriods||form.roomPeriods.length===0)){
       // Old format: all rooms share same checkin/checkout
-      const periods=form.roomIds.map(roomId=>({
-        roomId,
-        startDate:form.checkin,
-        endDate:form.checkout
-      }));
+      const periods=form.roomIds.map(roomId=>{
+        const room=ROOMS.find(r=>r.id===roomId);
+        return{
+          roomId,
+          type:room?.type||form.size||"S", // Get type from room or fallback to booking size
+          startDate:form.checkin,
+          endDate:form.checkout
+        };
+      });
       set("roomPeriods",periods);
     }
   },[]);
@@ -1978,7 +1983,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               {(form.roomPeriods||[]).map((period,idx)=>{
                 const periodNights=getRoomPeriodNights(period);
                 const room=ROOMS.find(r=>r.id===period.roomId);
-                const roomType=room?.type||form.size;
+                const roomType=period.type||(room?.type)||"S"; // Use period.type, fallback to room type or default S
                 const roomsForType=form.checkin&&form.checkout&&period.startDate&&period.endDate
                   ?ROOMS.filter(r=>r.type===roomType&&isRoomAvailable(r.id,period.startDate,period.endDate,bookings,booking?.id))
                   :[];
@@ -2002,7 +2007,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
                         {["S","M","H"].map(sz=>(
                           <button key={sz} style={{padding:"8px",background:roomType===sz?C.text:C.bg,color:roomType===sz?"#fff":C.text2,border:`1px solid ${roomType===sz?C.text:C.border}`,borderRadius:8,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:700}} onClick={()=>{
-                            // Clear roomId when changing type
+                            // Save type to period and clear roomId when changing type
+                            updateRoomPeriod(idx,"type",sz);
                             updateRoomPeriod(idx,"roomId","");
                           }}>
                             {sz==="S"?"S":sz==="M"?"M":"@Home"}
@@ -4634,7 +4640,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:00 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:15 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Room Periods · Allow Past Dates</div>
       </div>
     </div>
