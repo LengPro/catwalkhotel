@@ -1716,9 +1716,23 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   // discount applies to (room base + litter + extraFee), petTaxi excluded from discount
   const disc=parseFloat(form.discount)||0;
   const roomBaseNoLitter=(rid)=>{
-    if(rid==="@HOME") return homePriceLump; // lump sum — already total
+    if(rid==="@HOME") return homePriceLump;
     const r=calcRoomNet(rid);return n*(r.pricePerNight+r.extraCats*EXTRA_CAT_FEE);
   };
+  // ── Extra Rooms helpers (must be before totalRoomBase) ──
+  const extraRooms=form.extraRooms||[];
+  const getExtraNights=(er)=>er.checkin&&er.checkout&&er.checkin<=er.checkout?nights(er.checkin,er.checkout):0;
+  const calcExtraRoomBase=(er)=>{
+    const n2=getExtraNights(er);
+    if(!n2) return 0;
+    return (er.roomIds||[]).reduce((sum,rid)=>{
+      const r=ROOMS.find(x=>x.id===rid);
+      const sz=r?.type||er.size||"S";
+      const ppn=getPriceForDate(er.checkin||pricingDate,sz)||0;
+      return sum+n2*ppn;
+    },0);
+  };
+  const totalExtraRoomsBase=extraRooms.reduce((sum,er)=>sum+(calcExtraRoomBase(er)||0),0)||0;
   const totalRoomBase=parseFloat(((selectedRooms.length>0?selectedRooms.reduce((sum,rid)=>sum+(roomBaseNoLitter(rid)||0),0):(n>0&&numCats>0&&form.size!=="H"?(()=>{const p=calcPrice(n,form.size,numCats,0,false,pricingDate);return p.base||0;})():homePriceLump))+(totalExtraRoomsBase||0)).toFixed(2))||0;
   const discItems=form.discountItems||["rooms"];
   const discBase=(discItems.includes("rooms")?totalRoomBase:0)+(discItems.includes("litter")?totalLitterAmt:0)+(discItems.includes("other")?extraFeeAmt:0)+(discItems.includes("taxi")?petTaxiAmt:0);
@@ -1742,27 +1756,13 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
     set("roomIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   };
 
-  // ── Extra Rooms (room change during stay) ──
-  const extraRooms=form.extraRooms||[];
+  // ── Extra Rooms helpers (UI actions) ──
   const addExtraRoom=()=>{
     const er={id:uid(),size:"S",roomIds:[],checkin:form.checkin||"",checkout:form.checkout||""};
     set("extraRooms",[...extraRooms,er]);
   };
   const removeExtraRoom=(eid)=>set("extraRooms",extraRooms.filter(e=>e.id!==eid));
   const updateExtraRoom=(eid,patch)=>set("extraRooms",extraRooms.map(e=>e.id===eid?{...e,...patch}:e));
-  const getExtraNights=(er)=>er.checkin&&er.checkout&&er.checkin<=er.checkout?nights(er.checkin,er.checkout):0;
-  const calcExtraRoomBase=(er)=>{
-    const n2=getExtraNights(er);
-    if(!n2) return 0;
-    return (er.roomIds||[]).reduce((sum,rid)=>{
-      const r=ROOMS.find(x=>x.id===rid);
-      const sz=r?.type||er.size||"S";
-      const ppn=getPriceForDate(er.checkin||pricingDate,sz)||0;
-      return sum+n2*ppn;
-    },0);
-  };
-  const totalExtraRoomsBase=extraRooms.reduce((sum,er)=>sum+(calcExtraRoomBase(er)||0),0)||0;
-
   const valid=form.customerId&&form.selectedCatIds?.length>0&&form.checkin&&form.checkout&&form.checkin<=form.checkout&&(isLegacySize||(form.roomIds||[]).length>0);
   const toggleCat=id=>{const ids=form.selectedCatIds||[];set("selectedCatIds",ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);};
   useEffect(()=>{if(cust&&!booking)set("selectedCatIds",cats.length>0?[cats[0].id]:[]);},[form.customerId]);
@@ -4670,7 +4670,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 19 Apr 2026 · 00:10 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 19 Apr 2026 · 00:25 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
