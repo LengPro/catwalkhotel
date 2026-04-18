@@ -1062,7 +1062,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               <InfiniteScrollCalendar
                 checkin={checkAvail.checkin}
                 checkout={checkAvail.checkout}
-                allowPast={false}
+                allowPast={true}
                 onChange={({checkin,checkout})=>setCheckAvail(v=>({...v,checkin,checkout}))}
               />
             </div>
@@ -1867,7 +1867,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         <InfiniteScrollCalendar
           checkin={form.checkin}
           checkout={form.checkout}
-          allowPast={!!booking}
+          allowPast={true}
           onChange={({checkin,checkout})=>{set("checkin",checkin);set("checkout",checkout);}}
         />
         {/* Size */}
@@ -2275,6 +2275,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             ...form,
             id:booking?.id||uid(),
             createdAt:booking?.createdAt||new Date().toISOString(),
+            updatedAt:new Date().toISOString(), // Always update timestamp on save
             net,base,discAmt,numCats,litterAmt,litterWeeks,petTaxiAmt,
             petTaxiDay:petTaxiAmt>0?(form.petTaxiDay||"checkin"):"",
             extraFeeAmt,extraFeeNote:form.extraFeeNote||"",depositAmt,depositPayMethod:form.depositPayMethod||"Transfer",depositCcFee,remaining,ccFeeAmt,
@@ -3041,6 +3042,11 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:700}}>{cust?.nickname||"?"} <span style={{fontWeight:600,color:C.text2}}>({cats.length>0?cats.map(c=>c.name).join(", "):(b.catName||"Cat")})</span></div>
                   <div style={{fontSize:12,color:C.text2}}>{fmt(b.checkin)} → {fmt(b.checkout)} · {n} night{n>1?"s":""}</div>
+                  {b.updatedAt&&(
+                    <div style={{fontSize:10,color:C.text3,marginTop:2}}>
+                      {b.updatedAt!==b.createdAt?`✏️ Updated ${new Date(b.updatedAt).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})} ${new Date(b.updatedAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}`:`📅 Created ${new Date(b.createdAt).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'})} ${new Date(b.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}`}
+                    </div>
+                  )}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:16,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>{b.discount>0&&<div style={{fontSize:11,color:C.red}}>-{b.discount}%</div>}</div>
               </div>
@@ -4485,8 +4491,8 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 13 Apr 2026 · 23:00 (ICT)</div>
-        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 18 Apr 2026 · 17:45 (ICT)</div>
+        <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Edit Timestamps</div>
       </div>
     </div>
   </div>);
