@@ -218,7 +218,7 @@ const nights=(a,b)=>Math.max(1,Math.round((new Date(b)-new Date(a))/(864e5)));
 const addDays=(d,n)=>{ const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
 const getLitterFeeForDate=(dateStr)=>{
   const date=(dateStr&&/^\d{4}-\d{2}-\d{2}$/.test(dateStr))?dateStr:today();
-  return LITTER_PERIODS.find(p=>p.start<=date&&(!p.end||date<=p.end))
+  return [...LITTER_PERIODS].reverse().find(p=>p.start<=date&&(!p.end||date<=p.end))
     ||{feePerRound:LITTER_FEE,basis:"per6nights"};
 };
 const getLitterAmt=(n,numCats,dateStr)=>{
@@ -235,7 +235,7 @@ const getLitterLabel=(n,numCats,dateStr)=>{
 };
 const getPriceTableForDate=(dateStr)=>{
   const date=(dateStr&&/^\d{4}-\d{2}-\d{2}$/.test(dateStr))?dateStr:today();
-  return PRICE_PERIODS.find(p=>p.start<=date&&(!p.end||date<=p.end))?.prices||PRICES;
+  return [...PRICE_PERIODS].reverse().find(p=>p.start<=date&&(!p.end||date<=p.end))?.prices||PRICES;
 };
 const getPriceForDate=(dateStr,size)=>{
   if(size==="H") return 0;
@@ -2127,7 +2127,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           const customVal=parseFloat(form.litterCustom)||0;
           const lTotal=form.litter?(customVal>0?customVal:suggestedAmt):0;
           const isCustom=form.litter&&customVal>0&&customVal!==suggestedAmt;
-          const presets=[60,120,180,240,300];
+          const presets=[1,2,3,4,5].map(x=>x*_lp.feePerRound);
           return(
           <div style={{...S.fg,padding:"12px 14px",background:form.litter?"#f0f6ff":C.bg,borderRadius:12,border:`1px solid ${form.litter?C.blue+"40":C.border}`,marginBottom:10}}>
             {/* Header row */}
