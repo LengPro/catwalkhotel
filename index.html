@@ -3419,6 +3419,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const revenueCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
   const unpaidCheckin=parseFloat(inRangeCheckin.filter(b=>!b.paid).reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
   const ccFeeTotalCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+(b.depositCcFee||0)+(b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0),0).toFixed(2));
+  const petTaxiTotalCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+(b.petTaxiAmt||0),0).toFixed(2));
 
   // bars for checkin overview
   let barsCheckin=[];
@@ -3483,6 +3484,13 @@ function DashboardPage({bookings,customers,onExportBookings}){
         return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/totalDays;
       },0)
     :revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0)
+  ).toFixed(2));
+  const petTaxiTotal=parseFloat((period==="day"
+    ?inRange.reduce((a,b)=>{
+        const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
+        return a+(b.petTaxiAmt||0)/totalDays;
+      },0)
+    :revenueBookings.reduce((a,b)=>a+(b.petTaxiAmt||0),0)
   ).toFixed(2));
   const unpaid=parseFloat((period==="day"
     ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b),0)
@@ -3603,6 +3611,12 @@ function DashboardPage({bookings,customers,onExportBookings}){
               <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotal)}</span>
             </div>
           )}
+          {petTaxiTotal>0&&(
+            <div style={{background:"#f0f7ff",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #3b82f640",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#2563eb"}}>🚗 Pet Taxi</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#2563eb"}}>-฿{fmt2(petTaxiTotal)}</span>
+            </div>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
             <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
             <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
@@ -3710,6 +3724,12 @@ function DashboardPage({bookings,customers,onExportBookings}){
             <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:12,color:C.orange}}>💳 CC Fee ({CREDIT_CARD_FEE_PCT}%)</span>
               <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotalCheckin)}</span>
+            </div>
+          )}
+          {petTaxiTotalCheckin>0&&(
+            <div style={{background:"#f0f7ff",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #3b82f640",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#2563eb"}}>🚗 Pet Taxi</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#2563eb"}}>-฿{fmt2(petTaxiTotalCheckin)}</span>
             </div>
           )}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
