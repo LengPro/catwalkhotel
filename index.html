@@ -2127,7 +2127,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
           const customVal=parseFloat(form.litterCustom)||0;
           const lTotal=form.litter?(customVal>0?customVal:suggestedAmt):0;
           const isCustom=form.litter&&customVal>0&&customVal!==suggestedAmt;
-          const presets=[60,120,180,240,300];
+          const presets=[1,2,3,4,5].map(x=>x*_lp.feePerRound);
           return(
           <div style={{...S.fg,padding:"12px 14px",background:form.litter?"#f0f6ff":C.bg,borderRadius:12,border:`1px solid ${form.litter?C.blue+"40":C.border}`,marginBottom:10}}>
             {/* Header row */}
