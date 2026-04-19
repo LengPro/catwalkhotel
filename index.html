@@ -1629,18 +1629,27 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
               {remaining>0&&<Row label={t.remaining} value={`฿${fmt2(remaining)}`} bold color="#e53935"/>}
               {remaining===0&&<Row label={t.paid} value={`฿${fmt2(net)}`} bold color="#2e7d32"/>}
               <Row label={t.payMethod} value={booking.payMethod||"—"}/>
-              {booking.payMethod==="Credit Card"&&(()=>{
-                const ccFee=parseFloat((net*CREDIT_CARD_FEE_PCT/100).toFixed(2));
-                const netAfterCC=net-ccFee;
+              {(booking.payMethod==="Credit Card"||booking.petTaxiAmt>0)&&(()=>{
+                const ccFee=booking.payMethod==="Credit Card"?parseFloat((net*CREDIT_CARD_FEE_PCT/100).toFixed(2)):0;
+                const taxi=booking.petTaxiAmt||0;
+                const shopNet=net-ccFee-taxi;
                 return(
                   <div style={{background:"#fff8f0",borderRadius:8,padding:"8px 10px",marginTop:6,border:"1px solid #ff950030"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
-                    </div>
+                    {ccFee>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
+                      </div>
+                    )}
+                    {taxi>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:11,color:"#2563eb"}}>🚗 {lang==="th"?"หัก Pet Taxi":"Pet Taxi deducted"}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#2563eb"}}>-฿{fmt2(taxi)}</span>
+                      </div>
+                    )}
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{lang==="th"?"รายได้จริงที่ได้รับ":"Actual Revenue"}</span>
-                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{fmt2(netAfterCC)}</span>
+                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{fmt2(shopNet)}</span>
                     </div>
                   </div>
                 );
@@ -2408,8 +2417,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               </div>
             )}
 
-            {/* ── CC fee section (internal) ── */}
-            {(depositCcFee>0||ccFeeAmt>0)&&(
+            {/* ── CC fee + Pet Taxi section (internal) ── */}
+            {(depositCcFee>0||ccFeeAmt>0||petTaxiAmt>0)&&(
               <div style={{marginTop:10,padding:"10px 12px",background:"#fff8f0",borderRadius:8,border:"1px solid #ff950030"}}>
                 <div style={{fontSize:10,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:8}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
                 {depositCcFee>0&&(
@@ -2444,9 +2453,17 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                     </div>
                   </div>
                 )}
+                {petTaxiAmt>0&&(
+                  <div style={{marginBottom:8,paddingBottom:8,borderBottom:`1px dashed ${C.border}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,color:"#2563eb"}}>🚗 หัก Pet Taxi (ไม่รวมรายได้ร้าน)</span>
+                      <span style={{fontSize:12,fontWeight:600,color:"#2563eb"}}>-฿{fmt2(petTaxiAmt)}</span>
+                    </div>
+                  </div>
+                )}
                 <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:`2px solid ${C.border}`}}>
                   <span style={{fontSize:13,fontWeight:800}}>ร้านได้รับสุทธิ</span>
-                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(net-depositCcFee-ccFeeAmt)}</span>
+                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(net-depositCcFee-ccFeeAmt-petTaxiAmt)}</span>
                 </div>
               </div>
             )}
