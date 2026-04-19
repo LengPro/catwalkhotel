@@ -2158,17 +2158,17 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 )}
                 {/* Preset buttons */}
                 <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกราคาทราย (฿ รวมทั้งหมด)</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:8}}>
                   {presets.map(v=>{
                     const isSuggested=n>0&&v===suggestedAmt;
                     const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&n>0);
                     return(
                       <button key={v} onClick={()=>set("litterCustom",isSelected?0:v)}
-                        style={{padding:"8px 14px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
+                        style={{padding:"8px 4px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
                           background:isSelected?C.blue:isSuggested?"#eff6ff":"transparent",
                           color:isSelected?"#fff":isSuggested?C.blue:C.text2,
                           fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",
-                          display:"flex",flexDirection:"column",alignItems:"center",gap:1,minWidth:54}}>
+                          display:"flex",flexDirection:"column",alignItems:"center",gap:1,width:"100%"}}>
                         <span>฿{v}</span>
                         {isSuggested&&<span style={{fontSize:9,fontWeight:600,opacity:0.85}}>แนะนำ</span>}
                       </button>
