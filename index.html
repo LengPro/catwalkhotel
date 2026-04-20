@@ -1629,18 +1629,27 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
               {remaining>0&&<Row label={t.remaining} value={`฿${fmt2(remaining)}`} bold color="#e53935"/>}
               {remaining===0&&<Row label={t.paid} value={`฿${fmt2(net)}`} bold color="#2e7d32"/>}
               <Row label={t.payMethod} value={booking.payMethod||"—"}/>
-              {booking.payMethod==="Credit Card"&&(()=>{
-                const ccFee=parseFloat((net*CREDIT_CARD_FEE_PCT/100).toFixed(2));
-                const netAfterCC=net-ccFee;
+              {(booking.payMethod==="Credit Card"||booking.petTaxiAmt>0)&&(()=>{
+                const ccFee=booking.payMethod==="Credit Card"?parseFloat((net*CREDIT_CARD_FEE_PCT/100).toFixed(2)):0;
+                const taxi=booking.petTaxiAmt||0;
+                const shopNet=net-ccFee-taxi;
                 return(
                   <div style={{background:"#fff8f0",borderRadius:8,padding:"8px 10px",marginTop:6,border:"1px solid #ff950030"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
-                    </div>
+                    {ccFee>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
+                      </div>
+                    )}
+                    {taxi>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:11,color:"#2563eb"}}>🚗 {lang==="th"?"หัก Pet Taxi":"Pet Taxi deducted"}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#2563eb"}}>-฿{fmt2(taxi)}</span>
+                      </div>
+                    )}
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{fontSize:12,fontWeight:700,color:"#555"}}>{lang==="th"?"รายได้จริงที่ได้รับ":"Actual Revenue"}</span>
-                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{fmt2(netAfterCC)}</span>
+                      <span style={{fontSize:13,fontWeight:800,color:"#2e7d32"}}>฿{fmt2(shopNet)}</span>
                     </div>
                   </div>
                 );
@@ -2158,17 +2167,17 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 )}
                 {/* Preset buttons */}
                 <div style={{fontSize:11,fontWeight:700,color:C.text3,marginBottom:6}}>เลือกราคาทราย (฿ รวมทั้งหมด)</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:8}}>
                   {presets.map(v=>{
                     const isSuggested=n>0&&v===suggestedAmt;
                     const isSelected=customVal===v||(customVal===0&&v===suggestedAmt&&n>0);
                     return(
                       <button key={v} onClick={()=>set("litterCustom",isSelected?0:v)}
-                        style={{padding:"8px 14px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
+                        style={{padding:"8px 4px",borderRadius:10,border:`2px solid ${isSelected?C.blue:isSuggested?"#93c5fd":C.border}`,
                           background:isSelected?C.blue:isSuggested?"#eff6ff":"transparent",
                           color:isSelected?"#fff":isSuggested?C.blue:C.text2,
                           fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",
-                          display:"flex",flexDirection:"column",alignItems:"center",gap:1,minWidth:54}}>
+                          display:"flex",flexDirection:"column",alignItems:"center",gap:1,width:"100%"}}>
                         <span>฿{v}</span>
                         {isSuggested&&<span style={{fontSize:9,fontWeight:600,opacity:0.85}}>แนะนำ</span>}
                       </button>
@@ -2408,8 +2417,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
               </div>
             )}
 
-            {/* ── CC fee section (internal) ── */}
-            {(depositCcFee>0||ccFeeAmt>0)&&(
+            {/* ── CC fee + Pet Taxi section (internal) ── */}
+            {(depositCcFee>0||ccFeeAmt>0||petTaxiAmt>0)&&(
               <div style={{marginTop:10,padding:"10px 12px",background:"#fff8f0",borderRadius:8,border:"1px solid #ff950030"}}>
                 <div style={{fontSize:10,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:8}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
                 {depositCcFee>0&&(
@@ -2444,9 +2453,17 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                     </div>
                   </div>
                 )}
+                {petTaxiAmt>0&&(
+                  <div style={{marginBottom:8,paddingBottom:8,borderBottom:`1px dashed ${C.border}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between"}}>
+                      <span style={{fontSize:12,color:"#2563eb"}}>🚗 หัก Pet Taxi (ไม่รวมรายได้ร้าน)</span>
+                      <span style={{fontSize:12,fontWeight:600,color:"#2563eb"}}>-฿{fmt2(petTaxiAmt)}</span>
+                    </div>
+                  </div>
+                )}
                 <div style={{display:"flex",justifyContent:"space-between",paddingTop:6,borderTop:`2px solid ${C.border}`}}>
                   <span style={{fontSize:13,fontWeight:800}}>ร้านได้รับสุทธิ</span>
-                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(net-depositCcFee-ccFeeAmt)}</span>
+                  <span style={{fontSize:15,fontWeight:800,color:C.green}}>฿{fmt2(net-depositCcFee-ccFeeAmt-petTaxiAmt)}</span>
                 </div>
               </div>
             )}
@@ -3419,6 +3436,7 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const revenueCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
   const unpaidCheckin=parseFloat(inRangeCheckin.filter(b=>!b.paid).reduce((a,b)=>a+getNetByCheckin(b),0).toFixed(2));
   const ccFeeTotalCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+(b.depositCcFee||0)+(b.payMethod==="Credit Card"?(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))):0),0).toFixed(2));
+  const petTaxiTotalCheckin=parseFloat(inRangeCheckin.reduce((a,b)=>a+(b.petTaxiAmt||0),0).toFixed(2));
 
   // bars for checkin overview
   let barsCheckin=[];
@@ -3483,6 +3501,13 @@ function DashboardPage({bookings,customers,onExportBookings}){
         return a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2)))/totalDays;
       },0)
     :revenueBookings.filter(b=>b.payMethod==="Credit Card").reduce((a,b)=>a+(b.ccFeeAmt||parseFloat(((b.remaining||0)*CREDIT_CARD_FEE_PCT/100).toFixed(2))),0)
+  ).toFixed(2));
+  const petTaxiTotal=parseFloat((period==="day"
+    ?inRange.reduce((a,b)=>{
+        const totalDays=Math.max(1,nights(b.checkin,b.checkout)+1);
+        return a+(b.petTaxiAmt||0)/totalDays;
+      },0)
+    :revenueBookings.reduce((a,b)=>a+(b.petTaxiAmt||0),0)
   ).toFixed(2));
   const unpaid=parseFloat((period==="day"
     ?inRange.filter(b=>!b.paid).reduce((a,b)=>a+netPerDay(b),0)
@@ -3603,6 +3628,12 @@ function DashboardPage({bookings,customers,onExportBookings}){
               <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotal)}</span>
             </div>
           )}
+          {petTaxiTotal>0&&(
+            <div style={{background:"#f0f7ff",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #3b82f640",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#2563eb"}}>🚗 Pet Taxi</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#2563eb"}}>-฿{fmt2(petTaxiTotal)}</span>
+            </div>
+          )}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
             <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{inRange.length}</div><div style={S.statLbl}>Bookings</div></div>
             <div style={S.statCard}><div style={{...S.statVal,fontSize:20}}>{totalNights}</div><div style={S.statLbl}>Nights</div></div>
@@ -3710,6 +3741,12 @@ function DashboardPage({bookings,customers,onExportBookings}){
             <div style={{background:"#fff8f0",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #ff950030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:12,color:C.orange}}>💳 CC Fee ({CREDIT_CARD_FEE_PCT}%)</span>
               <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(ccFeeTotalCheckin)}</span>
+            </div>
+          )}
+          {petTaxiTotalCheckin>0&&(
+            <div style={{background:"#f0f7ff",borderRadius:10,padding:"8px 14px",marginBottom:10,border:"1px solid #3b82f640",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#2563eb"}}>🚗 Pet Taxi</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#2563eb"}}>-฿{fmt2(petTaxiTotalCheckin)}</span>
             </div>
           )}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
@@ -4692,7 +4729,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 19 Apr 2026 · 00:55 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 20 Apr 2026 · 01:20 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
