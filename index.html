@@ -974,6 +974,24 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
     });
   }
 
+  // Returns {bk, checkin, checkout} with date range scoped to this specific room segment
+  function getBookingEntryForRoomDate(roomId,dateStr){
+    for(const b of bookings){
+      // Main rooms: ends at the earliest extraRoom checkin (not b.checkout which is extended)
+      if(b.roomId===roomId||(b.roomIds||[]).includes(roomId)){
+        const extraStarts=(b.extraRooms||[]).filter(er=>(er.roomIds||[]).length>0&&er.checkin).map(er=>er.checkin).sort();
+        const mainEnd=extraStarts.length>0?extraStarts[0]:b.checkout;
+        if(b.checkin<=dateStr&&mainEnd>=dateStr) return{bk:b,checkin:b.checkin,checkout:mainEnd};
+      }
+      // ExtraRooms: use each segment's own date range
+      for(const er of (b.extraRooms||[])){
+        if((er.roomIds||[]).includes(roomId)&&er.checkin<=dateStr&&er.checkout>=dateStr)
+          return{bk:b,checkin:er.checkin,checkout:er.checkout};
+      }
+    }
+    return null;
+  }
+
   const availCheckin=checkAvail.checkin;
   const availCheckout=checkAvail.checkout;
   const availableRooms=availCheckin&&availCheckout&&availCheckin<=availCheckout
@@ -1191,10 +1209,11 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
 
                   {/* Day cells */}
                   {dateArr.map((d,di)=>{
-                    const bk=getBookingForRoomDate(room.id,d);
+                    const entry=getBookingEntryForRoomDate(room.id,d);
+                    const bk=entry?.bk||null;
                     const isToday=d===todayStr;
-                    const isStart=bk&&bk.checkin===d;
-                    const isEnd=bk&&bk.checkout===d;
+                    const isStart=entry&&entry.checkin===d;
+                    const isEnd=entry&&entry.checkout===d;
                     const isWeekend=new Date(d+"T12:00:00").getDay()===0||new Date(d+"T12:00:00").getDay()===6;
                     const isMonth1=new Date(d+"T12:00:00").getDate()===1;
                     if(bk){
