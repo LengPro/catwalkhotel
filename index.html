@@ -1802,7 +1802,10 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   },[form.size,form.checkin,form.checkout]);
 
   // Reset litterCustom when dates/cats change so suggested recalculates
+  // Skip the very first render so saved litterCustom isn't wiped on edit
+  const _litterResetInit=useRef(true);
   useEffect(()=>{
+    if(_litterResetInit.current){_litterResetInit.current=false;return;}
     set("litterCustom",0);
   },[form.checkin,form.checkout,form.selectedCatIds,form.roomIds]);
 
