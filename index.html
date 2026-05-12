@@ -844,7 +844,7 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
   return(
     <div>
       {/* Display button */}
-      <div style={{border:`1px solid ${(checkin||checkout)?C.accent:C.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",background:C.white,display:"flex",alignItems:"center",justifyContent:"space-between"}} onClick={()=>setShow(s=>!s)}>
+      <div style={{border:`1px solid ${(checkin||checkout)?C.accent:C.border}`,borderRadius:12,padding:"10px 12px",cursor:"pointer",background:C.white,display:"flex",alignItems:"center",justifyContent:"space-between"}} onClick={()=>setShow(s=>!s)}>
         <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
           <div style={{textAlign:"center",flex:1}}>
             <div style={{fontSize:10,fontWeight:700,color:C.text3,marginBottom:2}}>CHECK-IN</div>
@@ -1083,14 +1083,14 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
     </div>
 
     {/* ── Check Availability Panel ── */}
-    <div style={{...S.sec,marginTop:16}}>
+    <div style={{...S.sec,marginTop:8,paddingTop:0,paddingBottom:0}}>
       <div style={S.slabel}>Check Availability</div>
-      <div style={{...S.card,padding:14,marginBottom:0}}>
+      <div style={{...S.card,padding:10,marginBottom:0}}>
         {/* Date Range Picker for availability */}
         {(()=>{
           const availN=checkAvail.checkin&&checkAvail.checkout?Math.max(1,Math.round((new Date(checkAvail.checkout)-new Date(checkAvail.checkin))/(864e5))):0;
           return(
-            <div style={{marginBottom:8}}>
+            <div style={{marginBottom:6}}>
               <InfiniteScrollCalendar
                 checkin={checkAvail.checkin}
                 checkout={checkAvail.checkout}
@@ -1103,14 +1103,14 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {["S","M"].map(t=>(
-            <button key={t} style={{padding:"10px",background:checkAvail.type===t?C.text:C.bg,color:checkAvail.type===t?"#fff":C.text2,border:`1px solid ${checkAvail.type===t?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}} onClick={()=>setCheckAvail(v=>({...v,type:t}))}>
+            <button key={t} style={{padding:"8px",background:checkAvail.type===t?C.text:C.bg,color:checkAvail.type===t?"#fff":C.text2,border:`1px solid ${checkAvail.type===t?C.text:C.border}`,borderRadius:10,fontFamily:"inherit",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1}} onClick={()=>setCheckAvail(v=>({...v,type:t}))}>
               <span style={{fontSize:14,fontWeight:800}}>Room {t}</span>
               <span style={{fontSize:12,fontWeight:600,opacity:0.8}}>฿{PRICES[t]}/night</span>
             </button>
           ))}
         </div>
         {availableRooms!==null&&(
-          <div style={{marginTop:12,padding:"10px 14px",background:availableRooms.length>0?C.greenBg:C.accentBg,borderRadius:10,border:`1px solid ${availableRooms.length>0?C.green:C.accent}40`}}>
+          <div style={{marginTop:10,padding:"8px 12px",background:availableRooms.length>0?C.greenBg:C.accentBg,borderRadius:10,border:`1px solid ${availableRooms.length>0?C.green:C.accent}40`}}>
             <div style={{fontSize:13,fontWeight:700,color:availableRooms.length>0?C.green:C.accent,marginBottom:availableRooms.length>0?6:0}}>
               {availableRooms.length>0?`✅ ${availableRooms.length} room${availableRooms.length>1?"s":""} available (${nights(availCheckin,availCheckout)} nights)`:"❌ No rooms available for this period"}
             </div>
@@ -1134,25 +1134,25 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
           {/* Days selector */}
           <div style={{display:"flex",gap:4}}>
             {[14,30,60,90].map(d=>(
-              <button key={d} style={{padding:"3px 9px",background:daysShow===d?C.text:C.bg,color:daysShow===d?"#fff":C.text2,border:`1px solid ${daysShow===d?C.text:C.border}`,borderRadius:7,fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer"}} onClick={()=>setDaysShow(d)}>{d}d</button>
+              <button key={d} style={{padding:"3px 9px",background:daysShow===d?C.text:C.bg,color:daysShow===d?"#fff":C.text2,border:`1px solid ${daysShow===d?C.text:C.border}`,borderRadius:7,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer"}} onClick={()=>setDaysShow(d)}>{d}d</button>
             ))}
           </div>
         </div>
-        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          <input type="month" style={{...S.inp,width:"auto",padding:"5px 10px",fontSize:12,borderRadius:8}} min="2018-01" max="2030-12"
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"nowrap",whiteSpace:"nowrap"}}>
+          <input type="month" style={{...S.inp,width:138,minWidth:138,padding:"5px 10px",fontSize:14,borderRadius:8,flexShrink:0}} min="2018-01" max="2030-12"
             value={viewDate.slice(0,7)}
             onChange={e=>{ if(e.target.value) setViewDate(e.target.value+"-01"); }}
           />
-          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,-30))} title="Prev month">《</button>
-          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,-7))}>‹</button>
-          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"0 12px",height:32,cursor:"pointer",fontSize:11,fontWeight:700,color:C.text2}} onClick={()=>setViewDate(today())}>Today</button>
-          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,7))}>›</button>
-          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:14,color:C.text2}} onClick={()=>setViewDate(d=>addDays(d,30))} title="Next month">》</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,color:C.text2,flexShrink:0}} onClick={()=>setViewDate(d=>addDays(d,-30))} title="Prev month">《</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,color:C.text2,flexShrink:0}} onClick={()=>setViewDate(d=>addDays(d,-7))}>‹</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"0 12px",height:32,cursor:"pointer",fontSize:13,fontWeight:700,color:C.text2,flexShrink:0}} onClick={()=>setViewDate(today())}>Today</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,color:C.text2,flexShrink:0}} onClick={()=>setViewDate(d=>addDays(d,7))}>›</button>
+          <button style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,color:C.text2,flexShrink:0}} onClick={()=>setViewDate(d=>addDays(d,30))} title="Next month">》</button>
         </div>
       </div>
 
       {/* Current period label */}
-      <div style={{fontSize:12,fontWeight:600,color:C.text2,marginBottom:8,paddingLeft:2}}>
+      <div style={{fontSize:14,fontWeight:600,color:C.text2,marginBottom:8,paddingLeft:2}}>
         {(()=>{ const x=new Date(viewDate+"T12:00:00"); return `${MONTHS_FULL[x.getMonth()]} ${x.getFullYear()}`; })()}
         {" → "}{(()=>{ const x=new Date(dateArr[dateArr.length-1]+"T12:00:00"); return `${MONTHS_FULL[x.getMonth()]} ${x.getFullYear()}`; })()}
         <span style={{color:C.text3,fontWeight:400}}> · scroll ← → to see all days</span>
@@ -1160,24 +1160,24 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
 
       {/* Legend */}
       <div style={{display:"flex",gap:12,marginBottom:10,flexWrap:"wrap"}}>
-        {zones.map(z=><div key={z} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:ZONE_COLORS[z]}}><div style={{width:12,height:12,borderRadius:3,background:ZONE_COLORS[z]}}/> Zone {z}</div>)}
-        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#1565c0"}}><div style={{width:12,height:12,borderRadius:3,background:"#e3f2fd",border:"1px solid #1565c040"}}/> @Home</div>
-        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,color:"#f9a825"}}><div style={{width:12,height:12,borderRadius:3,background:"#fffde7",border:"1px solid #f9a82540"}}/> Pet Taxi</div>
-        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:C.text3}}><div style={{width:12,height:12,borderRadius:3,background:"#f0f0f0",border:`1px solid ${C.border}`}}/> Free</div>
-        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:C.accent}}><div style={{width:12,height:12,borderRadius:3,background:C.accentBg,border:`1px solid ${C.accent}40`}}/> Today</div>
+        {zones.map(z=><div key={z} style={{display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:600,color:ZONE_COLORS[z]}}><div style={{width:12,height:12,borderRadius:3,background:ZONE_COLORS[z]}}/> Zone {z}</div>)}
+        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:600,color:"#1565c0"}}><div style={{width:12,height:12,borderRadius:3,background:"#e3f2fd",border:"1px solid #1565c040"}}/> @Home</div>
+        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:600,color:"#f9a825"}}><div style={{width:12,height:12,borderRadius:3,background:"#fffde7",border:"1px solid #f9a82540"}}/> Pet Taxi</div>
+        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:C.text3}}><div style={{width:12,height:12,borderRadius:3,background:"#f0f0f0",border:`1px solid ${C.border}`}}/> Free</div>
+        <div style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:C.accent}}><div style={{width:12,height:12,borderRadius:3,background:C.accentBg,border:`1px solid ${C.accent}40`}}/> Today</div>
       </div>
 
       {/* Timeline table — horizontal scroll, sticky room column */}
       {/* Sticky date header — synced with tlRef scroll */}
       <div ref={stickyHdrRef} style={{overflowX:"hidden",position:"sticky",top:54,zIndex:30,background:C.white,borderRadius:"14px 14px 0 0",border:`1px solid ${C.borderLight}`,borderBottom:"none",boxShadow:"0 2px 6px rgba(0,0,0,0.06)"}}>
-        <div style={{display:"flex",minWidth:68+daysShow*54}}>
+        <div style={{display:"flex",minWidth:68+daysShow*68}}>
           <div style={{width:68,flexShrink:0,padding:"8px 8px",fontSize:10,fontWeight:700,color:C.text3,background:C.bg,borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:20}}>ROOM</div>
           {dateArr.map(d=>{
             const x=new Date(d+"T12:00:00");
             const isToday=d===todayStr;
             const isSun=x.getDay()===0; const isSat=x.getDay()===6;
             const isMonth1=x.getDate()===1;
-            return(<div key={d} style={{width:54,flexShrink:0,textAlign:"center",padding:"5px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
+            return(<div key={d} style={{width:68,flexShrink:0,textAlign:"center",padding:"5px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
               <div style={{fontSize:10,fontWeight:700,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
               <div style={{fontSize:15,fontWeight:isToday?800:700,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
               <div style={{fontSize:9,color:isMonth1?C.text2:C.text3,fontWeight:isMonth1?700:500}}>{MONTHS[x.getMonth()]}</div>
@@ -1186,7 +1186,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
         </div>
       </div>
       <div ref={tlRef} style={{overflowX:"auto",borderRadius:"0 0 14px 14px",border:`1px solid ${C.borderLight}`,borderTop:"none",background:C.white,boxShadow:C.shadow,WebkitOverflowScrolling:"touch"}}>
-        <div style={{minWidth:68+daysShow*54}}>
+        <div style={{minWidth:68+daysShow*68}}>
 
           {/* Zone + Room rows */}
           {zones.map(zone=>{
@@ -1195,7 +1195,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               {/* Zone label row */}
               <div style={{display:"flex",background:ZONE_BG[zone],borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"5px 8px",fontSize:10,fontWeight:800,color:ZONE_COLORS[zone],borderRight:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:5,background:ZONE_BG[zone]}}>ZONE {zone}</div>
-                {dateArr.map(d=><div key={d} style={{width:54,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:ZONE_BG[zone]}}/>)}
+                {dateArr.map(d=><div key={d} style={{width:68,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:ZONE_BG[zone]}}/>)}
               </div>
 
               {/* Each room row */}
@@ -1203,7 +1203,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 <div key={room.id} style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
                   {/* Sticky room label */}
                   <div style={{width:68,flexShrink:0,padding:"6px 8px",borderRight:`1px solid ${C.border}`,background:ri%2===0?C.white:"#fdfcfc",display:"flex",flexDirection:"column",justifyContent:"center",position:"sticky",left:0,zIndex:5}}>
-                    <div style={{fontSize:11,fontWeight:800,color:getRoomColor(room.id)}}>{room.label}</div>
+                    <div style={{fontSize:13,fontWeight:800,color:getRoomColor(room.id)}}>{room.label}</div>
                     <div style={{fontSize:9,color:C.text3}}>{room.type}</div>
                   </div>
 
@@ -1232,7 +1232,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                         bk.notes?`📝 ${bk.notes}`:"",
                       ].filter(Boolean).join(" · ");
                       return(<div key={d} style={{
-                        width:54,flexShrink:0,height:38,
+                        width:68,flexShrink:0,height:38,
                         background:isHome?"#f3e5f5":getRoomColor(room.id)+"25",
                         borderRight:isEnd?`3px solid ${isHome?"#7b1fa2":getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":`1px solid ${getRoomColor(room.id)+"30"}`),
                         borderLeft:isStart?`3px solid ${isHome?"#7b1fa2":getRoomColor(room.id)}`:(isMonth1?"2px solid #bbb":"none"),
@@ -1244,18 +1244,18 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                         {(isStart||di===0)&&(
                           <div style={{
                             display:"flex",flexDirection:"column",alignItems:"flex-start",
-                            padding:"0 4px",overflow:"hidden",maxWidth:40,
+                            padding:"0 6px",overflow:"hidden",maxWidth:58,
                           }}>
                             {nickname&&<div style={{
-                              fontSize:10,fontWeight:800,color:isHome?"#7b1fa2":getRoomColor(room.id),
+                              fontSize:12,fontWeight:800,color:isHome?"#7b1fa2":getRoomColor(room.id),
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                              maxWidth:38,lineHeight:1.3,
+                              maxWidth:56,lineHeight:1.3,
                             }}>{nickname}{extras?` ${extras}`:""}</div>}
                             <div style={{
-                              fontSize:9,fontWeight:600,
+                              fontSize:11,fontWeight:600,
                               color:isHome?"#9c27b0aa":getRoomColor(room.id)+"cc",
                               whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                              maxWidth:38,lineHeight:1.3,
+                              maxWidth:56,lineHeight:1.3,
                             }}>{allCatNames}</div>
                           </div>
                         )}
@@ -1263,7 +1263,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       </div>);
                     }
                     return(<div key={d} style={{
-                      width:54,flexShrink:0,height:38,
+                      width:68,flexShrink:0,height:38,
                       background:isToday?"#fff5f8":isWeekend?"#fafafa":C.white,
                       borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
                       borderLeft:isMonth1?"2px solid #bbb":"none",
@@ -1293,12 +1293,12 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               {/* Special zone label row */}
               <div style={{display:"flex",background:vr.bg,borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"5px 8px",fontSize:10,fontWeight:800,color:vr.color,borderRight:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:5,background:vr.bg}}>{vr.label.toUpperCase()}</div>
-                {dateArr.map(d=><div key={d} style={{width:54,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:vr.bg}}/>)}
+                {dateArr.map(d=><div key={d} style={{width:68,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:vr.bg}}/>)}
               </div>
               {/* Single row */}
               <div style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"6px 8px",borderRight:`1px solid ${C.border}`,background:C.white,display:"flex",flexDirection:"column",justifyContent:"center",position:"sticky",left:0,zIndex:5}}>
-                  <div style={{fontSize:11,fontWeight:800,color:vr.color}}>{vr.label}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:vr.color}}>{vr.label}</div>
                   <div style={{fontSize:9,color:C.text3}}>{vr.type==="H"?"@Home":"Taxi"}</div>
                 </div>
                 {dateArr.map((d,di)=>{
@@ -1316,7 +1316,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`
                       :`${nickname}: ${allCatNames} · 🚕 ฿${fmt2(bk.petTaxiAmt)}`;
                     return(<div key={d} style={{
-                      width:54,flexShrink:0,height:vr.type==="taxi"?52:38,
+                      width:68,flexShrink:0,height:vr.type==="taxi"?52:38,
                       background:vr.bg,
                       borderRight:isEnd?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":`1px solid ${vr.color+"30"}`),
                       borderLeft:isStart?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":"none"),
@@ -1324,16 +1324,16 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                       borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
                     }} onClick={()=>setDetailBooking(bk)} title={tip}>
                       {(isStart||di===0)&&(
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",padding:"0 4px",overflow:"hidden",maxWidth:50}}>
-                          {nickname&&<div style={{fontSize:10,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:48,lineHeight:1.3}}>{nickname}</div>}
-                          <div style={{fontSize:9,fontWeight:600,color:vr.color+"cc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:48,lineHeight:1.3}}>{allCatNames}</div>
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",padding:"0 6px",overflow:"hidden",maxWidth:58}}>
+                          {nickname&&<div style={{fontSize:12,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:56,lineHeight:1.3}}>{nickname}</div>}
+                          <div style={{fontSize:11,fontWeight:600,color:vr.color+"cc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:56,lineHeight:1.3}}>{allCatNames}</div>
                         </div>
                       )}
                       {isToday&&!isStart&&di!==0&&<div style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:C.accent}}/>}
                     </div>);
                   }
                   return(<div key={d} style={{
-                    width:54,flexShrink:0,height:38,
+                    width:68,flexShrink:0,height:38,
                     background:isToday?"#fffde7":C.white,
                     borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
                     borderLeft:isMonth1?"2px solid #bbb":"none",
@@ -1363,13 +1363,13 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
               const isHome=b?.size==="H";
               const hasTaxi=b?.petTaxiAmt>0;
               return(<div key={room.id} style={{borderRadius:10,padding:"8px 10px",background:b?(isHome?"#f3e5f5":getRoomColor(room.id)+"18"):C.bg,border:`1px solid ${b?(isHome?"#9c27b040":getRoomColor(room.id)+"40"):C.border}`,textAlign:"center",cursor:b?"pointer":"default"}} onClick={()=>b&&setDetailBooking(b)}>
-                <div style={{fontSize:12,fontWeight:800,color:b?(isHome?"#7b1fa2":getRoomColor(room.id)):C.text2}}>{room.label}</div>
+                <div style={{fontSize:14,fontWeight:800,color:b?(isHome?"#7b1fa2":getRoomColor(room.id)):C.text2}}>{room.label}</div>
                 {b?(
                   <>
-                    {nickname&&<div style={{fontSize:10,marginTop:2,color:isHome?"#7b1fa2":getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}{isHome?" 🏡":""}{hasTaxi?" Taxi":""}</div>}
-                    <div style={{fontSize:9,color:(isHome?"#9c27b0":getRoomColor(room.id))+"aa",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{allCatNames||"Occupied"}</div>
+                    {nickname&&<div style={{fontSize:12,marginTop:2,color:isHome?"#7b1fa2":getRoomColor(room.id),fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nickname}{isHome?" 🏡":""}{hasTaxi?" Taxi":""}</div>}
+                    <div style={{fontSize:12,color:(isHome?"#9c27b0":getRoomColor(room.id))+"aa",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{allCatNames||"Occupied"}</div>
                   </>
-                ):<div style={{fontSize:10,marginTop:2,color:C.text3,fontWeight:600}}>Free</div>}
+                ):<div style={{fontSize:12,marginTop:2,color:C.text3,fontWeight:600}}>Free</div>}
               </div>);
             })}
           </div>
@@ -1408,11 +1408,14 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
                   <div style={{background:room?getRoomColor(room.id)+"18":C.accentBg,borderRadius:12,padding:"10px 14px",textAlign:"center",flexShrink:0}}>
                     <div style={{fontSize:16,fontWeight:800,color:room?getRoomColor(room.id):C.accent}}>{b.roomId||b.size}</div>
-                    <div style={{fontSize:10,color:C.text3,marginTop:2}}>{b.size} room</div>
+                    <div style={{fontSize:12,color:C.text,marginTop:2}}>{b.size} room</div>
                   </div>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:16,fontWeight:800}}>{cust.nickname||"?"} <span style={{fontSize:14,fontWeight:600,color:C.text2}}>({catNames})</span></div>
-                    <div style={{fontSize:12,color:C.text3}}>{fmt(b.checkin)} → {fmt(b.checkout)} · {n} night{n>1?"s":""}</div>
+                    <div style={{fontSize:16,fontWeight:800}}>{cust.nickname||"?"} <span style={{fontSize:16,fontWeight:600,color:C.text}}>({catNames})</span></div>
+                    <div style={{fontSize:14,color:C.text}}>
+                      <div>{fmt(b.checkin)} → {fmt(b.checkout)}</div>
+                      <div>{n} night{n>1?"s":""}</div>
+                    </div>
                   </div>
                   <div style={{fontSize:18,fontWeight:800,color:C.accent}}>฿{(b.net||0).toLocaleString()}</div>
                 </div>
@@ -1426,17 +1429,17 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 {/* Customer notes */}
                 {cust.notes&&(
                   <div style={{background:"#fffbf0",borderRadius:10,padding:"8px 12px",marginBottom:10,border:"1px solid #ffd70040"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Notes</div>
-                    <NotesText text={cust.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
+                    <div style={{fontSize:13,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Notes</div>
+                    <NotesText text={cust.notes} style={{fontSize:14,color:C.text2,lineHeight:1.5}}/>
                   </div>
                 )}
                 <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-                  <span style={S.chip(b.paid?C.green:C.orange)}>{b.paid?"✓ Paid":"Unpaid"}</span>
-                  <span style={S.chip(C.blue)}>{b.payMethod}</span>
-                  {b.discount>0&&<span style={S.chip(C.red)}>-{b.discount}%</span>}
-                  {b.size==="H"&&<span style={S.chip("#7b1fa2")}>@Home</span>}
-                  {b.litter&&<span style={S.chip(C.blue)}>🪣 ทราย</span>}
-                  {b.petTaxiAmt>0&&<span style={S.chip("#7b1fa2")}>🚕{b.petTaxiDay==="checkout"?" ส่ง":b.petTaxiDay==="both"?" รับ+ส่ง":" รับ"} ฿{fmt2(b.petTaxiAmt)}</span>}
+                  <span style={{...S.chip(b.paid?C.green:C.orange),fontSize:13,padding:"5px 11px"}}>{b.paid?"✓ Paid":"Unpaid"}</span>
+                  <span style={{...S.chip(C.blue),fontSize:13,padding:"5px 11px"}}>{b.payMethod}</span>
+                  {b.discount>0&&<span style={{...S.chip(C.red),fontSize:13,padding:"5px 11px"}}>-{b.discount}%</span>}
+                  {b.size==="H"&&<span style={{...S.chip("#7b1fa2"),fontSize:13,padding:"5px 11px"}}>@Home</span>}
+                  {b.litter&&<span style={{...S.chip(C.blue),fontSize:13,padding:"5px 11px"}}>🪣 ทราย</span>}
+                  {b.petTaxiAmt>0&&<span style={{...S.chip("#7b1fa2"),fontSize:13,padding:"5px 11px"}}>🚕{b.petTaxiDay==="checkout"?" ส่ง":b.petTaxiDay==="both"?" รับ+ส่ง":" รับ"} ฿{fmt2(b.petTaxiAmt)}</span>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:4}}>
                   <button style={{padding:"12px 6px",background:C.accent,color:"#fff",border:"none",borderRadius:12,fontFamily:"inherit",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}} onClick={()=>{setEditBooking(b);setDetailBooking(null);}}>
@@ -1656,8 +1659,8 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
                   <div style={{background:"#fff8f0",borderRadius:8,padding:"8px 10px",marginTop:6,border:"1px solid #ff950030"}}>
                     {ccFee>0&&(
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                        <span style={{fontSize:11,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
+                        <span style={{fontSize:13,color:"#e65100"}}>💳 {lang==="th"?`ค่าธรรมเนียม Credit Card (${CREDIT_CARD_FEE_PCT}%)`:`Credit Card Fee (${CREDIT_CARD_FEE_PCT}%)`}</span>
+                        <span style={{fontSize:13,fontWeight:700,color:"#e65100"}}>-฿{fmt2(ccFee)}</span>
                       </div>
                     )}
                     {taxi>0&&(
@@ -1940,7 +1943,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* Size */}
         <div style={S.fg}><div style={S.lbl}>Room Type</div>
           {isLegacySize&&(
-            <div style={{marginBottom:8,padding:"10px 12px",background:"#fff8f0",border:`1px solid ${C.orange}30`,borderRadius:10,fontSize:12,color:C.text2}}>
+              <div style={{marginBottom:8,padding:"10px 12px",background:"#fff8f0",border:`1px solid ${C.orange}30`,borderRadius:10,fontSize:14,color:C.text2}}>
               Booking นี้ใช้ห้องไซส์ <b>L</b> แบบย้อนหลัง ระบบยังเก็บและคำนวณราคาให้ได้ แต่จะไม่เปิดห้อง L เป็นตัวเลือกใหม่ในระบบปัจจุบัน
             </div>
           )}
@@ -1972,7 +1975,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {selectedRooms.length>0&&<span style={S.chip(C.accent)}>{selectedRooms.length} ห้อง</span>}
           </div>
           {isLegacySize?(
-            <div style={{padding:"12px 14px",background:"#fff8f0",borderRadius:10,fontSize:13,fontWeight:600,color:C.orange,border:`1px solid ${C.orange}20`}}>
+            <div style={{padding:"12px 14px",background:"#fff8f0",borderRadius:10,fontSize:15,fontWeight:600,color:C.orange,border:`1px solid ${C.orange}20`}}>
               📚 ข้อมูลย้อนหลังไซส์ L จะถูกบันทึกตามราคาเดิม โดยไม่ผูกกับรายการห้องปัจจุบัน
             </div>
           ):form.checkin&&form.checkout&&form.checkin<=form.checkout?(
@@ -2183,7 +2186,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                     </div>
                   </div>
                 ):(
-                  <div style={{background:"#fff3cd",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:12,color:"#856404"}}>
+                  <div style={{background:"#fff3cd",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:14,color:"#856404"}}>
                     ⚠️ เลือกวันพักและแมวก่อน เพื่อดูราคาแนะนำ
                   </div>
                 )}
@@ -2284,7 +2287,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         <div style={{...S.fg,padding:"14px",background:"#fffbf0",borderRadius:12,border:`1px solid ${depositAmt>0?C.orange+"60":"#ffd70050"}`,marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
             <span style={{fontSize:16}}>💰</span>
-            <div style={{fontSize:14,fontWeight:700,color:C.orange}}>มัดจำ (Deposit)</div>
+            <div style={{fontSize:16,fontWeight:700,color:C.orange}}>มัดจำ (Deposit)</div>
             {depositAmt>0&&net>0&&<span style={{...S.chip(C.orange),marginLeft:"auto"}}>จ่ายไปแล้ว {Math.round(depositAmt/net*100)}%</span>}
           </div>
           <input type="number" inputMode="numeric" pattern="[0-9]*" style={{...S.inp,borderColor:depositAmt>0?C.orange+"80":C.border}} min="0" placeholder="0" value={form.deposit||""} onChange={e=>set("deposit",e.target.value)}/>
@@ -2299,7 +2302,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 ))}
               </div>
               {form.depositPayMethod==="Credit Card"&&(
-                <div style={{marginTop:6,padding:"6px 10px",background:"#fff3e0",borderRadius:8,border:"1px solid "+C.orange+"50",fontSize:11,color:C.orange,fontWeight:600}}>
+                <div style={{marginTop:6,padding:"6px 10px",background:"#fff3e0",borderRadius:8,border:"1px solid "+C.orange+"50",fontSize:13,color:C.orange,fontWeight:600}}>
                   ค่าธรรมเนียม Credit 1.07% = ฿{fmt2(depositCcFee)} → รับจริง ฿{fmt2(depositAmt-depositCcFee)}
                 </div>
               )}
@@ -2329,8 +2332,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
         {/* Customer Notes — read-only, pulled from customer profile */}
         {cust?.notes&&(
           <div style={{...S.fg,padding:"12px 14px",background:"#fffbf0",borderRadius:12,border:"1px solid #ffd70040",marginBottom:6}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.orange,marginBottom:4}}>📝 Customer Notes (จากข้อมูลลูกค้า)</div>
-            <div style={{fontSize:13,color:C.text2,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{cust.notes}</div>
+            <div style={{fontSize:13,fontWeight:700,color:C.orange,marginBottom:4}}>📝 Customer Notes (จากข้อมูลลูกค้า)</div>
+            <div style={{fontSize:15,color:C.text2,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{cust.notes}</div>
           </div>
         )}
         {/* Booking Notes */}
@@ -2421,8 +2424,8 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {/* มัดจำ */}
             {depositAmt>0&&(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 12px",background:"#fffbf0",borderRadius:8,border:"1px solid #ffd70040",marginBottom:6}}>
-                <span style={{fontSize:13,color:C.orange,fontWeight:600}}>💰 มัดจำชำระแล้ว</span>
-                <span style={{fontSize:13,fontWeight:700,color:C.orange}}>-฿{fmt2(depositAmt)}</span>
+                <span style={{fontSize:15,color:C.orange,fontWeight:600}}>💰 มัดจำชำระแล้ว</span>
+                <span style={{fontSize:15,fontWeight:700,color:C.orange}}>-฿{fmt2(depositAmt)}</span>
               </div>
             )}
 
@@ -2442,7 +2445,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {/* ── CC fee + Pet Taxi section (internal) ── */}
             {(depositCcFee>0||ccFeeAmt>0||petTaxiAmt>0)&&(
               <div style={{marginTop:10,padding:"10px 12px",background:"#fff8f0",borderRadius:8,border:"1px solid #ff950030"}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:8}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
+                <div style={{fontSize:12,fontWeight:700,color:C.text3,letterSpacing:"0.05em",marginBottom:8}}>รายได้ที่ร้านได้รับจริง (ภายใน)</div>
                 {depositCcFee>0&&(
                   <div style={{marginBottom:ccFeeAmt>0?8:0,paddingBottom:ccFeeAmt>0?8:0,borderBottom:ccFeeAmt>0?`1px dashed ${C.border}`:"none"}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
@@ -3298,9 +3301,9 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 </div>
               )}
               {cust?.notes&&!selectMode&&(
-                <div style={{background:"#fffbf0",borderRadius:8,padding:"6px 10px",marginBottom:8,border:"1px solid #ffd70040"}}>
-                  <div style={{fontSize:10,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Notes</div>
-                  <NotesText text={cust.notes} style={{fontSize:12,color:C.text2,lineHeight:1.5}}/>
+                  <div style={{background:"#fffbf0",borderRadius:8,padding:"6px 10px",marginBottom:8,border:"1px solid #ffd70040"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:C.orange,marginBottom:2}}>📝 Customer Notes</div>
+                    <NotesText text={cust.notes} style={{fontSize:14,color:C.text2,lineHeight:1.5}}/>
                 </div>
               )}
               <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:selectMode?0:10}}>
@@ -4539,7 +4542,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           <div>2. <b>Customers only</b> — ข้อมูลลูกค้าและแมว</div>
           <div>3. <b>Bookings only</b> — ข้อมูลการจองอย่างเดียว</div>
         </div>
-        <div style={{background:"#fff8f0",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:C.text2,lineHeight:1.7,border:`1px solid ${C.orange}20`}}>
+        <div style={{background:"#fff8f0",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:14,color:C.text2,lineHeight:1.7,border:`1px solid ${C.orange}20`}}>
           <div style={{fontWeight:800,color:C.orange,marginBottom:4}}>🕰 ข้อมูลย้อนหลังที่ระบบรองรับแล้ว</div>
           <div>ไฟล์เก่าสามารถใส่ <b>Room Size = L</b> ได้ ระบบจะ import เป็นข้อมูลย้อนหลังโดยไม่เปิดตัวเลือกห้อง L สำหรับ booking ใหม่</div>
           <div>ราคาห้องจะอิงตาม <b>Check-in date</b> อัตโนมัติ ไม่ต้องกรอกราคาเองในไฟล์</div>
@@ -4943,7 +4946,7 @@ const onDeleteCustomer=useCallback(async id=>{
             <img src={n.icon} style={{width:26,height:26,objectFit:"contain",opacity:page===n.id?1:0.4}} alt={n.label}/>
             {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
           </div>
-          <div style={{fontSize:10,fontWeight:page===n.id?800:600,letterSpacing:"0.01em"}}>{n.label}</div>
+          <div style={{fontSize:12,fontWeight:page===n.id?800:600,letterSpacing:"0.01em",color:page===n.id?C.text:C.text3}}>{n.label}</div>
         </a>
       ))}
     </div>
