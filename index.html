@@ -1347,7 +1347,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                   }
                   return(<div key={d} style={{
                     width:68,flexShrink:0,height:rowH,
-                    background:isToday?"#fffde7":C.white,
+                    background:vr.bg,
                     borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
                     borderLeft:isMonth1?"2px solid #bbb":"none",
                   }}/>);
@@ -4786,7 +4786,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 11 Jun 2026 · 14:44 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 11 Jun 2026 · 14:45 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
