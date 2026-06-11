@@ -1337,7 +1337,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                           cursor:"pointer",overflow:"hidden",
                           display:"flex",flexDirection:"column",justifyContent:"center",padding:"1px 3px",
                         }} onClick={()=>setDetailBooking(bk)}>
-                          {(isStart||di===0)&&<>
+                          {(vr.type==="taxi"||isStart||di===0)&&<>
                             {nickname&&<div style={{fontSize:11,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.2}}>{nickname}</div>}
                             <div style={{fontSize:10,fontWeight:600,color:vr.color+"bb",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",lineHeight:1.2}}>{allCatNames}</div>
                           </>}
@@ -4786,7 +4786,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 11 Jun 2026 · 14:42 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 11 Jun 2026 · 14:44 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
