@@ -1280,67 +1280,82 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
             {vr:VIRTUAL_ROWS[1], getBookings:()=>bookings.filter(b=>b.petTaxiAmt>0&&b.checkin&&b.checkout)},
           ].map(({vr,getBookings})=>{
             const vrBookings=getBookings();
-            const getVRBookingForDate=(dateStr)=>{
-              if(vr.type!=="taxi") return vrBookings.find(b=>b.checkin<=dateStr&&b.checkout>=dateStr);
-              // Pet Taxi: show only on selected day(s)
-              return vrBookings.find(b=>{
-                const day=b.petTaxiDay||"checkin";
-                if(day==="both") return dateStr===b.checkin||dateStr===b.checkout;
-                if(day==="checkout") return dateStr===b.checkout;
-                return dateStr===b.checkin; // default: checkin
-              });
+            // Two bookings conflict if they share any visible date
+            const booksConflict=(b1,b2)=>{
+              if(vr.type!=="taxi") return b1.checkin<=b2.checkout&&b2.checkin<=b1.checkout;
+              const days=b=>{const d=b.petTaxiDay||"checkin";return d==="both"?[b.checkin,b.checkout]:d==="checkout"?[b.checkout]:[b.checkin];};
+              const s=new Set(days(b1));
+              return days(b2).some(d=>s.has(d));
             };
+            // Greedy lane assignment: each booking gets the smallest lane with no conflict
+            const laneOf=[];
+            vrBookings.forEach((b,i)=>{
+              let lane=0;
+              while(vrBookings.slice(0,i).some((b2,j)=>laneOf[j]===lane&&booksConflict(b,b2))) lane++;
+              laneOf[i]=lane;
+            });
+            const numLanes=Math.max(1,laneOf.length>0?Math.max(...laneOf)+1:1);
+            // Return the booking in `lane` that is visible on date d
+            const getLaneBkForDate=(d,lane)=>vrBookings.find((b,i)=>{
+              if(laneOf[i]!==lane) return false;
+              if(vr.type!=="taxi") return d>=b.checkin&&d<=b.checkout;
+              const day=b.petTaxiDay||"checkin";
+              if(day==="both") return d===b.checkin||d===b.checkout;
+              if(day==="checkout") return d===b.checkout;
+              return d===b.checkin;
+            })||null;
             return(<div key={vr.id}>
-              {/* Special zone label row */}
+              {/* Zone label row */}
               <div style={{display:"flex",background:vr.bg,borderBottom:`1px solid ${C.borderLight}`}}>
                 <div style={{width:68,flexShrink:0,padding:"5px 8px",fontSize:10,fontWeight:800,color:vr.color,borderRight:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:5,background:vr.bg}}>{vr.label.toUpperCase()}</div>
                 {dateArr.map(d=><div key={d} style={{width:68,flexShrink:0,height:20,borderRight:`1px solid ${C.borderLight}`,background:vr.bg}}/>)}
               </div>
-              {/* Single row */}
-              <div style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
-                <div style={{width:68,flexShrink:0,padding:"6px 8px",borderRight:`1px solid ${C.border}`,background:C.white,display:"flex",flexDirection:"column",justifyContent:"center",position:"sticky",left:0,zIndex:5}}>
-                  <div style={{fontSize:13,fontWeight:800,color:vr.color}}>{vr.label}</div>
-                  <div style={{fontSize:9,color:C.text3}}>{vr.type==="H"?"@Home":"Taxi"}</div>
-                </div>
-                {dateArr.map((d,di)=>{
-                  const bk=getVRBookingForDate(d);
-                  const isToday=d===todayStr;
-                  const isStart=bk&&bk.checkin===d;
-                  const isEnd=bk&&bk.checkout===d;
-                  const isMonth1=new Date(d+"T12:00:00").getDate()===1;
-                  if(bk){
-                    const cust=customers.find(c=>c.id===bk.customerId);
-                    const cats=(cust?.cats||[]).filter(c=>(bk.selectedCatIds||[]).includes(c.id));
-                    const allCatNames=cats.map(c=>c.name).join(", ")||bk.catName||"Cat";
-                    const nickname=cust?.nickname||"";
-                    const tip=vr.type==="H"
-                      ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`
-                      :`${nickname}: ${allCatNames} · 🚕 ฿${fmt2(bk.petTaxiAmt)}`;
+              {/* One sub-row per concurrent lane */}
+              {Array.from({length:numLanes},(_,lane)=>(
+                <div key={lane} style={{display:"flex",borderBottom:`1px solid ${C.borderLight}`}}>
+                  <div style={{width:68,flexShrink:0,padding:"6px 8px",borderRight:`1px solid ${C.border}`,background:C.white,display:"flex",flexDirection:"column",justifyContent:"center",position:"sticky",left:0,zIndex:5}}>
+                    {lane===0&&<><div style={{fontSize:13,fontWeight:800,color:vr.color}}>{vr.label}</div><div style={{fontSize:9,color:C.text3}}>{vr.type==="H"?"@Home":"Taxi"}</div></>}
+                  </div>
+                  {dateArr.map((d,di)=>{
+                    const bk=getLaneBkForDate(d,lane);
+                    const isToday=d===todayStr;
+                    const isStart=bk&&bk.checkin===d;
+                    const isEnd=bk&&bk.checkout===d;
+                    const isMonth1=new Date(d+"T12:00:00").getDate()===1;
+                    if(bk){
+                      const cust=customers.find(c=>c.id===bk.customerId);
+                      const cats=(cust?.cats||[]).filter(c=>(bk.selectedCatIds||[]).includes(c.id));
+                      const allCatNames=cats.map(c=>c.name).join(", ")||bk.catName||"Cat";
+                      const nickname=cust?.nickname||"";
+                      const tip=vr.type==="H"
+                        ?`${nickname}: ${allCatNames} · @Home ฿${bk.homePriceTotal||bk.homePricePerNight||"??"} รวม`
+                        :`${nickname}: ${allCatNames} · 🚕 ฿${fmt2(bk.petTaxiAmt)}`;
+                      return(<div key={d} style={{
+                        width:68,flexShrink:0,height:vr.type==="taxi"?52:38,
+                        background:vr.bg,
+                        borderRight:isEnd?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":`1px solid ${vr.color+"30"}`),
+                        borderLeft:isStart?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":"none"),
+                        cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
+                        borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
+                      }} onClick={()=>setDetailBooking(bk)} title={tip}>
+                        {(isStart||di===0)&&(
+                          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",padding:"0 6px",overflow:"hidden",maxWidth:58}}>
+                            {nickname&&<div style={{fontSize:12,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:56,lineHeight:1.3}}>{nickname}</div>}
+                            <div style={{fontSize:11,fontWeight:600,color:vr.color+"cc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:56,lineHeight:1.3}}>{allCatNames}</div>
+                          </div>
+                        )}
+                        {isToday&&!isStart&&di!==0&&<div style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:C.accent}}/>}
+                      </div>);
+                    }
                     return(<div key={d} style={{
-                      width:68,flexShrink:0,height:vr.type==="taxi"?52:38,
-                      background:vr.bg,
-                      borderRight:isEnd?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":`1px solid ${vr.color+"30"}`),
-                      borderLeft:isStart?`3px solid ${vr.color}`:(isMonth1?"2px solid #bbb":"none"),
-                      cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
-                      borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":"0",
-                    }} onClick={()=>setDetailBooking(bk)} title={tip}>
-                      {(isStart||di===0)&&(
-                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start",padding:"0 6px",overflow:"hidden",maxWidth:58}}>
-                          {nickname&&<div style={{fontSize:12,fontWeight:800,color:vr.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:56,lineHeight:1.3}}>{nickname}</div>}
-                          <div style={{fontSize:11,fontWeight:600,color:vr.color+"cc",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:56,lineHeight:1.3}}>{allCatNames}</div>
-                        </div>
-                      )}
-                      {isToday&&!isStart&&di!==0&&<div style={{position:"absolute",top:2,right:2,width:4,height:4,borderRadius:"50%",background:C.accent}}/>}
-                    </div>);
-                  }
-                  return(<div key={d} style={{
-                    width:68,flexShrink:0,height:38,
-                    background:isToday?"#fffde7":C.white,
-                    borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
-                    borderLeft:isMonth1?"2px solid #bbb":"none",
-                  }}/>);
-                })}
-              </div>
+                      width:68,flexShrink:0,height:38,
+                      background:isToday?"#fffde7":C.white,
+                      borderRight:`1px solid ${isMonth1?"#bbb":C.borderLight}`,
+                      borderLeft:isMonth1?"2px solid #bbb":"none",
+                    }}/>);
+                  })}
+                </div>
+              ))}
             </div>);
           })}
         </div>
@@ -4774,7 +4789,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 20 Apr 2026 · 10:03 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 11 Jun 2026 · 14:22 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
