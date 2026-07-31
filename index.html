@@ -1799,7 +1799,9 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
       const r=ROOMS.find(x=>x.id===rid);
       const sz=r?.type||er.size||"S";
       const ppn=getPriceForDate(er.checkin||pricingDate,sz)||0;
-      return sum+n2*ppn;
+      const roomCats=getCatsForRoom(rid);
+      const extraCats=Math.max(0,roomCats-1);
+      return sum+n2*(ppn+extraCats*EXTRA_CAT_FEE);
     },0);
   };
   const totalExtraRoomsBase=extraRooms.reduce((sum,er)=>sum+(calcExtraRoomBase(er)||0),0)||0;
@@ -2408,12 +2410,13 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {extraRooms.map((er,idx)=>{
               const n2=getExtraNights(er);
               const erBase=calcExtraRoomBase(er);
+              const erExtraInfo=(er.roomIds||[]).map(rid=>{const rc=getCatsForRoom(rid);const ec=Math.max(0,rc-1);return ec>0?` +${ec}แมว(+฿${ec*EXTRA_CAT_FEE}/คืน)`:""}).join("");
               return (er.roomIds||[]).length>0&&n2>0?(
                 <div key={er.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
                     <span style={{fontSize:11,color:C.purple,fontWeight:700,marginRight:6}}>🔄</span>
                     <span style={{fontSize:13,fontWeight:700,color:C.purple}}>{er.roomIds.join(", ")}</span>
-                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n2}คืน · {fmt(er.checkin)}–{fmt(er.checkout)}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n2}คืน · {fmt(er.checkin)}–{fmt(er.checkout)}{erExtraInfo}</span>
                   </div>
                   <span style={{fontSize:13,fontWeight:700,color:C.purple}}>฿{fmt2(erBase)}</span>
                 </div>
