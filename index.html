@@ -1792,6 +1792,16 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   // ── Extra Rooms helpers (must be before totalRoomBase) ──
   const extraRooms=form.extraRooms||[];
   const getExtraNights=(er)=>er.checkin&&er.checkout&&er.checkin<=er.checkout?nights(er.checkin,er.checkout):0;
+  // Returns cat count for a room in an extra-room period.
+  // Uses er.catPerRoom (stored on the extra room itself, NOT form.catPerRoom)
+  // so stale values from when the room was a main room never interfere.
+  const getExtraCatsForRoom=(er,rid)=>{
+    const stored=parseInt((er.catPerRoom||{})[rid]);
+    if(Number.isFinite(stored)&&stored>0) return stored;
+    // Default: all cats move to this room if it's the only one in the period
+    if((er.roomIds||[]).length===1) return Math.max(1,numCats);
+    return 1;
+  };
   const calcExtraRoomBase=(er)=>{
     const n2=getExtraNights(er);
     if(!n2) return 0;
@@ -1799,7 +1809,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
       const r=ROOMS.find(x=>x.id===rid);
       const sz=r?.type||er.size||"S";
       const ppn=getPriceForDate(er.checkin||pricingDate,sz)||0;
-      const roomCats=getCatsForRoom(rid);
+      const roomCats=getExtraCatsForRoom(er,rid);
       const extraCats=Math.max(0,roomCats-1);
       return sum+n2*(ppn+extraCats*EXTRA_CAT_FEE);
     },0);
@@ -2161,14 +2171,14 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                             const r=ROOMS.find(x=>x.id===rid);
                             const sz=r?.type||er.size||"S";
                             const maxCats=sz==="M"?3:2;
-                            const cur=getCatsForRoom(rid);
+                            const cur=getExtraCatsForRoom(er,rid);
                             return(
                               <div key={rid} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderTop:`1px solid ${C.borderLight}`}}>
                                 <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
                                 <div style={{display:"flex",gap:4,alignItems:"center"}}>
                                   {Array.from({length:maxCats},(_,i)=>i+1).map(v=>(
                                     <button key={v} style={{width:32,height:32,borderRadius:8,border:`1px solid ${cur===v?getRoomColor(rid):C.border}`,background:cur===v?getRoomColor(rid):"transparent",color:cur===v?"#fff":C.text2,fontFamily:"inherit",fontSize:13,fontWeight:800,cursor:"pointer"}}
-                                      onClick={()=>set("catPerRoom",{...(form.catPerRoom||{}),[rid]:v})}>{v}</button>
+                                      onClick={()=>updateExtraRoom(er.id,{catPerRoom:{...(er.catPerRoom||{}),[rid]:v}})}>{v}</button>
                                   ))}
                                   <span style={{fontSize:11,color:C.text3,marginLeft:4}}>แมว</span>
                                 </div>
@@ -2410,7 +2420,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {extraRooms.map((er,idx)=>{
               const n2=getExtraNights(er);
               const erBase=calcExtraRoomBase(er);
-              const erExtraInfo=(er.roomIds||[]).map(rid=>{const rc=getCatsForRoom(rid);const ec=Math.max(0,rc-1);return ec>0?` +${ec}แมว(+฿${ec*EXTRA_CAT_FEE}/คืน)`:""}).join("");
+              const erExtraInfo=(er.roomIds||[]).map(rid=>{const rc=getExtraCatsForRoom(er,rid);const ec=Math.max(0,rc-1);return ec>0?` +${ec}แมว(+฿${ec*EXTRA_CAT_FEE}/คืน)`:""}).join("");
               return (er.roomIds||[]).length>0&&n2>0?(
                 <div key={er.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
