@@ -1,5 +1,5 @@
 # Catwalk Cat Hotel — CLAUDE.md
-<!-- Built: 11 Jun 2026 · 14:01 (ICT) -->
+<!-- Built: 31 Jul 2026 · 14:00 (ICT) -->
 
 ## What This Project Is
 
@@ -129,7 +129,7 @@ Additional fees stored separately on the booking:
 
 A booking can have a `extraRooms` array for guests who switch rooms during their stay.
 
-Each extraRoom entry: `{roomIds:[], checkin, checkout}`
+Each extraRoom entry: `{roomIds:[], checkin, checkout, catPerRoom:{roomId: count}}`
 
 - The top-level `b.checkout` is extended to the max checkout of all extraRooms (for Firestore date-range queries).
 - `getBookingEntryForRoomDate(roomId, dateStr)` correctly slices the timeline:
@@ -234,9 +234,33 @@ Editable in `SettingsPage`:
 - **No build step** — edit `index.html`, hard-refresh browser (`Cmd+Shift+R` / `Ctrl+Shift+R`).
 - All styling is inline React `style={{}}` objects using a shared `C` (colors) and `S` (style presets) object.
 - Bangkok timezone (ICT, UTC+7) used for all date operations and version stamps.
-- Version line in Settings (`~line 4732`) should be updated to Bangkok time whenever a new version is deployed.
 - Branch for active development: `claude/check-file-visibility-l5y9F` → merges to `main`.
 - Remote: `https://github.com/lengpro/catwalkhotel`
+
+---
+
+## Version Bump Rule
+
+**Update the version line on every commit that changes `index.html`** — bug fix, feature, or refactor.
+
+### Where
+
+```
+index.html → SettingsPage → "About" card (~line 4806)
+<div>v DD Mon YYYY · HH:MM (ICT)</div>
+```
+
+### Format
+
+```
+v 31 Jul 2026 · 14:00 (ICT)
+```
+
+Use Bangkok time (ICT = UTC+7). Day first, then 3-letter month abbreviation, then 4-digit year, then 24-hour time.
+
+### Rule
+
+Every time `index.html` is modified and committed, update this line **in the same commit**. Never leave the version behind — users see it in Settings to confirm which version is running.
 
 ---
 
@@ -252,4 +276,4 @@ Editable in `SettingsPage`:
 
 ---
 
-*Built: 11 Jun 2026 · 14:01 (ICT)*
+*Built: 31 Jul 2026 · 14:00 (ICT)*

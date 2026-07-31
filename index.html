@@ -74,7 +74,6 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-async function fbLoad(col){ try{ const s=await db.collection(col).orderBy("createdAt","asc").get(); return s.docs.map(d=>({id:d.id,...d.data()})); }catch(e){ console.error(e); return []; } }
 async function fbSave(col,id,data){
   const{id:_,...rest}=data;
   // Check estimated size — Firestore limit is 1MB per document
@@ -84,7 +83,7 @@ async function fbSave(col,id,data){
   }
   await db.collection(col).doc(id).set(rest);
 }
-async function fbDelete(col,id){ try{ await db.collection(col).doc(id).delete(); }catch(e){console.error(e);} }
+async function fbDelete(col,id){ await db.collection(col).doc(id).delete(); }
 </script>
 
 <script type="text/babel">
@@ -265,7 +264,18 @@ const calcPrice=(n,size,numCats,discount,litter,rateDate=today(),priceOverride=n
 };
 const trunc2=v=>typeof v==="number"?Math.trunc(v*100)/100:v;
 const fmt2=v=>typeof v==="number"?trunc2(v).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2}):v;
+const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
 const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:[],notes:""});
+
+// ── Shared utility functions ──────────────────────────────────────────
+function getCustomer(id,customers){ return customers.find(c=>c.id===id)||null; }
+function getBookingRooms(b){ return(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId]).filter(Boolean); }
+function applyCardFee(amount,payMethod){ return payMethod==="CreditCard"?parseFloat((amount*(1+CREDIT_CARD_FEE_PCT)).toFixed(2)):amount; }
+function resolveCatNames(b,customers){
+  const cust=customers.find(c=>c.id===b.customerId);
+  return(b.selectedCatIds||[]).map(id=>(cust?.cats||[]).find(cat=>cat.id===id)?.name).filter(Boolean).join(", ")||b.catName||"Cat";
+}
 
 // ── Room availability ─────────────────────────────────────────────────
 function getRoomBookings(roomId, bookings) {
@@ -615,7 +625,7 @@ function exportICS(b,customers){
 function openGCal(b,customers){ const c=customers.find(x=>x.id===b.customerId)||{}; const cats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id)); const names=cats.map(x=>x.name).join(", ")||b.catName||"Cat"; const n=nights(b.checkin,b.checkout); const title=encodeURIComponent(`🐱 ${names} – ${b.roomId||b.size} Cat Hotel`); const details=encodeURIComponent(`Owner: ${c.nickname||""}\nRoom: ${b.roomId||b.size}\nCats: ${names}\n${n} nights · ฿${(b.net||0).toLocaleString()}\nPayment: ${b.payMethod}${b.paid?" ✓":" (pending)"}`); window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${toICS(b.checkin)}/${toICS(b.checkout)}&details=${details}`,"_blank"); }
 
 // ── Design ────────────────────────────────────────────────────────────
-const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)"};
+const C={bg:"#faf9f7",white:"#fff",border:"#ebebeb",borderLight:"#f3f3f3",text:"#1c1c1e",text2:"#636366",text3:"#aeaeb2",accent:"#ff6b9d",accentBg:"#fff0f5",blue:"#0071e3",blueBg:"#f0f6ff",green:"#34c759",greenBg:"#f0fdf4",orange:"#ff9500",purple:"#af52de",red:"#ff3b30",shadow:"0 1px 4px rgba(0,0,0,0.06),0 0 1px rgba(0,0,0,0.04)",shadowMd:"0 4px 16px rgba(0,0,0,0.08)",homePurple:"#7b1fa2",taxiPurple:"#9c27b0",infoBg:"#eff6ff",warnAmber:"#856404"};
 const S={
   app:{fontFamily:"'Helvetica Neue',Helvetica,'Sukhumvit Set','SukhumvitSet-Text','Plus Jakarta Sans',-apple-system,sans-serif",background:C.bg,minHeight:"100vh",color:C.text,paddingTop:64},
   nav:{position:"fixed",top:0,left:0,right:0,background:"rgba(255,255,255,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${C.borderLight}`,display:"flex",zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"},
@@ -966,25 +976,47 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
     if(idx>=0){ const scrollTo=idx*44; tlRef.current.scrollLeft=Math.max(0,scrollTo-60); if(stickyHdrRef.current) stickyHdrRef.current.scrollLeft=tlRef.current.scrollLeft; }
   },[viewDate,dateArr]);
 
+  // Pre-filter virtual row bookings — avoids 2× full scan per render inside JSX
+  const homeVRBookings=useMemo(()=>bookings.filter(b=>b.size==="H"&&b.checkin&&b.checkout),[bookings]);
+  const taxiVRBookings=useMemo(()=>bookings.filter(b=>b.petTaxiAmt>0&&b.checkin&&b.checkout),[bookings]);
+
+  // Index: roomId → [bookings] — built once per bookings change, O(1) lookup per cell
+  const roomBookingIndex=useMemo(()=>{
+    const idx=new Map();
+    const add=(rid,b)=>{ if(!idx.has(rid)) idx.set(rid,[]); idx.get(rid).push(b); };
+    for(const b of bookings){
+      const rooms=(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId]).filter(Boolean);
+      rooms.forEach(rid=>add(rid,b));
+      (b.extraRooms||[]).forEach(er=>(er.roomIds||[]).forEach(rid=>add(rid,b)));
+    }
+    return idx;
+  },[bookings]);
+
+  // Per-column date meta — avoids repeated new Date() inside the cell loop
+  const dateMeta=useMemo(()=>{
+    const m=new Map();
+    for(const d of dateArr){
+      const dt=new Date(d+"T12:00:00");
+      m.set(d,{isWeekend:dt.getDay()===0||dt.getDay()===6,isMonth1:dt.getDate()===1,isToday:d===todayStr});
+    }
+    return m;
+  },[dateArr,todayStr]);
+
   function getBookingForRoomDate(roomId,dateStr){
-    return bookings.find(b=>{
-      // Check main rooms
+    return (roomBookingIndex.get(roomId)||[]).find(b=>{
       if((b.roomId===roomId||(b.roomIds||[]).includes(roomId))&&b.checkin<=dateStr&&b.checkout>=dateStr) return true;
-      // Check extraRooms
       return (b.extraRooms||[]).some(er=>(er.roomIds||[]).includes(roomId)&&er.checkin<=dateStr&&er.checkout>=dateStr);
-    });
+    })||null;
   }
 
   // Returns {bk, checkin, checkout} with date range scoped to this specific room segment
   function getBookingEntryForRoomDate(roomId,dateStr){
-    for(const b of bookings){
-      // Main rooms: ends at the earliest extraRoom checkin (not b.checkout which is extended)
+    for(const b of (roomBookingIndex.get(roomId)||[])){
       if(b.roomId===roomId||(b.roomIds||[]).includes(roomId)){
         const extraStarts=(b.extraRooms||[]).filter(er=>(er.roomIds||[]).length>0&&er.checkin).map(er=>er.checkin).sort();
         const mainEnd=extraStarts.length>0?extraStarts[0]:b.checkout;
         if(b.checkin<=dateStr&&mainEnd>=dateStr) return{bk:b,checkin:b.checkin,checkout:mainEnd};
       }
-      // ExtraRooms: use each segment's own date range
       for(const er of (b.extraRooms||[])){
         if((er.roomIds||[]).includes(roomId)&&er.checkin<=dateStr&&er.checkout>=dateStr)
           return{bk:b,checkin:er.checkin,checkout:er.checkout};
@@ -1174,10 +1206,9 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
         <div style={{display:"flex",minWidth:68+daysShow*68}}>
           <div style={{width:68,flexShrink:0,padding:"8px 8px",fontSize:10,fontWeight:700,color:C.text3,background:C.bg,borderRight:`1px solid ${C.border}`,borderBottom:`1px solid ${C.borderLight}`,position:"sticky",left:0,zIndex:20}}>ROOM</div>
           {dateArr.map(d=>{
+            const {isToday,isWeekend:_isSun,isMonth1}=dateMeta.get(d)||{};
             const x=new Date(d+"T12:00:00");
-            const isToday=d===todayStr;
             const isSun=x.getDay()===0; const isSat=x.getDay()===6;
-            const isMonth1=x.getDate()===1;
             return(<div key={d} style={{width:68,flexShrink:0,textAlign:"center",padding:"5px 2px",background:isToday?"#fff0f5":isSat||isSun?"#f8f8f8":C.white,borderRight:`1px solid ${isMonth1?"#ccc":C.borderLight}`,borderBottom:`1px solid ${C.borderLight}`,borderLeft:isMonth1?"2px solid #bbb":"none"}}>
               <div style={{fontSize:10,fontWeight:700,color:isToday?C.accent:isSat||isSun?"#bbb":C.text3}}>{DAYS_SHORT[x.getDay()]}</div>
               <div style={{fontSize:15,fontWeight:isToday?800:700,color:isToday?C.accent:C.text}}>{x.getDate()}</div>
@@ -1212,11 +1243,9 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                   {dateArr.map((d,di)=>{
                     const entry=getBookingEntryForRoomDate(room.id,d);
                     const bk=entry?.bk||null;
-                    const isToday=d===todayStr;
+                    const {isToday,isWeekend,isMonth1}=dateMeta.get(d)||{};
                     const isStart=entry&&entry.checkin===d;
                     const isEnd=entry&&entry.checkout===d;
-                    const isWeekend=new Date(d+"T12:00:00").getDay()===0||new Date(d+"T12:00:00").getDay()===6;
-                    const isMonth1=new Date(d+"T12:00:00").getDate()===1;
                     if(bk){
                       const cust=customers.find(c=>c.id===bk.customerId);
                       const cats=(cust?.cats||[]).filter(c=>(bk.selectedCatIds||[]).includes(c.id));
@@ -1276,10 +1305,9 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
           })}
           {/* ── @Home and Pet Taxi special rows ── */}
           {[
-            {vr:VIRTUAL_ROWS[0], getBookings:()=>bookings.filter(b=>b.size==="H"&&b.checkin&&b.checkout)},
-            {vr:VIRTUAL_ROWS[1], getBookings:()=>bookings.filter(b=>b.petTaxiAmt>0&&b.checkin&&b.checkout)},
-          ].map(({vr,getBookings})=>{
-            const vrBookings=getBookings();
+            {vr:VIRTUAL_ROWS[0], vrBookings:homeVRBookings},
+            {vr:VIRTUAL_ROWS[1], vrBookings:taxiVRBookings},
+          ].map(({vr,vrBookings})=>{
             // All bookings visible on a given date
             const getBksForDate=(d)=>vrBookings.filter(b=>{
               if(vr.type!=="taxi") return d>=b.checkin&&d<=b.checkout;
@@ -1306,8 +1334,7 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
                 </div>
                 {dateArr.map((d,di)=>{
                   const bks=getBksForDate(d);
-                  const isToday=d===todayStr;
-                  const isMonth1=new Date(d+"T12:00:00").getDate()===1;
+                  const {isToday,isMonth1}=dateMeta.get(d)||{};
                   if(bks.length>0){
                     return(<div key={d} style={{
                       width:68,flexShrink:0,height:rowH,
@@ -1717,6 +1744,8 @@ function ReceiptModal({booking, customers, mode, receiptNum, onClose}){
 // ════════════════════════════════════════════════════════════════
 function BookingSheet({booking,customers,bookings,onSave,onClose}){
   const [form,setForm]=useState(booking||{customerId:"",selectedCatIds:[],checkin:"",checkout:"",size:"S",roomIds:[],extraRooms:[],discount:"0",discountItems:["rooms"],deposit:"0",depositPayMethod:"Transfer",payMethod:"Transfer",paid:false,litter:false,litterCustom:0,petTaxi:0,petTaxiDay:"checkin",extraFee:0,extraFeeNote:"",notes:""});
+  const [custSearch,setCustSearch]=useState("");
+  const [showCustList,setShowCustList]=useState(false);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const cust=customers.find(c=>c.id===form.customerId);
   const cats=cust?.cats||[];
@@ -1766,6 +1795,16 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
   // ── Extra Rooms helpers (must be before totalRoomBase) ──
   const extraRooms=form.extraRooms||[];
   const getExtraNights=(er)=>er.checkin&&er.checkout&&er.checkin<=er.checkout?nights(er.checkin,er.checkout):0;
+  // Returns cat count for a room in an extra-room period.
+  // Uses er.catPerRoom (stored on the extra room itself, NOT form.catPerRoom)
+  // so stale values from when the room was a main room never interfere.
+  const getExtraCatsForRoom=(er,rid)=>{
+    const stored=parseInt((er.catPerRoom||{})[rid]);
+    if(Number.isFinite(stored)&&stored>0) return stored;
+    // Default: all cats move to this room if it's the only one in the period
+    if((er.roomIds||[]).length===1) return Math.max(1,numCats);
+    return 1;
+  };
   const calcExtraRoomBase=(er)=>{
     const n2=getExtraNights(er);
     if(!n2) return 0;
@@ -1773,7 +1812,9 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
       const r=ROOMS.find(x=>x.id===rid);
       const sz=r?.type||er.size||"S";
       const ppn=getPriceForDate(er.checkin||pricingDate,sz)||0;
-      return sum+n2*ppn;
+      const roomCats=getExtraCatsForRoom(er,rid);
+      const extraCats=Math.max(0,roomCats-1);
+      return sum+n2*(ppn+extraCats*EXTRA_CAT_FEE);
     },0);
   };
   const totalExtraRoomsBase=extraRooms.reduce((sum,er)=>sum+(calcExtraRoomBase(er)||0),0)||0;
@@ -1861,8 +1902,6 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
       <div style={{padding:"0 16px"}}>
         {/* Customer — Searchable Picker */}
         {(()=>{
-          const [custSearch,setCustSearch]=useState("");
-          const [showCustList,setShowCustList]=useState(false);
           const filteredCusts=customers.filter(c=>{
             if(!custSearch.trim()) return true;
             const s=custSearch.toLowerCase();
@@ -2135,14 +2174,14 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                             const r=ROOMS.find(x=>x.id===rid);
                             const sz=r?.type||er.size||"S";
                             const maxCats=sz==="M"?3:2;
-                            const cur=getCatsForRoom(rid);
+                            const cur=getExtraCatsForRoom(er,rid);
                             return(
                               <div key={rid} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderTop:`1px solid ${C.borderLight}`}}>
                                 <span style={{fontSize:13,fontWeight:700,color:getRoomColor(rid)}}>{rid}</span>
                                 <div style={{display:"flex",gap:4,alignItems:"center"}}>
                                   {Array.from({length:maxCats},(_,i)=>i+1).map(v=>(
                                     <button key={v} style={{width:32,height:32,borderRadius:8,border:`1px solid ${cur===v?getRoomColor(rid):C.border}`,background:cur===v?getRoomColor(rid):"transparent",color:cur===v?"#fff":C.text2,fontFamily:"inherit",fontSize:13,fontWeight:800,cursor:"pointer"}}
-                                      onClick={()=>set("catPerRoom",{...(form.catPerRoom||{}),[rid]:v})}>{v}</button>
+                                      onClick={()=>updateExtraRoom(er.id,{catPerRoom:{...(er.catPerRoom||{}),[rid]:v}})}>{v}</button>
                                   ))}
                                   <span style={{fontSize:11,color:C.text3,marginLeft:4}}>แมว</span>
                                 </div>
@@ -2384,12 +2423,13 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
             {extraRooms.map((er,idx)=>{
               const n2=getExtraNights(er);
               const erBase=calcExtraRoomBase(er);
+              const erExtraInfo=(er.roomIds||[]).map(rid=>{const rc=getExtraCatsForRoom(er,rid);const ec=Math.max(0,rc-1);return ec>0?` +${ec}แมว(+฿${ec*EXTRA_CAT_FEE}/คืน)`:""}).join("");
               return (er.roomIds||[]).length>0&&n2>0?(
                 <div key={er.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                   <div>
                     <span style={{fontSize:11,color:C.purple,fontWeight:700,marginRight:6}}>🔄</span>
                     <span style={{fontSize:13,fontWeight:700,color:C.purple}}>{er.roomIds.join(", ")}</span>
-                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n2}คืน · {fmt(er.checkin)}–{fmt(er.checkout)}</span>
+                    <span style={{fontSize:11,color:C.text3,marginLeft:6}}>{n2}คืน · {fmt(er.checkin)}–{fmt(er.checkout)}{erExtraInfo}</span>
                   </div>
                   <span style={{fontSize:13,fontWeight:700,color:C.purple}}>฿{fmt2(erBase)}</span>
                 </div>
@@ -3092,6 +3132,11 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
   const [selectMode,setSelectMode]=useState(false);
   const [selected,setSelected]=useState([]);
   const now=today();
+  const customerNights=useMemo(()=>{
+    const m=new Map();
+    for(const b of bookings) m.set(b.customerId,(m.get(b.customerId)||0)+nights(b.checkin,b.checkout));
+    return m;
+  },[bookings]);
   const byFilter=customers.filter(c=>{
     const cb=bookings.filter(b=>b.customerId===c.id);
     const catCount=(c.cats||[]).length;
@@ -3104,11 +3149,7 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
   });
   const filtered=byFilter.filter(c=>c.nickname.toLowerCase().includes(search.toLowerCase())||(c.cats||[]).some(cat=>cat.name.toLowerCase().includes(search.toLowerCase()))||(c.phone||"").includes(search))
     .sort((a,b)=>{
-      if(filter==="highlow"){
-        const aCount=bookings.filter(bk=>bk.customerId===a.id).length;
-        const bCount=bookings.filter(bk=>bk.customerId===b.id).length;
-        return bCount-aCount;
-      }
+      if(filter==="highlow") return (customerNights.get(b.id)||0)-(customerNights.get(a.id)||0);
       return 0;
     });
 
@@ -3356,7 +3397,6 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
 const YEAR_COLORS=["#ff6b9d","#0071e3","#34c759","#ff9500","#af52de"];
 
 function getMonthRevenue(bookings, year, month){
-  const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const s=new Date(year,month,1);
   const e=new Date(year,month+1,0);
   const sStr=fmtD(s);
@@ -3375,14 +3415,11 @@ function getMonthRevenue(bookings, year, month){
   },0);
 }
 function getMonthBookings(bookings, year, month){
-  const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const s=new Date(year,month,1);
   const e=new Date(year,month+1,0);
-  const ds=d=>fmtD(d);
-  return bookings.filter(b=>b.checkin>=ds(s)&&b.checkin<=ds(e)).length;
+  return bookings.filter(b=>b.checkin>=fmtD(s)&&b.checkin<=fmtD(e)).length;
 }
 function getMonthRevenueByCheckin(bookings, year, month){
-  const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'00')}-${String(d.getDate()).padStart(2,'00')}`;
   const s=new Date(year,month,1);
   const e=new Date(year,month+1,0);
   const sStr=fmtD(s);
@@ -3573,15 +3610,17 @@ function DashboardPage({bookings,customers,onExportBookings}){
   const maxPm=Math.max(...pmEntries.map(e=>e[1]),1);
   const roomStats=ROOMS.map(r=>({room:r,count:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).length,revenue:inRange.filter(b=>b.roomId===r.id||(b.roomIds||[]).includes(r.id)).reduce((a,b)=>a+actualNet(b),0)})).filter(x=>x.count>0).sort((a,b)=>b.revenue-a.revenue);
 
-  // ── MoM/YoY getters depend on mode ──
+  // ── MoM/YoY getters depend on mode — memoized to avoid 48+ O(N) scans/render ──
   const getMR=(yr,m)=>mode==="revenue"?getMonthRevenue(bookings,yr,m):getMonthRevenueByCheckin(bookings,yr,m);
-  const yearTotals=yoyYears.map(yr=>({yr,total:Array.from({length:12},(_,m)=>getMR(yr,m)).reduce((a,b)=>a+b,0),bkgs:Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0)}));
-  const yoyData=Array.from({length:12},(_,m)=>{
-    const entry={month:MONTHS[m],monthFull:MONTHS_FULL[m]};
-    yoyYears.forEach(yr=>{ entry[yr]=getMR(yr,m); });
-    return entry;
-  });
-  const maxYoy=Math.max(...yoyData.flatMap(d=>yoyYears.map(yr=>d[yr]||0)),1);
+  const {yearTotals,yoyData,maxYoy}=useMemo(()=>{
+    const yt=yoyYears.map(yr=>({yr,total:Array.from({length:12},(_,m)=>getMR(yr,m)).reduce((a,b)=>a+b,0),bkgs:Array.from({length:12},(_,m)=>getMonthBookings(bookings,yr,m)).reduce((a,b)=>a+b,0)}));
+    const yd=Array.from({length:12},(_,m)=>{
+      const entry={month:MONTHS[m],monthFull:MONTHS_FULL[m]};
+      yoyYears.forEach(yr=>{ entry[yr]=getMR(yr,m); });
+      return entry;
+    });
+    return{yearTotals:yt,yoyData:yd,maxYoy:Math.max(...yd.flatMap(d=>yoyYears.map(yr=>d[yr]||0)),1)};
+  },[bookings,yoyYears,mode]);
 
   // ── shared MoM/YoY UI helpers ──
   const MoMYearPicker=({years,toggle,setAll,setOne})=>(
@@ -4786,7 +4825,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 11 Jun 2026 · 14:45 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 31 Jul 2026 · 14:00 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
@@ -4840,7 +4879,7 @@ function App(){
     );
     const unsubB=db.collection("bookings").orderBy("createdAt","asc").onSnapshot(
       snap=>{ setBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
-      err=>{ console.error("Firestore bookings error:",err); }
+      err=>{ console.error("Firestore bookings error:",err); setDbError(err.code||"unknown"); }
     );
     const unsubP=db.collection("settings").doc("pricing").onSnapshot(
       snap=>{ if(snap.exists){ const d=snap.data(); onPricingLoaded(d); setPricingDoc(d); } },
@@ -4852,7 +4891,7 @@ function App(){
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
 
   const onImportCustomers=useCallback(async(newItems,silent)=>{
-    saving(async()=>{
+    await saving(async()=>{
       const batch=db.batch();
       newItems.forEach(item=>{ const{id,...rest}=item; batch.set(db.collection("customers").doc(id),rest); });
       await batch.commit();
@@ -4862,7 +4901,7 @@ function App(){
   },[]);
 
   const onImportBookings=useCallback(async(newItems)=>{
-    saving(async()=>{
+    await saving(async()=>{
       const batch=db.batch();
       newItems.forEach(item=>{ const{id,...rest}=item; batch.set(db.collection("bookings").doc(id),rest); });
       await batch.commit();
@@ -4988,6 +5027,11 @@ const onDeleteCustomer=useCallback(async id=>{
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+<script>
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>{ navigator.serviceWorker.register("/sw.js").catch(e=>console.warn("SW:",e)); });
+}
 </script>
 </body>
 </html>
