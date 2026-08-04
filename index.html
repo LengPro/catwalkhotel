@@ -57,6 +57,7 @@ input[type=date]::-webkit-calendar-picker-indicator { opacity:0.5; }
 <div id="root"></div>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -74,7 +75,49 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
+auth.useDeviceLanguage();
+// LOCAL persistence so an installed PWA stays signed in across relaunches.
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(e=>console.warn("persistence:",e));
+
+// NOTE: do NOT add firestore().enablePersistence() — it would mirror every
+// customer doc, including base64 ID card images, into device IndexedDB where
+// it survives sign-out.
+
+const REDIRECT_FLAG="cw_auth_redirect_pending";
+
+// Popup is the primary path: verified working in the installed iOS PWA.
+// Redirect is only a fallback, and is the fragile one here because authDomain
+// (catwalk-cat-hotel.firebaseapp.com) is a different origin from the app, so
+// Safari ITP can block the credential handoff — silently. The REDIRECT_FLAG
+// sentinel is what makes that silent failure detectable.
+async function signInGoogle(){
+  const provider=new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({prompt:"select_account"});
+  try{
+    return await auth.signInWithPopup(provider);
+  }catch(e){
+    const FALLBACK=["auth/popup-blocked","auth/cancelled-popup-request",
+                    "auth/operation-not-supported-in-this-environment",
+                    "auth/web-storage-unsupported"];
+    if(FALLBACK.includes(e.code)){
+      try{ sessionStorage.setItem(REDIRECT_FLAG,String(Date.now())); }catch(e2){}
+      return auth.signInWithRedirect(provider);
+    }
+    throw e; // auth/popup-closed-by-user means the user cancelled — don't loop them
+  }
+}
+async function signOutAll(){
+  try{ sessionStorage.removeItem(REDIRECT_FLAG); }catch(e){}
+  await auth.signOut();
+}
+
+// UX guard only — Firestore rules are the real control. Stops a stale tab from
+// firing writes after sign-out.
+function requireAuth(){ if(!auth.currentUser) throw new Error("ยังไม่ได้เข้าสู่ระบบ"); }
+
 async function fbSave(col,id,data){
+  requireAuth();
   const{id:_,...rest}=data;
   // Check estimated size — Firestore limit is 1MB per document
   const json=JSON.stringify(rest);
@@ -83,7 +126,7 @@ async function fbSave(col,id,data){
   }
   await db.collection(col).doc(id).set(rest);
 }
-async function fbDelete(col,id){ await db.collection(col).doc(id).delete(); }
+async function fbDelete(col,id){ requireAuth(); await db.collection(col).doc(id).delete(); }
 </script>
 
 <script type="text/babel">
@@ -754,6 +797,131 @@ function CatEditor({cat,index,total,onChange,onRemove}){
         {(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).length<5&&<VaccinePhotoAdd maxRemaining={5-(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).length} onAddMultiple={imgs=>{const vp=Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[];set("vaccinePassport",[...vp,...imgs].slice(0,5));}}/>}
       </div>
       <div style={S.fg}><div style={S.lbl}>Notes</div><input style={S.inp} placeholder="Allergies, special food..." value={cat.notes||""} onChange={e=>set("notes",e.target.value)}/></div>
+    </div>
+  </div>);
+}
+
+// ── Auth screens ──────────────────────────────────────────────────────
+function SplashScreen({sub}){
+  return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1a1a1a"}}>
+    <div style={{textAlign:"center"}}>
+      <img src={CATWALK_LOGO} style={{width:120,height:120,borderRadius:20,objectFit:"contain",background:"#fff",padding:8,marginBottom:16,boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}} alt="Catwalk Hotel"/>
+      <div style={{fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"0.1em",marginBottom:4}}>CATWALK HOTEL</div>
+      <div style={{fontSize:12,color:"#888",marginBottom:16}}>{sub||"แคทวอร์ค โฮเท็ล"}</div>
+      <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+        {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:"#ff383c",animation:`pulse 1.2s ease-in-out ${i*0.2}s infinite`,opacity:0.8}}/>)}
+      </div>
+    </div>
+    <style>{`@keyframes pulse{0%,100%{transform:scale(0.6);opacity:0.4}50%{transform:scale(1.2);opacity:1}}`}</style>
+  </div>);
+}
+
+function LoginScreen({redirectBlocked}){
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState("");
+  const go=async()=>{
+    setBusy(true); setErr("");
+    try{ await signInGoogle(); }
+    catch(e){
+      if(e.code==="auth/popup-closed-by-user") setErr("");
+      else setErr(e.code||e.message||"error");
+      setBusy(false);
+    }
+  };
+  const showWarn=redirectBlocked||err;
+  return(<div style={{minHeight:"100vh",background:"#1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:S.app.fontFamily}}>
+    <div style={{width:"100%",maxWidth:340,textAlign:"center"}}>
+      <img src={CATWALK_LOGO} style={{width:96,height:96,borderRadius:20,objectFit:"contain",background:"#fff",padding:8,marginBottom:14,boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}} alt="Catwalk Hotel"/>
+      <div style={{fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"0.1em",marginBottom:2}}>CATWALK HOTEL</div>
+      <div style={{fontSize:12,color:"#888",marginBottom:22}}>ระบบจัดการโรงแรมแมว — สำหรับพนักงานเท่านั้น</div>
+
+      <div style={{...S.cardPad,textAlign:"left"}}>
+        <div style={{fontSize:14,fontWeight:800,marginBottom:4}}>เข้าสู่ระบบ</div>
+        <div style={{fontSize:11,color:C.text3,lineHeight:1.7,marginBottom:14}}>
+          ใช้บัญชี Google ของร้านที่ได้รับอนุญาต — ข้อมูลลูกค้าและสำเนาบัตรประชาชนเข้าถึงได้เฉพาะพนักงาน
+        </div>
+        <button disabled={busy}
+          style={{...S.btnP,width:"100%",padding:"14px",background:busy?C.text3:C.accent,
+                  boxShadow:busy?"none":"0 4px 12px rgba(255,107,157,0.25)",cursor:busy?"default":"pointer"}}
+          onClick={go}>
+          {busy?"กำลังเข้าสู่ระบบ...":"เข้าสู่ระบบด้วย Google"}
+        </button>
+
+        {showWarn&&(<div style={{marginTop:12,background:"#fff8f0",border:`1px solid ${C.orange}30`,borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.warnAmber,marginBottom:4}}>
+            {redirectBlocked?"เบราว์เซอร์บล็อกการเข้าสู่ระบบ":"เข้าสู่ระบบไม่สำเร็จ"}
+          </div>
+          <div style={{fontSize:11,color:C.text2,lineHeight:1.6}}>
+            {redirectBlocked
+              ?"ลองเปิดแอปใน Safari (ไม่ใช่จากไอคอนหน้าโฮม) แล้วเข้าสู่ระบบอีกครั้ง"
+              :`รหัสข้อผิดพลาด: ${err}`}
+          </div>
+        </div>)}
+      </div>
+
+      <div style={{marginTop:14,fontSize:10,color:"#666",lineHeight:1.7}}>
+        การเข้าใช้งานถูกบันทึกเพื่อความปลอดภัย · PDPA พ.ศ. 2562
+      </div>
+    </div>
+  </div>);
+}
+
+function NotAuthorizedScreen({user}){
+  return(<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:S.app.fontFamily}}>
+    <div style={{maxWidth:340,width:"100%",textAlign:"center"}}>
+      <div style={{fontSize:44,marginBottom:12}}>🚫</div>
+      <div style={{fontSize:17,fontWeight:800,marginBottom:6}}>บัญชีนี้ยังไม่ได้รับอนุญาต</div>
+      <div style={{fontSize:12,color:C.text2,lineHeight:1.8,marginBottom:14}}>
+        กรุณาแจ้งเจ้าของร้านให้เพิ่มอีเมลนี้ในรายชื่อพนักงาน
+      </div>
+      <div style={{...S.cardPad,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:40,height:40,borderRadius:"50%",overflow:"hidden",flexShrink:0,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
+            {user?.photoURL?<img src={user.photoURL} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:"👤"}
+          </div>
+          <div style={{flex:1,textAlign:"left",minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700}}>{user?.displayName||"—"}</div>
+            <div style={{fontSize:11,color:C.text3,wordBreak:"break-all"}}>{user?.email||""}</div>
+          </div>
+        </div>
+      </div>
+      <button style={{...S.btnG,width:"100%",padding:"12px"}} onClick={()=>signOutAll()}>ออกจากระบบ / เปลี่ยนบัญชี</button>
+    </div>
+  </div>);
+}
+
+function DbErrorScreen({code,user}){
+  const network=code==="connection_timeout"||code==="unavailable"||code==="deadline-exceeded";
+  return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",fontFamily:S.app.fontFamily,padding:24,background:C.bg}}>
+    <div style={{textAlign:"center",maxWidth:340,width:"100%"}}>
+      <div style={{fontSize:48,marginBottom:16}}>{network?"📡":"⚠️"}</div>
+      <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:8}}>
+        {network?"เชื่อมต่อไม่ได้":"เกิดข้อผิดพลาด"}
+      </div>
+      <div style={{fontSize:13,color:C.text2,lineHeight:1.8,marginBottom:20}}>
+        {network
+          ?<><div>ตรวจสอบสัญญาณอินเทอร์เน็ต / Wi-Fi</div><div>แล้วกดโหลดใหม่อีกครั้ง</div></>
+          :<><div>ระบบไม่สามารถอ่านข้อมูลได้ในขณะนี้</div><div>กรุณาแจ้งเจ้าของร้านพร้อมรหัสด้านล่าง</div></>}
+      </div>
+
+      <div style={{background:C.blueBg,borderRadius:14,padding:"14px 16px",textAlign:"left",marginBottom:16,border:`1px solid ${C.blue}20`}}>
+        <div style={{fontSize:12,fontWeight:800,color:C.blue,marginBottom:8}}>ลองแก้เบื้องต้น</div>
+        {["ตรวจสอบอินเทอร์เน็ต แล้วกด 'โหลดใหม่'",
+          "ออกจากระบบแล้วเข้าใหม่",
+          "ถ้ายังไม่ได้ ให้แจ้งเจ้าของร้าน — อย่าแก้ไข Firestore Rules เอง"].map((t,i)=>(
+          <div key={i} style={{display:"flex",gap:10,marginBottom:6,alignItems:"flex-start"}}>
+            <div style={{width:20,height:20,borderRadius:"50%",background:C.blue,color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+            <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{t}</div>
+          </div>
+        ))}
+      </div>
+
+      <button style={{...S.btnB,width:"100%",marginBottom:10,padding:"14px"}} onClick={()=>window.location.reload()}>🔄 โหลดใหม่</button>
+      <button style={{...S.btnG,width:"100%",padding:"13px",fontSize:13}} onClick={()=>signOutAll()}>ออกจากระบบ</button>
+
+      <div style={{marginTop:12,fontSize:11,color:C.text3,wordBreak:"break-all"}}>
+        รหัส: {code}{user?.email?` · ${user.email}`:""}
+      </div>
     </div>
   </div>);
 }
@@ -4541,6 +4709,7 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
 }
 
 function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast,pricingDoc,onSavePricing}){
+  const me=window.__cwUser||null;
   const [step,setStep]=useState("idle");
   const [preview,setPreview]=useState(null);
   const [dragOver,setDragOver]=useState(false);
@@ -4621,6 +4790,23 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.hSub}>Import & manage data</div>
     </div>
     <div style={{padding:"16px 16px 40px"}}>
+
+      {/* ── Account ── */}
+      <div style={S.slabel}>👤 บัญชีผู้ใช้</div>
+      <div style={{...S.cardPad,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+          <div style={{width:42,height:42,borderRadius:"50%",overflow:"hidden",flexShrink:0,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
+            {me?.photoURL?<img src={me.photoURL} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:"👤"}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:800}}>{me?.name||me?.email||"—"}</div>
+            <div style={{fontSize:11,color:C.text3,wordBreak:"break-all"}}>{me?.email||""}</div>
+          </div>
+        </div>
+        <button style={{...S.btnD,width:"100%",padding:"11px"}} onClick={()=>{ if(window.confirm("ออกจากระบบ?")) signOutAll(); }}>
+          ออกจากระบบ
+        </button>
+      </div>
 
       {/* ── Combined Import ── */}
       <div style={S.slabel}>📥 Import ข้อมูลเก่า (.csv / .xlsx / .xls)</div>
@@ -4860,7 +5046,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 03 Aug 2026 · 16:30 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 04 Aug 2026 · 09:30 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
@@ -4891,12 +5077,69 @@ function App(){
   const [receiptCounter,setReceiptCounter]=useState(()=>parseInt(localStorage.getItem("cw_receipt_counter")||"1"));
   const bumpReceipt=()=>{ const n=receiptCounter+1; setReceiptCounter(n); try{localStorage.setItem("cw_receipt_counter",String(n));}catch(e){} };
 
-  // Load + realtime listeners
+  // ── Auth gate ──────────────────────────────────────────────────────
+  // "checking" | "signedout" | "checking_staff" | "authorized" | "denied" | "autherror"
+  const [authState,setAuthState]=useState("checking");
+  const [user,setUser]=useState(null);
+  const [authErr,setAuthErr]=useState("");
+  const [redirectBlocked,setRedirectBlocked]=useState(false);
+
+  // Resolve a pending redirect first. If the sentinel survived the round trip
+  // but no credential came back, the browser blocked the cross-site handoff —
+  // that failure is otherwise completely silent.
   useEffect(()=>{
+    let pending=false;
+    try{ pending=!!sessionStorage.getItem(REDIRECT_FLAG); }catch(e){}
+    auth.getRedirectResult()
+      .then(res=>{
+        if(pending&&!res.user&&!auth.currentUser) setRedirectBlocked(true);
+        try{ sessionStorage.removeItem(REDIRECT_FLAG); }catch(e){}
+      })
+      .catch(e=>{
+        setAuthErr(e.code||"auth/unknown");
+        try{ sessionStorage.removeItem(REDIRECT_FLAG); }catch(e2){}
+      });
+  },[]);
+
+  useEffect(()=>{
+    return auth.onAuthStateChanged(async u=>{
+      if(!u){ setUser(null); window.__cwUser=null; setAuthState("signedout"); return; }
+      setUser(u);
+      setAuthState("checking_staff");
+      const em=(u.email||"").trim().toLowerCase();
+      if(!em){ setAuthState("denied"); return; }
+      window.__cwUser={email:em,name:u.displayName||"",uid:u.uid,photoURL:u.photoURL||""};
+      try{
+        const snap=await db.collection("staff").doc(em).get();
+        // Rules currently permissive; once published, a non-staff read throws
+        // permission-denied, which means the same thing as "no doc".
+        setAuthState(snap.exists&&snap.data().active!==false?"authorized":"denied");
+      }catch(e){
+        if(e.code==="permission-denied"){ setAuthState("denied"); }
+        else{ setAuthErr(e.code||"unknown"); setAuthState("autherror"); }
+      }
+    });
+  },[]);
+
+  // Load + realtime listeners — only after auth clears, otherwise every
+  // listener fires against a signed-out session and trips permission-denied.
+  useEffect(()=>{
+    if(authState!=="authorized") return;
+    setLoading(true); setDbError(null);
+    // Timer starts here, not at mount: it must measure "Firestore responded
+    // after I was authorized", not the sign-in handshake.
     let loadTimeout=setTimeout(()=>{
       setLoading(false);
       setDbError("connection_timeout");
-    },10000); // 10s timeout
+    },15000);
+
+    const onErr=(label,err)=>{
+      console.error(`Firestore ${label} error:`,err);
+      // Signing out tears listeners down; don't flash an error on the way out.
+      if(err.code==="permission-denied"&&!auth.currentUser) return true;
+      if(err.code==="permission-denied"){ setAuthState("denied"); return true; }
+      return false;
+    };
 
     const unsubC=db.collection("customers").orderBy("createdAt","asc").onSnapshot(
       snap=>{
@@ -4907,21 +5150,21 @@ function App(){
       },
       err=>{
         clearTimeout(loadTimeout);
-        console.error("Firestore customers error:",err);
         setLoading(false);
+        if(onErr("customers",err)) return;
         setDbError(err.code||"unknown");
       }
     );
     const unsubB=db.collection("bookings").orderBy("createdAt","asc").onSnapshot(
       snap=>{ setBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
-      err=>{ console.error("Firestore bookings error:",err); setDbError(err.code||"unknown"); }
+      err=>{ if(onErr("bookings",err)) return; setDbError(err.code||"unknown"); }
     );
     const unsubP=db.collection("settings").doc("pricing").onSnapshot(
       snap=>{ if(snap.exists){ const d=snap.data(); onPricingLoaded(d); setPricingDoc(d); } },
       err=>{ console.error("Firestore pricing error:",err); }
     );
     return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubP(); };
-  },[]);
+  },[authState]);
 
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
 
@@ -4963,59 +5206,14 @@ const onDeleteCustomer=useCallback(async id=>{
     setToast("ลบแล้ว ✓");
   },[bookings,customers]);
 
-  if(loading)return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#1a1a1a"}}>
-      <div style={{textAlign:"center"}}>
-        <img src={CATWALK_LOGO} style={{width:120,height:120,borderRadius:20,objectFit:"contain",background:"#fff",padding:8,marginBottom:16,boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}} alt="Catwalk Hotel"/>
-        <div style={{fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"0.1em",marginBottom:4}}>CATWALK HOTEL</div>
-        <div style={{fontSize:12,color:"#888",marginBottom:16}}>แคทวอร์ค โฮเท็ล</div>
-        <div style={{display:"flex",gap:6,justifyContent:"center"}}>
-          {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:"#ff383c",animation:`pulse 1.2s ease-in-out ${i*0.2}s infinite`,opacity:0.8}}/>)}
-        </div>
-      </div>
-      <style>{`@keyframes pulse{0%,100%{transform:scale(0.6);opacity:0.4}50%{transform:scale(1.2);opacity:1}}`}</style>
-    </div>
-  );
+  if(authState==="checking"||authState==="checking_staff") return <SplashScreen sub="กำลังตรวจสอบสิทธิ์..."/>;
+  if(authState==="signedout") return <LoginScreen redirectBlocked={redirectBlocked}/>;
+  if(authState==="denied")    return <NotAuthorizedScreen user={user}/>;
+  if(authState==="autherror") return <DbErrorScreen code={authErr} user={user}/>;
 
-  if(dbError)return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",padding:24,background:C.bg}}>
-      <div style={{textAlign:"center",maxWidth:340,width:"100%"}}>
-        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
-        <div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:8}}>ไม่สามารถเชื่อมต่อ Database</div>
-        <div style={{fontSize:13,color:C.text2,lineHeight:1.8,marginBottom:20}}>
-          <div>Firebase rules อาจหมดอายุ (30 วัน test mode)</div>
-          <div>ต้องอัพเดท Firestore Rules ก่อนครับ</div>
-        </div>
-        <div style={{background:C.blueBg,borderRadius:14,padding:"16px 18px",textAlign:"left",marginBottom:16,border:`1px solid ${C.blue}20`}}>
-          <div style={{fontSize:13,fontWeight:800,color:C.blue,marginBottom:10}}>🔧 วิธีแก้ (2 นาที)</div>
-          {[
-            ["1","ไปที่ console.firebase.google.com"],
-            ["2","เลือก project CATWALK CMS"],
-            ["3","เมนูซ้าย → Firestore Database"],
-            ["4",'คลิก tab "Rules" แถวบนสุด'],
-            ["5","แทนที่ rules ด้วย code ด้านล่าง"],
-            ["6","กด Publish สีน้ำเงิน → กลับมากดปุ่ม Reload"],
-          ].map(([n,t])=>(
-            <div key={n} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
-              <div style={{width:22,height:22,borderRadius:"50%",background:C.blue,color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{n}</div>
-              <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>{t}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{background:"#1c1c1e",borderRadius:12,padding:"14px 16px",textAlign:"left",marginBottom:16}}>
-          <div style={{fontSize:10,color:"#888",marginBottom:8,letterSpacing:"0.06em",fontFamily:"monospace"}}>FIRESTORE RULES — copy ทั้งหมด</div>
-          <pre style={{fontSize:11,color:"#4fffb0",margin:0,lineHeight:1.8,fontFamily:"monospace",whiteSpace:"pre-wrap"}}>{"rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}"}</pre>
-        </div>
-        <button style={{...S.btnB,width:"100%",marginBottom:10,padding:"14px"}} onClick={()=>window.open("https://console.firebase.google.com","_blank")}>
-          🔗 เปิด Firebase Console
-        </button>
-        <button style={{...S.btnG,width:"100%",padding:"13px",fontSize:13}} onClick={()=>window.location.reload()}>
-          🔄 Reload หลังแก้ Rules แล้ว
-        </button>
-        <div style={{marginTop:12,fontSize:11,color:C.text3}}>Error: {dbError}</div>
-      </div>
-    </div>
-  );
+  if(loading)return <SplashScreen sub="กำลังโหลดข้อมูล..."/>;
+
+  if(dbError)return <DbErrorScreen code={dbError} user={user}/>;
 
   const todayActive=bookings.filter(b=>b.checkin<=today()&&b.checkout>=today()).length;
   // Count occupied rooms today (a booking with 2 rooms counts as 2)
@@ -5065,7 +5263,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 <script>
 if("serviceWorker" in navigator){
-  window.addEventListener("load",()=>{ navigator.serviceWorker.register("/sw.js").catch(e=>console.warn("SW:",e)); });
+  // Relative path — the app is served from a subpath on GitHub Pages
+  // (/catwalkhotel/), so "/sw.js" would resolve to the domain root and 404.
+  window.addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(e=>console.warn("SW:",e)); });
 }
 </script>
 </body>
