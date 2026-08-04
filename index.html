@@ -4708,8 +4708,15 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
   return{newCustomers,updatedCustomers,newBookings,errors,totalRows:rows.length};
 }
 
-function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast,pricingDoc,onSavePricing}){
+function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast,pricingDoc,onSavePricing,icalUrl,onSaveIcalUrl}){
   const me=window.__cwUser||null;
+  const [showTok,setShowTok]=useState(false);
+  const [editIcal,setEditIcal]=useState(false);
+  const [icalDraft,setIcalDraft]=useState("");
+  // Auto-hide the revealed token — stops it sitting on screen for a shoulder
+  // surfer or an accidental screenshot.
+  useEffect(()=>{ if(!showTok) return; const t=setTimeout(()=>setShowTok(false),15000); return()=>clearTimeout(t); },[showTok]);
+  const maskedIcal=icalUrl?icalUrl.replace(/token=[^&]+/,"token=••••••••••••"):"";
   const [step,setStep]=useState("idle");
   const [preview,setPreview]=useState(null);
   const [dragOver,setDragOver]=useState(false);
@@ -5010,25 +5017,57 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
             </div>
             <div style={{display:'flex',gap:6}}>
               <button
-                style={{...S.btnB,fontSize:12,padding:'8px 14px'}}
+                disabled={!icalUrl}
+                style={{...S.btnB,fontSize:12,padding:'8px 14px',opacity:icalUrl?1:0.4,cursor:icalUrl?'pointer':'default'}}
                 onClick={()=>{
-                  const url='https://catwalk-ical.nvvcv7ds48.workers.dev/?token=catwalk2025secret';
-                  navigator.clipboard.writeText(url)
+                  if(!icalUrl) return;
+                  navigator.clipboard.writeText(icalUrl)
                     .then(()=>setToast('✅ Copy URL แล้ว! นำไป Subscribe ใน Calendar'))
-                    .catch(()=>setToast('❌ Copy ไม่ได้ — ลอง copy เอง'));
+                    .catch(()=>setToast('❌ Copy ไม่ได้ — กด "แสดง" แล้ว copy เอง'));
                 }}
               >📋 Copy URL</button>
-              <a
-                href='https://catwalk-ical.nvvcv7ds48.workers.dev/?token=catwalk2025secret'
-                target='_blank'
-                rel='noopener noreferrer'
-                style={{...S.btnG,fontSize:12,padding:'8px 14px',textDecoration:'none',display:'inline-flex',alignItems:'center'}}
-              >🔗 เปิด</a>
+              <button style={{...S.btnG,fontSize:12,padding:'8px 14px'}} onClick={()=>{setIcalDraft(icalUrl||"");setEditIcal(v=>!v);}}>
+                {editIcal?'ยกเลิก':'⚙️ ตั้งค่า'}
+              </button>
             </div>
           </div>
-          <div style={{background:C.bg2,borderRadius:8,padding:'8px 12px',fontSize:10,color:C.text3,fontFamily:'monospace',wordBreak:'break-all',lineHeight:1.5}}>
-            {'https://catwalk-ical.nvvcv7ds48.workers.dev/?token=catwalk2025secret'}
-          </div>
+
+          {icalUrl?(
+            <div style={{background:C.bg,borderRadius:8,padding:'8px 12px',fontSize:10,color:C.text3,fontFamily:'monospace',wordBreak:'break-all',lineHeight:1.5,display:'flex',alignItems:'center',gap:8}}>
+              <span style={{flex:1}}>{showTok?icalUrl:maskedIcal}</span>
+              <button style={{...S.btnG,fontSize:10,padding:'4px 8px',flexShrink:0,fontFamily:'inherit'}} onClick={()=>setShowTok(s=>!s)}>
+                {showTok?'ซ่อน':'แสดง'}
+              </button>
+            </div>
+          ):(
+            <div style={{background:"#fff8f0",border:`1px solid ${C.orange}30`,borderRadius:8,padding:'10px 12px',fontSize:11,color:C.text2,lineHeight:1.7}}>
+              <b style={{color:C.warnAmber}}>ยังไม่ได้ตั้งค่า URL ปฏิทิน</b><br/>
+              กด <b>⚙️ ตั้งค่า</b> แล้ววาง URL ที่ได้จาก Cloudflare Worker
+            </div>
+          )}
+
+          {editIcal&&(
+            <div style={{marginTop:10,padding:'12px',background:C.bg,borderRadius:10,border:`1px solid ${C.border}`}}>
+              <div style={S.lbl}>Calendar Feed URL</div>
+              <input style={{...S.inp,fontFamily:'monospace',fontSize:11}} placeholder="https://....workers.dev/?token=..." value={icalDraft} onChange={e=>setIcalDraft(e.target.value)}/>
+              <div style={{fontSize:10,color:C.text3,lineHeight:1.7,margin:'8px 0'}}>
+                เก็บใน Firestore ไม่ได้อยู่ในไฟล์เว็บ — หมุน token ใหม่แล้ววางตรงนี้ได้เลย ไม่ต้องแก้โค้ด
+              </div>
+              <div style={{display:'flex',gap:6}}>
+                <button style={{...S.btnP,flex:1,fontSize:12,padding:'10px'}} onClick={async()=>{
+                  const v=icalDraft.trim();
+                  if(v&&!/^https:\/\//.test(v)){ setToast('❌ ต้องขึ้นต้นด้วย https://'); return; }
+                  try{ await onSaveIcalUrl(v); setEditIcal(false); setShowTok(false); setToast('✅ บันทึกแล้ว'); }
+                  catch(e){ setToast('❌ บันทึกไม่สำเร็จ'); }
+                }}>บันทึก</button>
+                {icalUrl&&<button style={{...S.btnD,fontSize:12,padding:'10px 14px'}} onClick={async()=>{
+                  if(!window.confirm('ลบ URL ปฏิทิน? ปุ่ม Copy จะใช้ไม่ได้จนกว่าจะตั้งใหม่')) return;
+                  try{ await onSaveIcalUrl(""); setEditIcal(false); setToast('ลบแล้ว'); }catch(e){ setToast('❌ ลบไม่สำเร็จ'); }
+                }}>ลบ</button>}
+              </div>
+            </div>
+          )}
+
           <div style={{marginTop:10,fontSize:11,color:C.text3,lineHeight:1.7}}>
             <div style={{fontWeight:700,color:C.text2,marginBottom:4}}>วิธี Subscribe:</div>
             <div>🍎 Apple Calendar (iPhone/iPad): Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → วาง URL</div>
@@ -5046,7 +5085,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 04 Aug 2026 · 09:30 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 04 Aug 2026 · 14:20 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
@@ -5070,6 +5109,7 @@ function App(){
   const [loading,setLoading]=useState(true);
   const [dbError,setDbError]=useState(null);
   const [pricingDoc,setPricingDoc]=useState(null);
+  const [icalUrl,setIcalUrl]=useState("");
   const [toast,setToast]=useState("");
   const [sync,setSync]=useState("");
   const [receiptBooking,setReceiptBooking]=useState(null);
@@ -5163,7 +5203,13 @@ function App(){
       snap=>{ if(snap.exists){ const d=snap.data(); onPricingLoaded(d); setPricingDoc(d); } },
       err=>{ console.error("Firestore pricing error:",err); }
     );
-    return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubP(); };
+    // Calendar feed URL lives in Firestore, not in this file — the token in it
+    // must never be baked into a publicly served HTML file again.
+    const unsubI=db.collection("settings").doc("ical").onSnapshot(
+      snap=>{ setIcalUrl(snap.exists?(snap.data().url||""):""); },
+      err=>{ console.error("Firestore ical error:",err); }
+    );
+    return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubP(); unsubI(); };
   },[authState]);
 
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
@@ -5233,7 +5279,7 @@ const onDeleteCustomer=useCallback(async id=>{
     {receiptBooking&&<ReceiptModal booking={receiptBooking} customers={customers} mode={receiptMode} receiptNum={receiptCounter} onClose={()=>{bumpReceipt();setReceiptBooking(null);}}/>}
     {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
     {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
-    {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast} pricingDoc={pricingDoc} onSavePricing={async(doc)=>{await db.collection("settings").doc("pricing").set(doc);onPricingLoaded(doc);setPricingDoc(doc);}}/>}
+    {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast} pricingDoc={pricingDoc} onSavePricing={async(doc)=>{await db.collection("settings").doc("pricing").set(doc);onPricingLoaded(doc);setPricingDoc(doc);}} icalUrl={icalUrl} onSaveIcalUrl={async(url)=>{await db.collection("settings").doc("ical").set({url,updatedAt:new Date().toISOString(),updatedBy:(window.__cwUser?.email||"")});}}/>}
 
     {/* ── Bottom Nav ── */}
     <div style={S.nav}>
