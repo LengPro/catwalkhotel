@@ -9,8 +9,8 @@ self.addEventListener('push', event => {
   event.waitUntil(
     self.registration.showNotification(data.title || '🐱 Catwalk Hotel', {
       body: data.body || '',
-      icon: '/icon.png',
-      badge: '/icon.png',
+      icon: 'icon.png',
+      badge: 'icon.png',
       tag: data.tag || 'catwalk-push',
       renotify: true,
       requireInteraction: false,
