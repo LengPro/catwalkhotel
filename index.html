@@ -563,6 +563,26 @@ function exportAllXLSX(customers,bookings){
   XLSX.writeFile(wb,`catwalk-${today()}.xlsx`,{cellStyles:true});
 }
 
+// Full fidelity backup — includes base64 images (ID cards, cat photos, vaccine passports)
+// that the CSV/XLSX exports deliberately omit. This is the only restorable snapshot.
+function exportFullBackupJSON(customers,bookings){
+  const payload={
+    format:"catwalk-full-backup",
+    version:1,
+    exportedAt:new Date().toISOString(),
+    counts:{customers:customers.length,bookings:bookings.length},
+    customers,
+    bookings,
+  };
+  const json=JSON.stringify(payload,null,2);
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));
+  a.download=`catwalk-full-backup-${today()}.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  return json.length;
+}
+
 function exportICS(b,customers){
   const c=customers.find(x=>x.id===b.customerId)||{};
   const selCats=(c.cats||[]).filter(x=>(b.selectedCatIds||[]).includes(x.id));
@@ -4772,9 +4792,24 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           <div><div style={{fontSize:13,fontWeight:700}}>Export Bookings</div><div style={{fontSize:11,color:C.text3}}>{bookings.length} bookings · รายละเอียดการจองและราคา</div></div>
           <button style={{...S.btnG,fontSize:12}} onClick={()=>{exportBookingsCSV(bookings,customers);setToast("✅ Bookings exported!");}}>⬇ CSV</button>
         </div>
-        <div style={{padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div><div style={{fontSize:13,fontWeight:700}}>Export Customers</div><div style={{fontSize:11,color:C.text3}}>{customers.length} customers · ข้อมูลลูกค้าและแมว</div></div>
           <button style={{...S.btnG,fontSize:12}} onClick={()=>{exportCustomersCSV(customers,bookings);setToast("✅ Customers exported!");}}>⬇ CSV</button>
+        </div>
+        <div style={{padding:"14px 16px",background:"#fff8f0",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700}}>🛡 Full Backup (JSON)</div>
+            <div style={{fontSize:11,color:C.text3,lineHeight:1.6}}>
+              สำรองครบทุกอย่าง <b>รวมรูปภาพ</b> — บัตรประชาชน รูปแมว สมุดวัคซีน
+              <br/>ไฟล์ CSV/XLSX ไม่มีรูปภาพ กู้คืนไม่ได้
+            </div>
+          </div>
+          <button style={{...S.btnB,fontSize:12,padding:"8px 14px",flexShrink:0}} onClick={()=>{
+            try{
+              const sz=exportFullBackupJSON(customers,bookings);
+              setToast(`✅ Backup ${(sz/1048576).toFixed(1)} MB — เก็บไว้นอกเครื่องด้วย`);
+            }catch(e){ setToast("❌ Backup ไม่สำเร็จ"); }
+          }}>⬇ Backup</button>
         </div>
       </div>
 
@@ -4825,7 +4860,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 31 Jul 2026 · 14:00 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 03 Aug 2026 · 16:30 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
