@@ -325,6 +325,143 @@ const fmtD=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${St
 
 const newCat=()=>({id:uid(),name:"",breed:"",photo:"",vaccinePassport:[],notes:""});
 
+// ── Customer media (images live in a subcollection) ───────────────────
+// Images used to sit inline in the customer document, so opening the app
+// downloaded every ID card, cat photo and vaccine page for all customers —
+// ~7.4MB for data nobody had asked to see. They now live in
+// customers/{id}/media/{mediaId}, which Firestore does NOT fetch alongside
+// the parent, so startup only carries the text plus a small thumbnail.
+//
+// Every read below falls back to the old inline field, so a customer that
+// has not been migrated yet still renders correctly.
+
+const CAT_THUMB_PX=128;   // cat photos are never shown larger than 56px
+
+function makeThumb(dataUrl,maxPx){
+  return new Promise(resolve=>{
+    if(!dataUrl){ resolve(""); return; }
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>=h){ if(w>maxPx){ h=Math.round(h*maxPx/w); w=maxPx; } }
+      else    { if(h>maxPx){ w=Math.round(w*maxPx/h); h=maxPx; } }
+      const c=document.createElement("canvas");
+      c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      try{ resolve(c.toDataURL("image/jpeg",0.72)); }catch(e){ resolve(""); }
+    };
+    img.onerror=()=>resolve("");
+    img.src=dataUrl;
+  });
+}
+
+const mediaCol=cid=>db.collection("customers").doc(cid).collection("media");
+
+async function loadCustomerMedia(customerId){
+  const out={idCard:"",catPhoto:{},vaccine:{}};
+  if(!customerId) return out;
+  const snap=await mediaCol(customerId).get();
+  snap.docs.forEach(d=>{
+    const v=d.data()||{};
+    if(v.type==="idCard") out.idCard=v.data||"";
+    else if(v.type==="catPhoto") out.catPhoto[v.catId]=v.data||"";
+    else if(v.type==="vaccine"){
+      (out.vaccine[v.catId]=out.vaccine[v.catId]||[])[v.seq||0]=v.data||"";
+    }
+  });
+  Object.keys(out.vaccine).forEach(k=>{ out.vaccine[k]=out.vaccine[k].filter(Boolean); });
+  return out;
+}
+
+// Reads — media may be null while it is still loading.
+const getIdCard   =(c,media)=>(media&&media.idCard)||c?.idCard||"";
+const getCatPhoto =(cat,media)=>(media&&media.catPhoto&&media.catPhoto[cat.id])||cat?.photo||"";
+const getVaccine  =(cat,media)=>{
+  const m=media&&media.vaccine&&media.vaccine[cat.id];
+  if(m&&m.length) return m;
+  return Array.isArray(cat?.vaccinePassport)?cat.vaccinePassport:[];
+};
+// List views only — no media fetch, so this must never trigger one.
+const getCatThumb =(cat)=>cat?.photoThumb||cat?.photo||"";
+const hasIdCard   =(c)=>!!(c?.hasIdCard||c?.idCard);
+const vaccineCount=(cat)=>Number.isFinite(cat?.vaccineCount)?cat.vaccineCount
+  :(Array.isArray(cat?.vaccinePassport)?cat.vaccinePassport.length:0);
+
+// Writes the full images to the subcollection and keeps only a thumbnail in
+// the parent. Editing any customer migrates them as a side effect.
+// CALLER MUST have loaded media into the form first — otherwise an absent
+// image here is indistinguishable from one the user deleted.
+async function saveCustomerSplit(c){
+  requireAuth();
+  const mc=mediaCol(c.id);
+  const parent={...c,cats:(c.cats||[]).map(x=>({...x}))};
+  const ops=[];
+  const put=(id,data)=>ops.push(mc.doc(id).set(data));
+  const drop=id=>ops.push(mc.doc(id).delete().catch(()=>{}));
+
+  if(c.idCard){ put("idcard",{type:"idCard",data:c.idCard}); parent.hasIdCard=true; }
+  else { drop("idcard"); parent.hasIdCard=false; }
+  parent.idCard="";
+
+  for(const cat of parent.cats){
+    if(cat.photo){
+      put(`cat_${cat.id}_photo`,{type:"catPhoto",catId:cat.id,data:cat.photo});
+      cat.photoThumb=await makeThumb(cat.photo,CAT_THUMB_PX);
+    }else{
+      drop(`cat_${cat.id}_photo`);
+      cat.photoThumb="";
+    }
+    cat.photo="";
+
+    const vp=(Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).filter(Boolean);
+    for(let i=0;i<5;i++){
+      if(vp[i]) put(`vac_${cat.id}_${i}`,{type:"vaccine",catId:cat.id,seq:i,data:vp[i]});
+      else drop(`vac_${cat.id}_${i}`);
+    }
+    cat.vaccineCount=vp.length;
+    cat.vaccinePassport=[];
+  }
+
+  await Promise.all(ops);
+  await fbSave("customers",c.id,parent);
+}
+
+// True while any image is still sitting inline in the parent document.
+function needsMediaMigration(c){
+  if(c?.idCard) return true;
+  return (c?.cats||[]).some(cat=>cat.photo||(Array.isArray(cat.vaccinePassport)&&cat.vaccinePassport.length>0));
+}
+function inlineImageBytes(c){
+  let n=(c?.idCard||"").length;
+  (c?.cats||[]).forEach(cat=>{
+    n+=(cat.photo||"").length;
+    (Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).forEach(v=>{ n+=(v||"").length; });
+  });
+  return n;
+}
+
+// Idempotent: merges whatever is already in the subcollection with whatever is
+// still inline (inline wins), then re-splits. Safe to re-run on a customer that
+// was interrupted halfway.
+async function migrateCustomerMedia(c){
+  const m=await loadCustomerMedia(c.id);
+  const merged={
+    ...c,
+    idCard:c.idCard||m.idCard||"",
+    cats:(c.cats||[]).map(cat=>{
+      const inlineVac=Array.isArray(cat.vaccinePassport)?cat.vaccinePassport.filter(Boolean):[];
+      return{
+        ...cat,
+        photo:cat.photo||m.catPhoto[cat.id]||"",
+        vaccinePassport:inlineVac.length?inlineVac:(m.vaccine[cat.id]||[]),
+      };
+    }),
+  };
+  // saveCustomerSplit writes media first and only then clears the inline
+  // fields, so a failure mid-way leaves the originals untouched.
+  await saveCustomerSplit(merged);
+}
+
 // ── Shared utility functions ──────────────────────────────────────────
 function getCustomer(id,customers){ return customers.find(c=>c.id===id)||null; }
 function getBookingRooms(b){ return(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId]).filter(Boolean); }
@@ -420,8 +557,8 @@ function exportCustomersCSV(customers,bookings){
     const spent=cb.reduce((a,b)=>a+(b.net||0),0);
     const lastVisit=cb.length>0?cb.sort((a,b)=>b.checkin>a.checkin?1:-1)[0].checkin:"";
     const cats=c.cats||[];
-    const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",((Array.isArray(cats[i]?.vaccinePassport)?cats[i].vaccinePassport.length>0:!!cats[i]?.vaccinePassport)?"Yes":"No")]);
-    return[c.id,c.nickname||"",c.fullname||"",c.phone||"",c.line||"",c.address||"",c.idCard?"Yes":"No",c.createdAt?.split("T")[0]||"",c.notes||"",...cc,cb.length,fmt2(spent),lastVisit];
+    const cc=[0,1,2].flatMap(i=>[cats[i]?.name||"",cats[i]?.breed||"",((cats[i]?vaccineCount(cats[i])>0:false)?"Yes":"No")]);
+    return[c.id,c.nickname||"",c.fullname||"",c.phone||"",c.line||"",c.address||"",hasIdCard(c)?"Yes":"No",c.createdAt?.split("T")[0]||"",c.notes||"",...cc,cb.length,fmt2(spent),lastVisit];
   });
   dlCSV([h,...rows],`catwalk-customers-${today()}.csv`);
 }
@@ -623,14 +760,27 @@ async function exportAllXLSX(customers,bookings){
 
 // Full fidelity backup — includes base64 images (ID cards, cat photos, vaccine passports)
 // that the CSV/XLSX exports deliberately omit. This is the only restorable snapshot.
-function exportFullBackupJSON(customers,bookings){
+// Images now live in customers/{id}/media, which the customers listener does NOT
+// fetch, so they have to be pulled explicitly here or the backup would silently
+// come back empty of every image.
+async function exportFullBackupJSON(customers,bookings,onProgress){
+  const media={};
+  for(let i=0;i<customers.length;i++){
+    const c=customers[i];
+    try{
+      const m=await loadCustomerMedia(c.id);
+      if(m.idCard||Object.keys(m.catPhoto).length||Object.keys(m.vaccine).length) media[c.id]=m;
+    }catch(e){ /* unmigrated customers keep their images inline */ }
+    if(onProgress&&i%10===0) onProgress(i+1,customers.length);
+  }
   const payload={
     format:"catwalk-full-backup",
-    version:1,
+    version:2,
     exportedAt:new Date().toISOString(),
-    counts:{customers:customers.length,bookings:bookings.length},
+    counts:{customers:customers.length,bookings:bookings.length,withMedia:Object.keys(media).length},
     customers,
     bookings,
+    media,
   };
   const json=JSON.stringify(payload,null,2);
   const a=document.createElement("a");
@@ -984,14 +1134,17 @@ function VaccinePhotoAdd({onAddMultiple,maxRemaining}){
 }
 
 // ── VaccinePassportList ───────────────────────────────────────────────
-function VaccinePassportList({cat,onView}){
-  const vp=Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:(cat.vaccinePassport?[cat.vaccinePassport]:[]);
-  if(vp.length===0) return <div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",fontSize:12,color:C.text3}}>💉 No vaccine passport</div>;
-  return(<div>{vp.map((src,idx)=>(
-    <div key={idx} style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:idx<vp.length-1?6:0}} onClick={()=>onView(src,`${cat.name} – Vaccine Passport${vp.length>1?" "+(idx+1):""}`)}>
+function VaccinePassportList({cat,media,onView}){
+  const vp=getVaccine(cat,media);
+  // The parent doc carries the count, so the rows render immediately and
+  // become tappable once the images arrive from the subcollection.
+  const n=Math.max(vp.length,vaccineCount(cat));
+  if(n===0) return <div style={{border:`1px dashed ${C.border}`,borderRadius:9,padding:"8px 12px",fontSize:12,color:C.text3}}>💉 No vaccine passport</div>;
+  return(<div>{Array.from({length:n},(_,idx)=>vp[idx]||"").map((src,idx)=>(
+    <div key={idx} style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:9,padding:"8px 12px",display:"flex",alignItems:"center",gap:8,cursor:src?"pointer":"default",opacity:src?1:0.6,marginBottom:idx<n-1?6:0}} onClick={()=>src&&onView(src,`${cat.name} – Vaccine Passport${n>1?" "+(idx+1):""}`)}>
       <span>💉</span>
-      <span style={{fontSize:12,fontWeight:600,color:C.green,flex:1}}>Vaccine Passport{vp.length>1?` (${idx+1}/${vp.length})`:" on file"}</span>
-      <span style={{fontSize:11,color:C.text3}}>View</span>
+      <span style={{fontSize:12,fontWeight:600,color:C.green,flex:1}}>Vaccine Passport{n>1?` (${idx+1}/${n})`:" on file"}</span>
+      <span style={{fontSize:11,color:C.text3}}>{src?"View":"กำลังโหลด..."}</span>
     </div>
   ))}</div>);
 }
@@ -2150,7 +2303,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                         <div style={{display:"flex",flexShrink:0}}>
                           {(c.cats||[]).slice(0,2).map((cat,i)=>(
                             <div key={cat.id} style={{width:32,height:32,borderRadius:8,overflow:"hidden",background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,marginLeft:i>0?-8:0,border:`2px solid ${C.white}`}}>
-                              {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+                              {getCatThumb(cat)?<img src={getCatThumb(cat)} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
                             </div>
                           ))}
                           {(c.cats||[]).length===0&&<div style={{width:32,height:32,borderRadius:8,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>😺</div>}
@@ -2178,7 +2331,7 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
                 const sel=(form.selectedCatIds||[]).includes(cat.id);
                 return(<div key={cat.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",border:`2px solid ${sel?C.accent:C.border}`,borderRadius:12,cursor:"pointer",background:sel?C.accentBg:C.white}} onClick={()=>toggleCat(cat.id)}>
                   <div style={{width:38,height:38,borderRadius:9,overflow:"hidden",flexShrink:0,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
-                    {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+                    {getCatThumb(cat)?<img src={getCatThumb(cat)} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
                   </div>
                   <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{cat.name}</div><div style={{fontSize:11,color:C.text3}}>{cat.breed||"Cat"}</div></div>
                   {i>0&&<span style={S.chip(C.orange)}>+฿{EXTRA_CAT_FEE}/night</span>}
@@ -2785,9 +2938,31 @@ function BookingSheet({booking,customers,bookings,onSave,onClose}){
 // ════════════════════════════════════════════════════════════════
 function CustomerSheet({customer,onSave,onClose}){
   const [form,setForm]=useState(customer||{nickname:"",phone:"",line:"",address:"",idCard:"",notes:"",cats:[newCat()]});
+  // Images live in a subcollection. They must be pulled into the form before
+  // the user can save, otherwise saveCustomerSplit would read an absent image
+  // as "the user deleted it" and wipe the media docs.
+  const [mediaReady,setMediaReady]=useState(!customer);
+  useEffect(()=>{
+    if(!customer) return;
+    let alive=true;
+    loadCustomerMedia(customer.id).then(m=>{
+      if(!alive) return;
+      setForm(f=>({
+        ...f,
+        idCard:getIdCard(f,m),
+        cats:(f.cats||[]).map(cat=>({
+          ...cat,
+          photo:getCatPhoto(cat,m),
+          vaccinePassport:getVaccine(cat,m),
+        })),
+      }));
+      setMediaReady(true);
+    }).catch(()=>{ if(alive) setMediaReady(true); }); // fall back to inline fields
+    return()=>{alive=false;};
+  },[customer?.id]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const setCat=(i,u)=>setForm(f=>{const cats=[...f.cats];cats[i]=u;return{...f,cats};});
-  const valid=form.nickname.trim()&&form.cats.some(c=>c.name.trim());
+  const valid=mediaReady&&form.nickname.trim()&&form.cats.some(c=>c.name.trim());
   return(<div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
     <div style={S.sheet}>
       <div style={S.sheetHandle}/>
@@ -2795,6 +2970,7 @@ function CustomerSheet({customer,onSave,onClose}){
         <div style={S.sheetTitle}>{customer?"Edit Customer":"New Customer"}</div>
         <button style={S.btnG} onClick={onClose}>Cancel</button>
       </div>
+      {!mediaReady&&<div style={{padding:"0 16px 12px",fontSize:12,color:C.text3}}>⏳ กำลังโหลดรูปภาพ...</div>}
       <div style={{padding:"0 16px"}}>
         <div style={{background:C.blueBg,borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:12,fontWeight:700,color:C.blue}}>👤 OWNER INFORMATION</div>
         <div style={S.fg}><div style={S.lbl}>Name *</div><input style={S.inp} placeholder="e.g. Khun Nong" value={form.nickname} onChange={e=>set("nickname",e.target.value)}/></div>
@@ -2823,6 +2999,15 @@ function CustomerSheet({customer,onSave,onClose}){
 // ════════════════════════════════════════════════════════════════
 function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}){
   const [viewer,setViewer]=useState(null);
+  const [media,setMedia]=useState(null);
+  // Full-resolution images are fetched only when a customer is actually
+  // opened — that is the whole point of the subcollection.
+  useEffect(()=>{
+    let alive=true;
+    setMedia(null);
+    loadCustomerMedia(customer.id).then(m=>{ if(alive) setMedia(m); }).catch(()=>{});
+    return()=>{alive=false;};
+  },[customer.id]);
   const [bFilter,setBFilter]=useState("upcoming");
   const todayDate=today();
   const allCb=bookings.filter(b=>b.customerId===customer.id);
@@ -2877,7 +3062,16 @@ function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}
           {customer.address&&<div style={{fontSize:13,color:C.text2,marginBottom:3}}>📍 {customer.address}</div>}
           {customer.notes&&<div style={{fontSize:13,color:C.text2,fontStyle:"italic"}}>📝 <NotesText text={customer.notes}/></div>}
         </div>
-        {customer.idCard&&<div style={{marginBottom:12}}><div style={S.slabel}>ID Card</div><div style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setViewer({src:customer.idCard,title:"Owner ID Card"})}><span style={{fontSize:20}}>🪪</span><div style={{flex:1,fontSize:13,fontWeight:600,color:C.green}}>ID Card on file</div><span style={{fontSize:11,color:C.text3}}>Tap to view</span></div></div>}
+        {hasIdCard(customer)&&(()=>{
+          const src=getIdCard(customer,media);
+          return(<div style={{marginBottom:12}}><div style={S.slabel}>ID Card</div>
+            <div style={{border:`1px solid ${C.green}40`,background:C.greenBg,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,cursor:src?"pointer":"default",opacity:src?1:0.6}}
+              onClick={()=>src&&setViewer({src,title:"Owner ID Card"})}>
+              <span style={{fontSize:20}}>🪪</span>
+              <div style={{flex:1,fontSize:13,fontWeight:600,color:C.green}}>ID Card on file</div>
+              <span style={{fontSize:11,color:C.text3}}>{src?"Tap to view":"กำลังโหลด..."}</span>
+            </div></div>);
+        })()}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
           <div style={S.statCard}><div style={{...S.statVal,fontSize:22,color:C.accent}}>{cb.length}</div><div style={S.statLbl}>Bookings</div></div>
           <div style={S.statCard}><div style={{...S.statVal,fontSize:22,color:C.blue}}>฿{totalSpent.toLocaleString()}</div><div style={S.statLbl}>Total Spent</div></div>
@@ -2886,12 +3080,12 @@ function CustomerDetail({customer,bookings,onEdit,onDelete,onClose,onNewBooking}
         {cats.map((cat,i)=>(<div key={cat.id} style={{...S.cardPad,marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
             <div style={{width:52,height:52,borderRadius:12,overflow:"hidden",flexShrink:0,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>
-              {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+              {(getCatPhoto(cat,media)||getCatThumb(cat))?<img src={getCatPhoto(cat,media)||getCatThumb(cat)} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
             </div>
             <div style={{flex:1}}><div style={{fontSize:15,fontWeight:800}}>{cat.name}</div><div style={{fontSize:12,color:C.text3}}>{cat.breed||"Cat"}</div>{cat.notes&&<div style={{fontSize:12,color:C.text2,marginTop:2,fontStyle:"italic"}}>{cat.notes}</div>}</div>
             {i>0&&<span style={S.chip(C.orange)}>+฿{EXTRA_CAT_FEE}/night</span>}
           </div>
-          <VaccinePassportList cat={cat} onView={(src,title)=>setViewer({src,title})}/>
+          <VaccinePassportList cat={cat} media={media} onView={(src,title)=>setViewer({src,title})}/>
         </div>))}
         <div style={{display:"flex",gap:8,marginTop:8,marginBottom:14}}>
           <button style={{...S.btnP,flex:1}} onClick={onNewBooking}>+ New Booking</button>
@@ -3409,7 +3603,7 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
                 <div style={{display:"flex",position:"relative",flexShrink:0}}>
                   {cats.slice(0,3).map((cat,i)=>(
                     <div key={cat.id} style={{width:40,height:40,borderRadius:10,marginLeft:i>0?-12:0,border:`2px solid ${C.white}`,zIndex:cats.length-i,overflow:"hidden",flexShrink:0,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
-                      {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+                      {getCatThumb(cat)?<img src={getCatThumb(cat)} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
                     </div>
                   ))}
                 </div>
@@ -3535,7 +3729,7 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
                 <div style={{display:"flex",flexShrink:0}}>
                   {cats.slice(0,2).map((cat,i)=>(
                     <div key={cat.id} style={{width:38,height:38,borderRadius:9,overflow:"hidden",flexShrink:0,marginLeft:i>0?-10:0,border:`2px solid ${C.white}`,background:C.accentBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>
-                      {cat.photo?<img src={cat.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
+                      {getCatThumb(cat)?<img src={getCatThumb(cat)} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={cat.name}/>:"🐱"}
                     </div>
                   ))}
                   {cats.length===0&&<div style={{...S.av(""),width:38,height:38,borderRadius:9,fontSize:17}}>🐱</div>}
@@ -4724,8 +4918,102 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
   return{newCustomers,updatedCustomers,newBookings,errors,totalRows:rows.length};
 }
 
+// ── Media migration ───────────────────────────────────────────────────
+// Moves images that are still inline in customer documents into
+// customers/{id}/media. One customer at a time: each involves decoding an
+// image to build a thumbnail, and batching that would lock up the UI.
+// Stoppable and re-runnable — an interrupted run just leaves the remainder
+// unmigrated, and those still render from their inline fields.
+function MediaMigrationPanel({customers,setToast}){
+  const [running,setRunning]=useState(false);
+  const [done,setDone]=useState(0);
+  const [errors,setErrors]=useState([]);
+  const stopRef=useRef(false);
+
+  const pending=customers.filter(needsMediaMigration);
+  const pendingBytes=pending.reduce((a,c)=>a+inlineImageBytes(c),0);
+
+  const run=async()=>{
+    if(!window.confirm(
+      `ย้ายรูปของลูกค้า ${pending.length} ราย (${(pendingBytes/1048576).toFixed(1)} MB)\n\n`+
+      `กด Full Backup เก็บไฟล์ไว้นอกเครื่องแล้วใช่ไหม?\n`+
+      `ถ้ายัง ให้กด Cancel แล้วสำรองก่อน`
+    )) return;
+    stopRef.current=false;
+    setRunning(true); setDone(0); setErrors([]);
+    const errs=[];
+    for(let i=0;i<pending.length;i++){
+      if(stopRef.current) break;
+      const c=pending[i];
+      try{ await migrateCustomerMedia(c); }
+      catch(e){ errs.push(`${c.nickname||c.id}: ${e.code||e.message||"error"}`); }
+      setDone(i+1);
+      setErrors([...errs]);
+    }
+    setRunning(false);
+    setToast(stopRef.current?`หยุดแล้ว — ย้ายไป ${done} ราย`:`✅ ย้ายเสร็จ ${pending.length-errs.length} ราย`);
+  };
+
+  if(pending.length===0&&!running) return(
+    <>
+      <div style={S.slabel}>🗂 รูปภาพ</div>
+      <div style={{...S.cardPad,marginBottom:16,background:C.greenBg,border:`1px solid ${C.green}30`}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.green}}>✅ ย้ายรูปครบแล้ว</div>
+        <div style={{fontSize:11,color:C.text2,lineHeight:1.7,marginTop:4}}>
+          รูปทั้งหมดอยู่ใน subcollection แล้ว เปิดแอปไม่ต้องโหลดรูปอีก
+        </div>
+      </div>
+    </>
+  );
+
+  const pct=pending.length?Math.round(done/pending.length*100):0;
+  return(<>
+    <div style={S.slabel}>🗂 รูปภาพ</div>
+    <div style={{...S.cardPad,marginBottom:16,background:"#fff8f0",border:`1px solid ${C.orange}30`}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.warnAmber,marginBottom:4}}>
+        ย้ายรูปออกจากข้อมูลลูกค้า
+      </div>
+      <div style={{fontSize:11,color:C.text2,lineHeight:1.8,marginBottom:10}}>
+        ตอนนี้เปิดแอปทุกครั้งต้องโหลดรูป <b>{(pendingBytes/1048576).toFixed(1)} MB</b> ของลูกค้า {pending.length} ราย
+        ทั้งที่ยังไม่ได้กดดู — ย้ายแล้วจะโหลดเฉพาะตอนเปิดดูลูกค้าคนนั้น
+        <br/><b style={{color:C.warnAmber}}>กด Full Backup ด้านบนเก็บไฟล์ไว้นอกเครื่องก่อน</b>
+      </div>
+
+      {(running||done>0)&&(
+        <div style={{marginBottom:10}}>
+          <div style={{height:8,background:C.border,borderRadius:99,overflow:"hidden",marginBottom:6}}>
+            <div style={{width:`${pct}%`,height:"100%",background:C.green,transition:"width 0.2s"}}/>
+          </div>
+          <div style={{fontSize:11,color:C.text2}}>
+            {done} / {pending.length} ราย ({pct}%)
+            {errors.length>0&&<span style={{color:C.red}}> · ผิดพลาด {errors.length}</span>}
+          </div>
+        </div>
+      )}
+
+      {errors.length>0&&(
+        <div style={{background:C.white,border:`1px solid ${C.red}30`,borderRadius:8,padding:"8px 10px",marginBottom:10,maxHeight:120,overflowY:"auto"}}>
+          {errors.slice(0,10).map((e,i)=><div key={i} style={{fontSize:10,color:C.red,lineHeight:1.6}}>{e}</div>)}
+          {errors.length>10&&<div style={{fontSize:10,color:C.text3}}>...และอีก {errors.length-10}</div>}
+        </div>
+      )}
+
+      {running
+        ?<button style={{...S.btnD,width:"100%",padding:"11px"}} onClick={()=>{stopRef.current=true;}}>⏸ หยุด</button>
+        :<button style={{...S.btnP,width:"100%",padding:"12px"}} onClick={run}>
+           🗂 ย้ายรูป {pending.length} ราย ({(pendingBytes/1048576).toFixed(1)} MB)
+         </button>}
+
+      <div style={{fontSize:10,color:C.text3,lineHeight:1.7,marginTop:8}}>
+        หยุดกลางคันได้ ส่วนที่ย้ายแล้วใช้ได้ทันที ที่เหลืออ่านจากที่เดิม · กดซ้ำได้ไม่เสียหาย
+      </div>
+    </div>
+  </>);
+}
+
 function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast,pricingDoc,onSavePricing,icalUrl,onSaveIcalUrl}){
   const me=window.__cwUser||null;
+  const [backupBusy,setBackupBusy]=useState(false);
   const [showTok,setShowTok]=useState(false);
   const [editIcal,setEditIcal]=useState(false);
   const [icalDraft,setIcalDraft]=useState("");
@@ -5018,14 +5306,19 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
               <br/>ไฟล์ CSV/XLSX ไม่มีรูปภาพ กู้คืนไม่ได้
             </div>
           </div>
-          <button style={{...S.btnB,fontSize:12,padding:"8px 14px",flexShrink:0}} onClick={()=>{
+          <button disabled={backupBusy} style={{...S.btnB,fontSize:12,padding:"8px 14px",flexShrink:0,opacity:backupBusy?0.5:1}} onClick={async()=>{
+            setBackupBusy(true);
             try{
-              const sz=exportFullBackupJSON(customers,bookings);
+              const sz=await exportFullBackupJSON(customers,bookings,(i,n)=>setToast(`⏳ กำลังรวบรวมรูป ${i}/${n}...`));
               setToast(`✅ Backup ${(sz/1048576).toFixed(1)} MB — เก็บไว้นอกเครื่องด้วย`);
             }catch(e){ setToast("❌ Backup ไม่สำเร็จ"); }
-          }}>⬇ Backup</button>
+            setBackupBusy(false);
+          }}>{backupBusy?"⏳ กำลังสำรอง...":"⬇ Backup"}</button>
         </div>
       </div>
+
+      {/* ── Image migration ── */}
+      <MediaMigrationPanel customers={customers} setToast={setToast}/>
 
       {/* ── Calendar Subscribe ── */}
       <div style={S.slabel}>📅 Calendar Sync</div>
@@ -5106,7 +5399,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
       <div style={S.slabel}>ℹ️ About</div>
       <div style={{...S.cardPad,marginBottom:16}}>
         <div style={{fontSize:13,fontWeight:800,color:C.accent,marginBottom:6}}>🐱 CATWALK Cat Hotel</div>
-        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 05 Aug 2026 · 11:15 (ICT)</div>
+        <div style={{fontSize:12,color:C.text2,fontWeight:700,marginBottom:6}}>v 05 Aug 2026 · 21:40 (ICT)</div>
         <div style={{fontSize:11,color:C.text3,marginBottom:8}}>16 rooms · Firebase Realtime Sync · Allow Past Dates · Room Change</div>
       </div>
     </div>
@@ -5257,7 +5550,8 @@ function App(){
       setToast(`✅ Import ${newItems.length} booking สำเร็จ!`);
     });
   },[]);
-  const onSaveCustomer=useCallback(async d=>saving(async()=>{await fbSave("customers",d.id,d);setToast("Saved ☁️");}),[]);
+  // Splits images into customers/{id}/media so the parent doc stays small.
+  const onSaveCustomer=useCallback(async d=>saving(async()=>{await saveCustomerSplit(d);setToast("Saved ☁️");}),[]);
 const onDeleteCustomer=useCallback(async id=>{
     const item=customers.find(c=>c.id===id);
     if(!item) return;
