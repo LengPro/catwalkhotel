@@ -426,6 +426,42 @@ async function saveCustomerSplit(c){
   await fbSave("customers",c.id,parent);
 }
 
+// True while any image is still sitting inline in the parent document.
+function needsMediaMigration(c){
+  if(c?.idCard) return true;
+  return (c?.cats||[]).some(cat=>cat.photo||(Array.isArray(cat.vaccinePassport)&&cat.vaccinePassport.length>0));
+}
+function inlineImageBytes(c){
+  let n=(c?.idCard||"").length;
+  (c?.cats||[]).forEach(cat=>{
+    n+=(cat.photo||"").length;
+    (Array.isArray(cat.vaccinePassport)?cat.vaccinePassport:[]).forEach(v=>{ n+=(v||"").length; });
+  });
+  return n;
+}
+
+// Idempotent: merges whatever is already in the subcollection with whatever is
+// still inline (inline wins), then re-splits. Safe to re-run on a customer that
+// was interrupted halfway.
+async function migrateCustomerMedia(c){
+  const m=await loadCustomerMedia(c.id);
+  const merged={
+    ...c,
+    idCard:c.idCard||m.idCard||"",
+    cats:(c.cats||[]).map(cat=>{
+      const inlineVac=Array.isArray(cat.vaccinePassport)?cat.vaccinePassport.filter(Boolean):[];
+      return{
+        ...cat,
+        photo:cat.photo||m.catPhoto[cat.id]||"",
+        vaccinePassport:inlineVac.length?inlineVac:(m.vaccine[cat.id]||[]),
+      };
+    }),
+  };
+  // saveCustomerSplit writes media first and only then clears the inline
+  // fields, so a failure mid-way leaves the originals untouched.
+  await saveCustomerSplit(merged);
+}
+
 // ── Shared utility functions ──────────────────────────────────────────
 function getCustomer(id,customers){ return customers.find(c=>c.id===id)||null; }
 function getBookingRooms(b){ return(b.roomIds&&b.roomIds.length>0?b.roomIds:[b.roomId]).filter(Boolean); }
@@ -4882,6 +4918,99 @@ function importCombinedCSV(rows, existingCustomers, existingBookings){
   return{newCustomers,updatedCustomers,newBookings,errors,totalRows:rows.length};
 }
 
+// ── Media migration ───────────────────────────────────────────────────
+// Moves images that are still inline in customer documents into
+// customers/{id}/media. One customer at a time: each involves decoding an
+// image to build a thumbnail, and batching that would lock up the UI.
+// Stoppable and re-runnable — an interrupted run just leaves the remainder
+// unmigrated, and those still render from their inline fields.
+function MediaMigrationPanel({customers,setToast}){
+  const [running,setRunning]=useState(false);
+  const [done,setDone]=useState(0);
+  const [errors,setErrors]=useState([]);
+  const stopRef=useRef(false);
+
+  const pending=customers.filter(needsMediaMigration);
+  const pendingBytes=pending.reduce((a,c)=>a+inlineImageBytes(c),0);
+
+  const run=async()=>{
+    if(!window.confirm(
+      `ย้ายรูปของลูกค้า ${pending.length} ราย (${(pendingBytes/1048576).toFixed(1)} MB)\n\n`+
+      `กด Full Backup เก็บไฟล์ไว้นอกเครื่องแล้วใช่ไหม?\n`+
+      `ถ้ายัง ให้กด Cancel แล้วสำรองก่อน`
+    )) return;
+    stopRef.current=false;
+    setRunning(true); setDone(0); setErrors([]);
+    const errs=[];
+    for(let i=0;i<pending.length;i++){
+      if(stopRef.current) break;
+      const c=pending[i];
+      try{ await migrateCustomerMedia(c); }
+      catch(e){ errs.push(`${c.nickname||c.id}: ${e.code||e.message||"error"}`); }
+      setDone(i+1);
+      setErrors([...errs]);
+    }
+    setRunning(false);
+    setToast(stopRef.current?`หยุดแล้ว — ย้ายไป ${done} ราย`:`✅ ย้ายเสร็จ ${pending.length-errs.length} ราย`);
+  };
+
+  if(pending.length===0&&!running) return(
+    <>
+      <div style={S.slabel}>🗂 รูปภาพ</div>
+      <div style={{...S.cardPad,marginBottom:16,background:C.greenBg,border:`1px solid ${C.green}30`}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.green}}>✅ ย้ายรูปครบแล้ว</div>
+        <div style={{fontSize:11,color:C.text2,lineHeight:1.7,marginTop:4}}>
+          รูปทั้งหมดอยู่ใน subcollection แล้ว เปิดแอปไม่ต้องโหลดรูปอีก
+        </div>
+      </div>
+    </>
+  );
+
+  const pct=pending.length?Math.round(done/pending.length*100):0;
+  return(<>
+    <div style={S.slabel}>🗂 รูปภาพ</div>
+    <div style={{...S.cardPad,marginBottom:16,background:"#fff8f0",border:`1px solid ${C.orange}30`}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.warnAmber,marginBottom:4}}>
+        ย้ายรูปออกจากข้อมูลลูกค้า
+      </div>
+      <div style={{fontSize:11,color:C.text2,lineHeight:1.8,marginBottom:10}}>
+        ตอนนี้เปิดแอปทุกครั้งต้องโหลดรูป <b>{(pendingBytes/1048576).toFixed(1)} MB</b> ของลูกค้า {pending.length} ราย
+        ทั้งที่ยังไม่ได้กดดู — ย้ายแล้วจะโหลดเฉพาะตอนเปิดดูลูกค้าคนนั้น
+        <br/><b style={{color:C.warnAmber}}>กด Full Backup ด้านบนเก็บไฟล์ไว้นอกเครื่องก่อน</b>
+      </div>
+
+      {(running||done>0)&&(
+        <div style={{marginBottom:10}}>
+          <div style={{height:8,background:C.border,borderRadius:99,overflow:"hidden",marginBottom:6}}>
+            <div style={{width:`${pct}%`,height:"100%",background:C.green,transition:"width 0.2s"}}/>
+          </div>
+          <div style={{fontSize:11,color:C.text2}}>
+            {done} / {pending.length} ราย ({pct}%)
+            {errors.length>0&&<span style={{color:C.red}}> · ผิดพลาด {errors.length}</span>}
+          </div>
+        </div>
+      )}
+
+      {errors.length>0&&(
+        <div style={{background:C.white,border:`1px solid ${C.red}30`,borderRadius:8,padding:"8px 10px",marginBottom:10,maxHeight:120,overflowY:"auto"}}>
+          {errors.slice(0,10).map((e,i)=><div key={i} style={{fontSize:10,color:C.red,lineHeight:1.6}}>{e}</div>)}
+          {errors.length>10&&<div style={{fontSize:10,color:C.text3}}>...และอีก {errors.length-10}</div>}
+        </div>
+      )}
+
+      {running
+        ?<button style={{...S.btnD,width:"100%",padding:"11px"}} onClick={()=>{stopRef.current=true;}}>⏸ หยุด</button>
+        :<button style={{...S.btnP,width:"100%",padding:"12px"}} onClick={run}>
+           🗂 ย้ายรูป {pending.length} ราย ({(pendingBytes/1048576).toFixed(1)} MB)
+         </button>}
+
+      <div style={{fontSize:10,color:C.text3,lineHeight:1.7,marginTop:8}}>
+        หยุดกลางคันได้ ส่วนที่ย้ายแล้วใช้ได้ทันที ที่เหลืออ่านจากที่เดิม · กดซ้ำได้ไม่เสียหาย
+      </div>
+    </div>
+  </>);
+}
+
 function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,setToast,pricingDoc,onSavePricing,icalUrl,onSaveIcalUrl}){
   const me=window.__cwUser||null;
   const [backupBusy,setBackupBusy]=useState(false);
@@ -5187,6 +5316,9 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
           }}>{backupBusy?"⏳ กำลังสำรอง...":"⬇ Backup"}</button>
         </div>
       </div>
+
+      {/* ── Image migration ── */}
+      <MediaMigrationPanel customers={customers} setToast={setToast}/>
 
       {/* ── Calendar Subscribe ── */}
       <div style={S.slabel}>📅 Calendar Sync</div>
