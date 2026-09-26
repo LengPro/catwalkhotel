@@ -3634,7 +3634,7 @@ function lineTime(v){
   if(isNaN(d.getTime())) return "";
   return d.toLocaleString("th-TH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 }
-function LineChatPage({threads,setToast}){
+function LineChatPage({threads,setToast,devMessages}){
   const [selectedId,setSelectedId]=useState("");
   const [messages,setMessages]=useState([]);
   const [loading,setLoading]=useState(false);
@@ -3645,6 +3645,7 @@ function LineChatPage({threads,setToast}){
   },[threads,selectedId]);
 
   useEffect(()=>{
+    if(devMessages&&devMessages[selected?.id]) { setMessages(devMessages[selected.id]); setLoading(false); return; }
     if(!selected) { setMessages([]); return; }
     setLoading(true);
     const unsub=db.collection("lineThreads").doc(selected.id).collection("messages").orderBy("timestamp","asc").limit(200).onSnapshot(
@@ -3652,7 +3653,7 @@ function LineChatPage({threads,setToast}){
       err=>{ console.error("Firestore line messages error:",err); setLoading(false); setToast&&setToast("LINE messages load failed"); }
     );
     return()=>unsub();
-  },[selected&&selected.id]);
+  },[selected&&selected.id,devMessages]);
 
   return(<div>
     <div style={S.header}>
@@ -5488,6 +5489,21 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
 // ════════════════════════════════════════════════════════════════
 function App(){
   const getHashPage=()=>{const h=window.location.hash.replace("#","");return["rooms","bookings","customers","line","dashboard","settings"].includes(h)?h:"rooms";};
+  const isLocalDev=(()=>{try{const host=window.location.hostname;return (host==="localhost"||host==="127.0.0.1")&&new URLSearchParams(window.location.search).get("dev")==="1";}catch(e){return false;}})();
+  const devLineThreads=[
+    {id:"dev-line-user-001",displayName:"LINE ลูกค้าทดสอบ",lastMessage:"อยากจองห้อง 12-15 ต.ค. ค่ะ",lastMessageAt:new Date().toISOString()},
+    {id:"dev-line-user-002",displayName:"Nan Cat Mom",lastMessage:"ส่งรูปน้องให้ดูค่ะ",lastMessageAt:new Date(Date.now()-3600000).toISOString()}
+  ];
+  const devLineMessages={
+    "dev-line-user-001":[
+      {id:"m1",direction:"in",type:"text",text:"สวัสดีค่ะ ห้องว่างไหมคะ",timestamp:new Date(Date.now()-600000).toISOString()},
+      {id:"m2",direction:"out",type:"text",text:"ว่างค่ะ สนใจวันที่เท่าไหร่คะ",timestamp:new Date(Date.now()-540000).toISOString()},
+      {id:"m3",direction:"in",type:"text",text:"อยากจองห้อง 12-15 ต.ค. ค่ะ",timestamp:new Date().toISOString()}
+    ],
+    "dev-line-user-002":[
+      {id:"m1",direction:"in",type:"text",text:"ส่งรูปน้องให้ดูค่ะ",timestamp:new Date(Date.now()-3600000).toISOString()}
+    ]
+  };
   const [page,setPage]=useState(getHashPage);
   const navTo=p=>{setPage(p);window.location.hash=p;};
   useEffect(()=>{
@@ -5520,6 +5536,7 @@ function App(){
   // but no credential came back, the browser blocked the cross-site handoff —
   // that failure is otherwise completely silent.
   useEffect(()=>{
+    if(isLocalDev) return;
     let pending=false;
     try{ pending=!!sessionStorage.getItem(REDIRECT_FLAG); }catch(e){}
     auth.getRedirectResult()
@@ -5531,9 +5548,15 @@ function App(){
         setAuthErr(e.code||"auth/unknown");
         try{ sessionStorage.removeItem(REDIRECT_FLAG); }catch(e2){}
       });
-  },[]);
+  },[isLocalDev]);
 
   useEffect(()=>{
+    if(isLocalDev){
+      window.__cwUser={email:"local-dev@catwalk.local",name:"Local Dev",uid:"local-dev",photoURL:""};
+      setUser(window.__cwUser);
+      setAuthState("authorized");
+      return;
+    }
     return auth.onAuthStateChanged(async u=>{
       if(!u){ setUser(null); window.__cwUser=null; setAuthState("signedout"); return; }
       setUser(u);
@@ -5551,12 +5574,18 @@ function App(){
         else{ setAuthErr(e.code||"unknown"); setAuthState("autherror"); }
       }
     });
-  },[]);
+  },[isLocalDev]);
 
   // Load + realtime listeners — only after auth clears, otherwise every
   // listener fires against a signed-out session and trips permission-denied.
   useEffect(()=>{
     if(authState!=="authorized") return;
+    if(isLocalDev){
+      setLineThreads(devLineThreads);
+      setLoading(false);
+      setDbError(null);
+      return;
+    }
     setLoading(true); setDbError(null);
     // Timer starts here, not at mount: it must measure "Firestore responded
     // after I was authorized", not the sign-in handshake.
@@ -5609,7 +5638,7 @@ function App(){
       err=>{ console.error("Firestore ical error:",err); }
     );
     return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubL(); unsubP(); unsubI(); };
-  },[authState]);
+  },[authState,isLocalDev]);
 
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
 
@@ -5653,9 +5682,9 @@ const onDeleteCustomer=useCallback(async id=>{
   },[bookings,customers]);
 
   if(authState==="checking"||authState==="checking_staff") return <SplashScreen sub="กำลังตรวจสอบสิทธิ์..."/>;
-  if(authState==="signedout") return <LoginScreen redirectBlocked={redirectBlocked}/>;
-  if(authState==="denied")    return <NotAuthorizedScreen user={user}/>;
-  if(authState==="autherror") return <DbErrorScreen code={authErr} user={user}/>;
+  if(!isLocalDev&&authState==="signedout") return <LoginScreen redirectBlocked={redirectBlocked}/>;
+  if(!isLocalDev&&authState==="denied")    return <NotAuthorizedScreen user={user}/>;
+  if(!isLocalDev&&authState==="autherror") return <DbErrorScreen code={authErr} user={user}/>;
 
   if(loading)return <SplashScreen sub="กำลังโหลดข้อมูล..."/>;
 
@@ -5678,7 +5707,7 @@ const onDeleteCustomer=useCallback(async id=>{
     {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}}/>}
     {receiptBooking&&<ReceiptModal booking={receiptBooking} customers={customers} mode={receiptMode} receiptNum={receiptCounter} onClose={()=>{bumpReceipt();setReceiptBooking(null);}}/>}
     {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
-    {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast}/>}
+    {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast} devMessages={isLocalDev?devLineMessages:null}/>}
     {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
     {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast} pricingDoc={pricingDoc} onSavePricing={async(doc)=>{await db.collection("settings").doc("pricing").set(doc);onPricingLoaded(doc);setPricingDoc(doc);}} icalUrl={icalUrl} onSaveIcalUrl={async(url)=>{await db.collection("settings").doc("ical").set({url,updatedAt:new Date().toISOString(),updatedBy:(window.__cwUser?.email||"")});}}/>}
 
