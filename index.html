@@ -5668,6 +5668,28 @@ function App(){
     return()=>unsub();
   },[authState,isLocalDev,page]);
 
+  useEffect(()=>{
+    if(authState!=="authorized"||isLocalDev||bookings.length===0) return;
+    const known=new Set(customers.map(c=>c.id));
+    const missing=[...new Set(bookings.map(b=>b.customerId).filter(id=>id&&!known.has(id)))].slice(0,120);
+    if(missing.length===0) return;
+    let cancelled=false;
+    Promise.all(missing.map(id=>db.collection("customers").doc(id).get().catch(err=>{
+      console.error("Firestore missing customer fetch error:",err);
+      return null;
+    }))).then(snaps=>{
+      if(cancelled) return;
+      const found=snaps.filter(s=>s&&s.exists).map(s=>({id:s.id,...s.data()}));
+      if(found.length===0) return;
+      setCustomers(prev=>{
+        const byId=new Map(prev.map(c=>[c.id,c]));
+        found.forEach(c=>byId.set(c.id,c));
+        return [...byId.values()];
+      });
+    });
+    return()=>{cancelled=true;};
+  },[authState,isLocalDev,bookings,customers]);
+
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
 
   const onImportCustomers=useCallback(async(newItems,silent)=>{
