@@ -3626,6 +3626,83 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
 }
 
 // ════════════════════════════════════════════════════════════════
+// LINE CHAT PAGE
+// ════════════════════════════════════════════════════════════════
+function lineTime(v){
+  if(!v) return "";
+  const d=v.toDate?v.toDate():new Date(v);
+  if(isNaN(d.getTime())) return "";
+  return d.toLocaleString("th-TH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+}
+function LineChatPage({threads,setToast}){
+  const [selectedId,setSelectedId]=useState("");
+  const [messages,setMessages]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const selected=threads.find(t=>t.id===selectedId)||threads[0]||null;
+
+  useEffect(()=>{
+    if(!selectedId&&threads.length>0) setSelectedId(threads[0].id);
+  },[threads,selectedId]);
+
+  useEffect(()=>{
+    if(!selected) { setMessages([]); return; }
+    setLoading(true);
+    const unsub=db.collection("lineThreads").doc(selected.id).collection("messages").orderBy("timestamp","asc").limit(200).onSnapshot(
+      snap=>{ setMessages(snap.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); },
+      err=>{ console.error("Firestore line messages error:",err); setLoading(false); setToast&&setToast("LINE messages load failed"); }
+    );
+    return()=>unsub();
+  },[selected&&selected.id]);
+
+  return(<div>
+    <div style={S.header}>
+      <div style={S.htitle}>LINE Chat</div>
+      <div style={S.hSub}>{threads.length} conversation{threads.length!==1?"s":""} · incoming messages from LINE OA</div>
+    </div>
+    <div style={{padding:16,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,alignItems:"stretch"}}>
+      <div style={{...S.card,overflow:"hidden",minHeight:420}}>
+        <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`,fontSize:12,fontWeight:800,color:C.text2}}>Inbox</div>
+        {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:threads.map(t=>{
+          const active=selected&&selected.id===t.id;
+          return(<button key={t.id} onClick={()=>setSelectedId(t.id)} style={{width:"100%",display:"flex",gap:10,alignItems:"center",padding:"12px 14px",background:active?C.greenBg:C.white,border:"none",borderBottom:`1px solid ${C.borderLight}`,textAlign:"left",fontFamily:"inherit",cursor:"pointer"}}>
+            <div style={{width:38,height:38,borderRadius:"50%",background:active?C.green:"#06c755",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,flexShrink:0}}>LINE</div>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.displayName||`LINE ${t.id.slice(-6)}`}</div>
+              <div style={{fontSize:12,color:C.text2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{t.lastMessage||"No message"}</div>
+            </div>
+            <div style={{fontSize:10,color:C.text3,whiteSpace:"nowrap"}}>{lineTime(t.lastMessageAt)}</div>
+          </button>);
+        })}
+      </div>
+      <div style={{...S.card,overflow:"hidden",minHeight:420,display:"flex",flexDirection:"column"}}>
+        {selected?<>
+          <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:"#06c755",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:11}}>LINE</div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:800,color:C.text}}>{selected.displayName||`LINE ${selected.id.slice(-6)}`}</div>
+              <div style={{fontSize:11,color:C.text3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selected.id}</div>
+            </div>
+          </div>
+          <div style={{flex:1,padding:14,background:"#f5f7f5",overflowY:"auto"}}>
+            {loading?<div style={{textAlign:"center",color:C.text3,padding:24}}>Loading...</div>:messages.map(m=>{
+              const outgoing=m.direction==="out";
+              const label=m.text||`[${m.type||"message"}]`;
+              return(<div key={m.id} style={{display:"flex",justifyContent:outgoing?"flex-end":"flex-start",marginBottom:10}}>
+                <div style={{maxWidth:"78%"}}>
+                  <div style={{background:outgoing?C.green:C.white,color:C.text,border:`1px solid ${outgoing?C.green:C.borderLight}`,borderRadius:16,padding:"9px 12px",fontSize:14,lineHeight:1.45,boxShadow:"0 1px 2px rgba(0,0,0,0.04)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{label}</div>
+                  <div style={{fontSize:10,color:C.text3,marginTop:3,textAlign:outgoing?"right":"left"}}>{lineTime(m.timestamp)}</div>
+                </div>
+              </div>);
+            })}
+          </div>
+          <div style={{padding:"10px 14px",borderTop:`1px solid ${C.borderLight}`,fontSize:12,color:C.text3}}>Read-only for now · replies still happen in LINE OA app</div>
+        </>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:C.text3}}>Select a LINE conversation</div>}
+      </div>
+    </div>
+  </div>);
+}
+
+// ════════════════════════════════════════════════════════════════
 // BOOKINGS PAGE
 // ════════════════════════════════════════════════════════════════
 function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings,onShowReceipt}){
@@ -5410,7 +5487,7 @@ function SettingsPage({customers,bookings,onImportCustomers,onImportBookings,set
 // MAIN APP
 // ════════════════════════════════════════════════════════════════
 function App(){
-  const getHashPage=()=>{const h=window.location.hash.replace("#","");return["rooms","bookings","customers","dashboard","settings"].includes(h)?h:"rooms";};
+  const getHashPage=()=>{const h=window.location.hash.replace("#","");return["rooms","bookings","customers","line","dashboard","settings"].includes(h)?h:"rooms";};
   const [page,setPage]=useState(getHashPage);
   const navTo=p=>{setPage(p);window.location.hash=p;};
   useEffect(()=>{
@@ -5420,6 +5497,7 @@ function App(){
   },[]);
   const [customers,setCustomers]=useState([]);
   const [bookings,setBookings]=useState([]);
+  const [lineThreads,setLineThreads]=useState([]);
   const [loading,setLoading]=useState(true);
   const [dbError,setDbError]=useState(null);
   const [pricingDoc,setPricingDoc]=useState(null);
@@ -5516,6 +5594,10 @@ function App(){
       snap=>{ setBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
       err=>{ if(onErr("bookings",err)) return; setDbError(err.code||"unknown"); }
     );
+    const unsubL=db.collection("lineThreads").orderBy("lastMessageAt","desc").limit(100).onSnapshot(
+      snap=>{ setLineThreads(snap.docs.map(d=>({id:d.id,...d.data()}))); },
+      err=>{ if(onErr("lineThreads",err)) return; console.error("Firestore lineThreads error:",err); }
+    );
     const unsubP=db.collection("settings").doc("pricing").onSnapshot(
       snap=>{ if(snap.exists){ const d=snap.data(); onPricingLoaded(d); setPricingDoc(d); } },
       err=>{ console.error("Firestore pricing error:",err); }
@@ -5526,7 +5608,7 @@ function App(){
       snap=>{ setIcalUrl(snap.exists?(snap.data().url||""):""); },
       err=>{ console.error("Firestore ical error:",err); }
     );
-    return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubP(); unsubI(); };
+    return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubL(); unsubP(); unsubI(); };
   },[authState]);
 
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
@@ -5596,6 +5678,7 @@ const onDeleteCustomer=useCallback(async id=>{
     {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}}/>}
     {receiptBooking&&<ReceiptModal booking={receiptBooking} customers={customers} mode={receiptMode} receiptNum={receiptCounter} onClose={()=>{bumpReceipt();setReceiptBooking(null);}}/>}
     {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
+    {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast}/>}
     {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
     {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast} pricingDoc={pricingDoc} onSavePricing={async(doc)=>{await db.collection("settings").doc("pricing").set(doc);onPricingLoaded(doc);setPricingDoc(doc);}} icalUrl={icalUrl} onSaveIcalUrl={async(url)=>{await db.collection("settings").doc("ical").set({url,updatedAt:new Date().toISOString(),updatedBy:(window.__cwUser?.email||"")});}}/>}
 
@@ -5605,13 +5688,14 @@ const onDeleteCustomer=useCallback(async id=>{
         {id:"rooms",    icon:NAV_ICONS.rooms,     label:"Rooms",    badge:occupiedRoomsToday, badgeColor:C.accent},
         {id:"bookings", icon:NAV_ICONS.bookings,  label:"Bookings", badge:todayActive,         badgeColor:C.accent},
         {id:"customers",icon:NAV_ICONS.customers, label:"Customers",badge:0},
+        {id:"line",     iconText:"LINE",           label:"LINE",     badge:lineThreads.length,  badgeColor:C.green},
         {id:"dashboard",icon:NAV_ICONS.dashboard, label:"Dashboard",badge:0},
         {id:"settings", icon:NAV_ICONS.settings,  label:"Settings", badge:0},
       ].map(n=>(
         <a key={n.id} href={`#${n.id}`} onClick={e=>{e.preventDefault();navTo(n.id);}} style={{...S.navBtn(page===n.id),textDecoration:"none"}}>
           {page===n.id&&<div style={{position:"absolute",bottom:0,left:"20%",right:"20%",height:3,background:C.accent,borderRadius:"4px 4px 0 0"}}/>}
           <div style={{position:"relative",lineHeight:1}}>
-            <img src={n.icon} style={{width:26,height:26,objectFit:"contain",opacity:page===n.id?1:0.4}} alt={n.label}/>
+            {n.iconText?<div style={{width:30,height:26,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,color:"#06c755",opacity:page===n.id?1:0.45}}>{n.iconText}</div>:<img src={n.icon} style={{width:26,height:26,objectFit:"contain",opacity:page===n.id?1:0.4}} alt={n.label}/>}
             {n.badge>0&&<span style={{position:"absolute",top:-4,right:-8,background:n.badgeColor||C.accent,color:"#fff",fontSize:9,fontWeight:800,width:17,height:17,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center"}}>{n.badge}</span>}
           </div>
           <div style={{fontSize:12,fontWeight:page===n.id?800:600,letterSpacing:"0.01em",color:page===n.id?C.text:C.text3}}>{n.label}</div>
