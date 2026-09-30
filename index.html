@@ -3634,6 +3634,12 @@ function lineTime(v){
   if(isNaN(d.getTime())) return "";
   return d.toLocaleString("th-TH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 }
+function LineAvatar({thread,size=38,active=false}){
+  const img=thread?.pictureUrl;
+  return <div style={{width:size,height:size,borderRadius:"50%",background:img?"#fff":(active?C.green:"#06c755"),color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:Math.max(9,Math.round(size/4)),flexShrink:0,overflow:"hidden",border:`1px solid ${C.borderLight}`}}>
+    {img?<img src={img} style={{width:"100%",height:"100%",objectFit:"cover"}} alt="LINE profile"/>:"LINE"}
+  </div>;
+}
 function LineChatPage({threads,setToast,devMessages}){
   const [selectedId,setSelectedId]=useState("");
   const [messages,setMessages]=useState([]);
@@ -3666,7 +3672,7 @@ function LineChatPage({threads,setToast,devMessages}){
         {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:threads.map(t=>{
           const active=selected&&selected.id===t.id;
           return(<button key={t.id} onClick={()=>setSelectedId(t.id)} style={{width:"100%",display:"flex",gap:10,alignItems:"center",padding:"12px 14px",background:active?C.greenBg:C.white,border:"none",borderBottom:`1px solid ${C.borderLight}`,textAlign:"left",fontFamily:"inherit",cursor:"pointer"}}>
-            <div style={{width:38,height:38,borderRadius:"50%",background:active?C.green:"#06c755",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,flexShrink:0}}>LINE</div>
+            <LineAvatar thread={t} active={active}/>
             <div style={{minWidth:0,flex:1}}>
               <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.displayName||`LINE ${t.id.slice(-6)}`}</div>
               <div style={{fontSize:12,color:C.text2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{t.lastMessage||"No message"}</div>
@@ -3678,7 +3684,7 @@ function LineChatPage({threads,setToast,devMessages}){
       <div style={{...S.card,overflow:"hidden",minHeight:420,display:"flex",flexDirection:"column"}}>
         {selected?<>
           <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:36,height:36,borderRadius:"50%",background:"#06c755",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:11}}>LINE</div>
+            <LineAvatar thread={selected} size={36}/>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:C.text}}>{selected.displayName||`LINE ${selected.id.slice(-6)}`}</div>
               <div style={{fontSize:11,color:C.text3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selected.id}</div>
@@ -3690,7 +3696,10 @@ function LineChatPage({threads,setToast,devMessages}){
               const label=m.text||`[${m.type||"message"}]`;
               return(<div key={m.id} style={{display:"flex",justifyContent:outgoing?"flex-end":"flex-start",marginBottom:10}}>
                 <div style={{maxWidth:"78%"}}>
-                  <div style={{background:outgoing?C.green:C.white,color:C.text,border:`1px solid ${outgoing?C.green:C.borderLight}`,borderRadius:16,padding:"9px 12px",fontSize:14,lineHeight:1.45,boxShadow:"0 1px 2px rgba(0,0,0,0.04)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{label}</div>
+                  <div style={{background:outgoing?C.green:C.white,color:C.text,border:`1px solid ${outgoing?C.green:C.borderLight}`,borderRadius:16,padding:m.mediaUrl?6:"9px 12px",fontSize:14,lineHeight:1.45,boxShadow:"0 1px 2px rgba(0,0,0,0.04)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+                    {m.mediaUrl?<img src={m.mediaUrl} style={{display:"block",maxWidth:260,width:"100%",borderRadius:12}} alt="LINE image"/>:label}
+                    {m.mediaTooLarge&&<span>{label} ใหญ่เกินกว่าจะเก็บใน Firestore</span>}
+                  </div>
                   <div style={{fontSize:10,color:C.text3,marginTop:3,textAlign:outgoing?"right":"left"}}>{lineTime(m.timestamp)}</div>
                 </div>
               </div>);
