@@ -3634,6 +3634,68 @@ function lineTime(v){
   if(isNaN(d.getTime())) return "";
   return d.toLocaleString("th-TH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 }
+function lineCsvRows(text){
+  const rows=[]; let row=[],cur="",q=false;
+  const s=String(text||"").replace(/^\uFEFF/,"");
+  for(let i=0;i<s.length;i++){
+    const ch=s[i], next=s[i+1];
+    if(ch==='"'&&q&&next==='"'){cur+='"';i++;}
+    else if(ch==='"'){q=!q;}
+    else if(ch===","&&!q){row.push(cur);cur="";}
+    else if((ch==="\n"||ch==="\r")&&!q){
+      if(ch==="\r"&&next==="\n") i++;
+      row.push(cur); cur="";
+      if(row.some(v=>String(v).trim()!=="")) rows.push(row.map(v=>String(v).trim()));
+      row=[];
+    }else cur+=ch;
+  }
+  row.push(cur);
+  if(row.some(v=>String(v).trim()!=="")) rows.push(row.map(v=>String(v).trim()));
+  return rows;
+}
+function lineHash(text){
+  let h=2166136261;
+  for(let i=0;i<String(text).length;i++){h^=String(text).charCodeAt(i);h=Math.imul(h,16777619);}
+  return (h>>>0).toString(36);
+}
+function lineSafeId(name){
+  return `imported_${lineHash(String(name||"line").trim().toLowerCase())}`;
+}
+function parseLineChatCsv(text,fileName){
+  const rows=lineCsvRows(text);
+  const headerIdx=rows.findIndex(r=>String(r[0]||"").toLowerCase()==="sender type"&&String(r[1]||"").toLowerCase()==="sender name");
+  if(headerIdx<0) throw new Error("ไม่พบ header ของ LINE chat CSV");
+  const meta={fileName:fileName||"",accountName:"Catwalk Hotel",downloadedOn:""};
+  rows.slice(0,headerIdx).forEach(r=>{
+    const k=String(r[0]||"").toLowerCase();
+    if(k==="account name") meta.accountName=r[1]||meta.accountName;
+    if(k==="downloaded on") meta.downloadedOn=r[1]||"";
+  });
+  const headers=rows[headerIdx].map(h=>String(h||"").trim().toLowerCase());
+  const idx=name=>headers.indexOf(name);
+  const iType=idx("sender type"), iName=idx("sender name"), iDate=idx("date"), iTime=idx("time"), iMsg=idx("message");
+  const messages=rows.slice(headerIdx+1).map((r,i)=>{
+    const senderType=String(r[iType]||"").trim();
+    const senderName=String(r[iName]||"").trim();
+    const date=String(r[iDate]||"").trim();
+    const time=String(r[iTime]||"").trim();
+    const text=String(r[iMsg]||"").trim();
+    const d=new Date(`${date} ${time} GMT+0700`);
+    if(!senderType||!date||!time) return null;
+    const direction=senderType.toLowerCase()==="account"?"out":"in";
+    const stamp=isNaN(d.getTime())?new Date():d;
+    return {
+      id:`csv_${lineHash([date,time,senderType,senderName,text,i].join("|"))}`,
+      direction,type:"text",text,senderType,senderName,
+      timestamp:firebase.firestore.Timestamp.fromDate(stamp),
+      importedFrom:"line_csv",
+      importedAt:firebase.firestore.FieldValue.serverTimestamp()
+    };
+  }).filter(Boolean);
+  const userName=(messages.find(m=>m.direction==="in")?.senderName)||"Imported LINE";
+  const last=messages[messages.length-1]||null;
+  return {meta,userName,messages,last};
+}
 function LineAvatar({thread,size=38,active=false}){
   const img=thread?.pictureUrl;
   return <div style={{width:size,height:size,borderRadius:"50%",background:img?"#fff":(active?C.green:"#06c755"),color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:Math.max(9,Math.round(size/4)),flexShrink:0,overflow:"hidden",border:`1px solid ${C.borderLight}`}}>
@@ -3641,12 +3703,15 @@ function LineAvatar({thread,size=38,active=false}){
   </div>;
 }
 function LineChatPage({threads,setToast,devMessages}){
+  const importRef=useRef(null);
   const [selectedId,setSelectedId]=useState("");
   const [messages,setMessages]=useState([]);
   const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");
   const [chatOpen,setChatOpen]=useState(false);
   const [isNarrow,setIsNarrow]=useState(()=>window.innerWidth<760);
+  const [importDraft,setImportDraft]=useState(null);
+  const [importBusy,setImportBusy]=useState(false);
   const selected=threads.find(t=>t.id===selectedId)||null;
   const q=search.trim().toLowerCase();
   const filteredThreads=threads.filter(t=>{
@@ -3661,6 +3726,78 @@ function LineChatPage({threads,setToast,devMessages}){
   const showInbox=!isNarrow||!chatOpen;
   const showChat=!isNarrow||chatOpen;
   const shouldLoadMessages=!!selected&&showChat;
+  const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
+
+  const handleLineCsvFile=e=>{
+    const file=e.target.files&&e.target.files[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const parsed=parseLineChatCsv(ev.target.result,file.name);
+        if(parsed.messages.length===0) throw new Error("ไม่พบข้อความในไฟล์");
+        const n=norm(parsed.userName);
+        const candidates=threads.filter(t=>{
+          const dn=norm(t.displayName);
+          return dn&&n&&(dn===n||dn.includes(n)||n.includes(dn));
+        }).slice(0,8);
+        setImportDraft({
+          ...parsed,
+          fileName:file.name,
+          targetId:candidates.length===1?candidates[0].id:"",
+          candidates
+        });
+        setToast&&setToast(`อ่านไฟล์แล้ว: ${parsed.messages.length} messages`);
+      }catch(err){
+        console.error("LINE CSV import parse error:",err);
+        setToast&&setToast("❌ อ่านไฟล์ LINE CSV ไม่สำเร็จ");
+      }finally{
+        e.target.value="";
+      }
+    };
+    reader.readAsText(file,"utf-8");
+  };
+
+  const commitLineCsvImport=async()=>{
+    if(!importDraft||importBusy) return;
+    setImportBusy(true);
+    try{
+      const targetId=importDraft.targetId||lineSafeId(importDraft.userName);
+      const threadRef=db.collection("lineThreads").doc(targetId);
+      const last=importDraft.last||importDraft.messages[importDraft.messages.length-1];
+      const threadData={
+        displayName:importDraft.userName,
+        lastMessage:last?.text||"[imported message]",
+        lastMessageAt:last?.timestamp||firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
+        source:"line_csv_import",
+        importedAt:firebase.firestore.FieldValue.serverTimestamp(),
+        importFileName:importDraft.fileName,
+        importedMessageCount:importDraft.messages.length,
+        accountName:importDraft.meta.accountName||"Catwalk Hotel"
+      };
+      const writes=[{ref:threadRef,data:threadData,merge:true},...importDraft.messages.map(m=>({
+        ref:threadRef.collection("messages").doc(m.id),
+        data:m,
+        merge:true
+      }))];
+      for(let i=0;i<writes.length;i+=450){
+        const batch=db.batch();
+        writes.slice(i,i+450).forEach(w=>batch.set(w.ref,w.data,{merge:w.merge}));
+        await batch.commit();
+      }
+      setSelectedId(targetId);
+      setChatOpen(true);
+      setImportDraft(null);
+      setToast&&setToast(`✅ Import LINE chat ${importDraft.messages.length} messages สำเร็จ`);
+    }catch(err){
+      console.error("LINE CSV import error:",err);
+      const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ยังไม่อนุญาตให้ import LINE chat":"❌ Import LINE chat ไม่สำเร็จ";
+      setToast&&setToast(msg);
+    }finally{
+      setImportBusy(false);
+    }
+  };
 
   useEffect(()=>{
     const onResize=()=>setIsNarrow(window.innerWidth<760);
@@ -3687,11 +3824,27 @@ function LineChatPage({threads,setToast,devMessages}){
     <div style={{padding:16,display:"grid",gridTemplateColumns:isNarrow?"1fr":"minmax(300px,0.9fr) minmax(360px,1.1fr)",gap:14,alignItems:"stretch"}}>
       {showInbox&&<div style={{...S.card,overflow:"hidden",minHeight:isNarrow?"calc(100vh - 190px)":420}}>
         <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`}}>
-          <div style={{fontSize:12,fontWeight:800,color:C.text2,marginBottom:10}}>Inbox</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
+            <div style={{fontSize:12,fontWeight:800,color:C.text2}}>Inbox</div>
+            <button onClick={()=>importRef.current&&importRef.current.click()} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Import CSV</button>
+            <input ref={importRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleLineCsvFile}/>
+          </div>
           <div style={{position:"relative"}}>
             <input style={{...S.inp,minHeight:42,padding:"10px 14px",paddingRight:search?36:14,borderRadius:12,fontSize:14}} placeholder="ค้นหาชื่อ LINE หรือข้อความ..." value={search} onChange={e=>setSearch(e.target.value)}/>
             {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
           </div>
+          {importDraft&&<div style={{marginTop:10,padding:10,border:`1px solid ${C.borderLight}`,borderRadius:12,background:"#fff"}}>
+            <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:4}}>Preview import: {importDraft.userName}</div>
+            <div style={{fontSize:12,color:C.text2,marginBottom:8}}>{importDraft.messages.length} messages · {importDraft.fileName}</div>
+            <select style={{...S.inp,minHeight:40,fontSize:13,marginBottom:8}} value={importDraft.targetId} onChange={e=>setImportDraft(d=>({...d,targetId:e.target.value}))}>
+              <option value="">สร้างแชทใหม่: {importDraft.userName}</option>
+              {importDraft.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {t.displayName||`LINE ${t.id.slice(-6)}`}</option>)}
+            </select>
+            <div style={{display:"flex",gap:8}}>
+              <button disabled={importBusy} onClick={commitLineCsvImport} style={{...S.btnP,flex:1,opacity:importBusy?0.6:1}}>{importBusy?"Importing...":"Confirm Import"}</button>
+              <button disabled={importBusy} onClick={()=>setImportDraft(null)} style={{...S.btnG,flex:1}}>Cancel</button>
+            </div>
+          </div>}
         </div>
         {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:filteredThreads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>ไม่พบแชทที่ค้นหา</div>:filteredThreads.map(t=>{
           const active=selected&&selected.id===t.id;
