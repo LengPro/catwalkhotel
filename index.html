@@ -3702,6 +3702,9 @@ function LineAvatar({thread,size=38,active=false}){
     {img?<img src={img} style={{width:"100%",height:"100%",objectFit:"cover"}} alt="LINE profile"/>:"LINE"}
   </div>;
 }
+function lineThreadName(thread){
+  return thread?.crmDisplayName||thread?.displayName||`LINE ${(thread?.id||"").slice(-6)}`;
+}
 function LineChatPage({threads,setToast,devMessages}){
   const importRef=useRef(null);
   const [selectedId,setSelectedId]=useState("");
@@ -3723,6 +3726,7 @@ function LineChatPage({threads,setToast,devMessages}){
   const filteredThreads=threads.filter(t=>{
     if(!q) return true;
     return [
+      t.crmDisplayName||"",
       t.displayName||"",
       t.lastMessage||"",
       t.id||"",
@@ -3739,6 +3743,10 @@ function LineChatPage({threads,setToast,devMessages}){
     const d=new Date(v);
     return isNaN(d.getTime())?0:d.getTime();
   };
+  const withTimeout=(promise,label,ms=20000)=>Promise.race([
+    promise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error(`${label} timeout`)),ms))
+  ]);
 
   const handleLineCsvFile=e=>{
     const file=e.target.files&&e.target.files[0];
@@ -3752,7 +3760,7 @@ function LineChatPage({threads,setToast,devMessages}){
         const lastText=norm(parsed.last?.text);
         const lastMs=toMs(parsed.last?.timestamp);
         const candidates=threads.map(t=>{
-          const dn=norm(t.displayName);
+          const dn=norm(lineThreadName(t));
           const lm=norm(t.lastMessage);
           const tMs=toMs(t.lastMessageAt);
           let score=0;
@@ -3789,10 +3797,12 @@ function LineChatPage({threads,setToast,devMessages}){
     setImportProgress("เริ่ม import...");
     try{
       const targetId=importDraft.targetId||lineSafeId(importDraft.userName);
+      const isNewImportedThread=!importDraft.targetId;
       const threadRef=db.collection("lineThreads").doc(targetId);
       const last=importDraft.last||importDraft.messages[importDraft.messages.length-1];
       const threadData={
-        displayName:importDraft.userName,
+        crmDisplayName:importDraft.userName,
+        lineCsvDisplayName:importDraft.userName,
         lastMessage:last?.text||"[imported message]",
         lastMessageAt:last?.timestamp||firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
@@ -3802,19 +3812,23 @@ function LineChatPage({threads,setToast,devMessages}){
         importedMessageCount:importDraft.messages.length,
         accountName:importDraft.meta.accountName||"Catwalk Hotel"
       };
+      if(isNewImportedThread) threadData.displayName=importDraft.userName;
       const writes=importDraft.messages.map(m=>({
         ref:threadRef.collection("messages").doc(m.id),
         data:m,
         merge:true
       }));
-      for(let i=0;i<writes.length;i+=60){
+      await withTimeout(threadRef.set({...threadData,importStatus:"importing"},{merge:true}),"Start import");
+      for(let i=0;i<writes.length;i+=10){
+        const end=Math.min(i+10,writes.length);
+        setImportProgress(`Writing ${i+1}-${end} / ${writes.length}`);
         const batch=db.batch();
-        writes.slice(i,i+60).forEach(w=>batch.set(w.ref,w.data,{merge:w.merge}));
-        await batch.commit();
-        setImportProgress(`Imported ${Math.min(i+60,writes.length)} / ${writes.length}`);
+        writes.slice(i,end).forEach(w=>batch.set(w.ref,w.data,{merge:w.merge}));
+        await withTimeout(batch.commit(),`Import ${i+1}-${end}`);
+        setImportProgress(`Imported ${end} / ${writes.length}`);
       }
       setImportProgress("Saving chat summary...");
-      await threadRef.set(threadData,{merge:true});
+      await withTimeout(threadRef.set({...threadData,importStatus:"done"},{merge:true}),"Save summary");
       setSelectedId(targetId);
       setChatOpen(true);
       setImportDraft(null);
@@ -3822,17 +3836,35 @@ function LineChatPage({threads,setToast,devMessages}){
       setToast&&setToast(`✅ Import LINE chat ${importDraft.messages.length} messages สำเร็จ`);
     }catch(err){
       console.error("LINE CSV import error:",err);
+      setImportProgress(err?.message||"Import failed");
       const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ยังไม่อนุญาตให้ import LINE chat":"❌ Import LINE chat ไม่สำเร็จ";
       setToast&&setToast(msg);
     }finally{
       setImportBusy(false);
-      setImportProgress("");
     }
   };
 
   const toggleThreadSelect=id=>setSelectedThreadIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   const exitThreadSelect=()=>{setSelectMode(false);setSelectedThreadIds([]);};
-  const threadLabel=t=>t?.displayName||`LINE ${(t?.id||"").slice(-6)}`;
+  const threadLabel=t=>lineThreadName(t);
+  const renameThread=async(thread)=>{
+    if(!thread) return;
+    const current=threadLabel(thread);
+    const next=window.prompt("ชื่อที่จะแสดงใน CRM", current);
+    if(next==null) return;
+    const clean=next.trim();
+    if(!clean||clean===current) return;
+    try{
+      await db.collection("lineThreads").doc(thread.id).set({
+        crmDisplayName:clean,
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      },{merge:true});
+      setToast&&setToast("บันทึกชื่อ LINE ใน CRM แล้ว");
+    }catch(err){
+      console.error("LINE rename error:",err);
+      setToast&&setToast("❌ บันทึกชื่อไม่สำเร็จ");
+    }
+  };
   const lineMessageLabel=m=>{
     if(m.text) return m.text;
     if(m.mediaTooLarge) return "[image too large]";
@@ -3941,9 +3973,9 @@ function LineChatPage({threads,setToast,devMessages}){
       }
       const mergedThreads=[target,...sources];
       const newest=mergedThreads.slice().sort((a,b)=>toMs(b.lastMessageAt)-toMs(a.lastMessageAt))[0]||target;
-      const displaySource=target.displayName?target:sources.find(s=>s.displayName)||target;
+      const displaySource=(target.crmDisplayName||target.displayName)?target:(sources.find(s=>s.crmDisplayName||s.displayName)||target);
       const targetUpdate={
-        displayName:displaySource.displayName||threadLabel(target),
+        crmDisplayName:threadLabel(displaySource),
         lastMessage:newest.lastMessage||target.lastMessage||"",
         lastMessageAt:newest.lastMessageAt||target.lastMessageAt||firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
@@ -4015,7 +4047,7 @@ function LineChatPage({threads,setToast,devMessages}){
             <div style={{fontSize:12,color:C.text2,marginBottom:8}}>{importDraft.messages.length} messages · {importDraft.fileName}</div>
             <select style={{...S.inp,minHeight:40,fontSize:13,marginBottom:8}} value={importDraft.targetId} onChange={e=>setImportDraft(d=>({...d,targetId:e.target.value}))}>
               <option value="">สร้างแชทใหม่: {importDraft.userName}</option>
-              {importDraft.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {t.displayName||`LINE ${t.id.slice(-6)}`} · {t.lastMessage||"No message"}</option>)}
+              {importDraft.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {lineThreadName(t)} · {t.lastMessage||"No message"}</option>)}
             </select>
             <div style={{display:"flex",gap:8}}>
               <button disabled={importBusy} onClick={commitLineCsvImport} style={{...S.btnP,flex:1,opacity:importBusy?0.6:1}}>{importBusy?"Importing...":"Confirm Import"}</button>
@@ -4031,7 +4063,7 @@ function LineChatPage({threads,setToast,devMessages}){
             {selectMode&&<span style={{width:22,height:22,borderRadius:6,border:`2px solid ${isChecked?C.red:C.border}`,background:isChecked?C.red:C.white,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,flexShrink:0}}>{isChecked?"✓":""}</span>}
             <LineAvatar thread={t} active={active}/>
             <div style={{minWidth:0,flex:1}}>
-              <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.displayName||`LINE ${t.id.slice(-6)}`}</div>
+              <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{lineThreadName(t)}</div>
               <div style={{fontSize:12,color:C.text2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>{t.lastMessage||"No message"}</div>
             </div>
             <div style={{fontSize:10,color:C.text3,whiteSpace:"nowrap"}}>{lineTime(t.lastMessageAt)}</div>
@@ -4044,9 +4076,10 @@ function LineChatPage({threads,setToast,devMessages}){
             {isNarrow&&<button onClick={()=>setChatOpen(false)} style={{width:34,height:34,borderRadius:17,border:`1px solid ${C.borderLight}`,background:C.white,color:C.text,fontSize:18,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>‹</button>}
             <LineAvatar thread={selected} size={36}/>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:14,fontWeight:800,color:C.text}}>{selected.displayName||`LINE ${selected.id.slice(-6)}`}</div>
+              <div style={{fontSize:14,fontWeight:800,color:C.text}}>{lineThreadName(selected)}</div>
               <div style={{fontSize:11,color:C.text3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selected.id}</div>
             </div>
+            <button onClick={()=>renameThread(selected)} style={{...S.btnG,padding:"7px 10px",fontSize:12,marginLeft:"auto"}}>Rename</button>
           </div>
           <div style={{flex:1,padding:14,background:"#f5f7f5",overflowY:"auto"}}>
             {loading?<div style={{textAlign:"center",color:C.text3,padding:24}}>Loading...</div>:messages.map(m=>{
