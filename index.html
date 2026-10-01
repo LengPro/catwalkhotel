@@ -3715,6 +3715,8 @@ function LineChatPage({threads,setToast,devMessages}){
   const [selectMode,setSelectMode]=useState(false);
   const [selectedThreadIds,setSelectedThreadIds]=useState([]);
   const [deleteBusy,setDeleteBusy]=useState(false);
+  const [mergeBusy,setMergeBusy]=useState(false);
+  const [exportBusy,setExportBusy]=useState(false);
   const selected=threads.find(t=>t.id===selectedId)||null;
   const q=search.trim().toLowerCase();
   const filteredThreads=threads.filter(t=>{
@@ -3823,6 +3825,27 @@ function LineChatPage({threads,setToast,devMessages}){
 
   const toggleThreadSelect=id=>setSelectedThreadIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
   const exitThreadSelect=()=>{setSelectMode(false);setSelectedThreadIds([]);};
+  const threadLabel=t=>t?.displayName||`LINE ${(t?.id||"").slice(-6)}`;
+  const lineMessageLabel=m=>{
+    if(m.text) return m.text;
+    if(m.mediaTooLarge) return "[image too large]";
+    if(m.mediaUrl) return "[image]";
+    if(m.type==="sticker") return "[sticker]";
+    return `[${m.type||"message"}]`;
+  };
+  const getThreadMessages=async(threadId)=>{
+    const out=[];
+    let query=db.collection("lineThreads").doc(threadId).collection("messages").orderBy("timestamp","asc").limit(450);
+    while(true){
+      const snap=await query.get();
+      if(snap.empty) break;
+      snap.docs.forEach(d=>out.push({id:d.id,...d.data()}));
+      const last=snap.docs[snap.docs.length-1];
+      if(snap.size<450) break;
+      query=db.collection("lineThreads").doc(threadId).collection("messages").orderBy("timestamp","asc").startAfter(last).limit(450);
+    }
+    return out;
+  };
   const deleteThreadMessages=async(threadId)=>{
     const msgCol=db.collection("lineThreads").doc(threadId).collection("messages");
     while(true){
@@ -3856,6 +3879,88 @@ function LineChatPage({threads,setToast,devMessages}){
       setDeleteBusy(false);
     }
   };
+  const exportSelectedThreads=async()=>{
+    if(exportBusy||selectedThreadIds.length===0) return;
+    setExportBusy(true);
+    try{
+      const rows=[["Thread Name","Thread ID","Sender type","Sender name","Date","Time","Message","Message type"]];
+      for(const id of selectedThreadIds){
+        const thread=threads.find(t=>t.id===id)||{id};
+        const msgs=await getThreadMessages(id);
+        msgs.forEach(m=>{
+          const d=m.timestamp?.toDate?m.timestamp.toDate():new Date(m.timestamp||Date.now());
+          const outgoing=m.direction==="out"||m.direction==="outgoing"||m.from==="catwalk";
+          rows.push([
+            threadLabel(thread),
+            id,
+            outgoing?"Account":"User",
+            outgoing?"Catwalk Hotel":threadLabel(thread),
+            d.toLocaleDateString("en-CA"),
+            d.toTimeString().slice(0,8),
+            lineMessageLabel(m),
+            m.type||"text"
+          ]);
+        });
+      }
+      dlCSV(rows,`line-chat-history-${today()}.csv`);
+      setToast&&setToast(`Exported ${selectedThreadIds.length} LINE chat history file`);
+    }catch(err){
+      console.error("LINE export error:",err);
+      setToast&&setToast("❌ Export LINE chat ไม่สำเร็จ");
+    }finally{
+      setExportBusy(false);
+    }
+  };
+  const mergeSelectedThreads=async()=>{
+    if(mergeBusy||selectedThreadIds.length<2) return;
+    const selectedThreads=selectedThreadIds.map(id=>threads.find(t=>t.id===id)).filter(Boolean);
+    const target=selectedThreads.find(t=>!String(t.id).startsWith("imported_"))||selectedThreads[0];
+    const sources=selectedThreads.filter(t=>t.id!==target.id);
+    if(!target||sources.length===0) return;
+    if(!window.confirm(`รวม ${sources.length} แชทเข้า "${threadLabel(target)}" แล้วลบแชทที่ถูกรวม ใช่ไหม?`)) return;
+    setMergeBusy(true);
+    try{
+      const targetRef=db.collection("lineThreads").doc(target.id);
+      for(const source of sources){
+        const msgs=await getThreadMessages(source.id);
+        for(let i=0;i<msgs.length;i+=450){
+          const batch=db.batch();
+          msgs.slice(i,i+450).forEach(m=>{
+            const {id,...data}=m;
+            batch.set(targetRef.collection("messages").doc(id),{...data,mergedFrom:source.id,mergedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+          });
+          await batch.commit();
+        }
+      }
+      const mergedThreads=[target,...sources];
+      const newest=mergedThreads.slice().sort((a,b)=>toMs(b.lastMessageAt)-toMs(a.lastMessageAt))[0]||target;
+      const displaySource=target.displayName?target:sources.find(s=>s.displayName)||target;
+      const targetUpdate={
+        displayName:displaySource.displayName||threadLabel(target),
+        lastMessage:newest.lastMessage||target.lastMessage||"",
+        lastMessageAt:newest.lastMessageAt||target.lastMessageAt||firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
+        mergedThreadIds:firebase.firestore.FieldValue.arrayUnion(...sources.map(s=>s.id))
+      };
+      const mergedPicture=target.pictureUrl||displaySource.pictureUrl;
+      if(mergedPicture) targetUpdate.pictureUrl=mergedPicture;
+      await targetRef.set(targetUpdate,{merge:true});
+      for(const source of sources){
+        await deleteThreadMessages(source.id);
+        await db.collection("lineThreads").doc(source.id).delete();
+      }
+      setSelectedId(target.id);
+      setChatOpen(true);
+      setToast&&setToast(`รวมแชทเข้า ${threadLabel(target)} แล้ว`);
+      exitThreadSelect();
+    }catch(err){
+      console.error("LINE merge error:",err);
+      const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ต้องอนุญาต create/update/delete สำหรับ LINE chat":"❌ Merge chat ไม่สำเร็จ";
+      setToast&&setToast(msg);
+    }finally{
+      setMergeBusy(false);
+    }
+  };
 
   useEffect(()=>{
     const onResize=()=>setIsNarrow(window.innerWidth<760);
@@ -3887,8 +3992,10 @@ function LineChatPage({threads,setToast,devMessages}){
             <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
               {!selectMode&&<button onClick={()=>importRef.current&&importRef.current.click()} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Import CSV</button>}
               {!selectMode&&<button onClick={()=>setSelectMode(true)} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Select</button>}
+              {selectMode&&<button disabled={mergeBusy||selectedThreadIds.length<2} onClick={mergeSelectedThreads} style={{...S.btnP,padding:"7px 10px",fontSize:12,opacity:(mergeBusy||selectedThreadIds.length<2)?0.5:1}}>{mergeBusy?"Merging...":"Merge"}</button>}
+              {selectMode&&<button disabled={exportBusy||selectedThreadIds.length===0} onClick={exportSelectedThreads} style={{...S.btnG,padding:"7px 10px",fontSize:12,opacity:(exportBusy||selectedThreadIds.length===0)?0.5:1}}>{exportBusy?"Exporting...":"Export CSV"}</button>}
               {selectMode&&<button disabled={deleteBusy||selectedThreadIds.length===0} onClick={deleteSelectedThreads} style={{...S.btnD,padding:"7px 10px",fontSize:12,opacity:(deleteBusy||selectedThreadIds.length===0)?0.5:1}}>{deleteBusy?"Deleting...":`Delete ${selectedThreadIds.length}`}</button>}
-              {selectMode&&<button disabled={deleteBusy} onClick={exitThreadSelect} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Cancel</button>}
+              {selectMode&&<button disabled={deleteBusy||mergeBusy||exportBusy} onClick={exitThreadSelect} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Cancel</button>}
             </div>
             <input ref={importRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleLineCsvFile}/>
           </div>
