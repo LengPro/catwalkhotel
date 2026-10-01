@@ -3644,7 +3644,28 @@ function LineChatPage({threads,setToast,devMessages}){
   const [selectedId,setSelectedId]=useState("");
   const [messages,setMessages]=useState([]);
   const [loading,setLoading]=useState(false);
+  const [search,setSearch]=useState("");
+  const [chatOpen,setChatOpen]=useState(false);
+  const [isNarrow,setIsNarrow]=useState(()=>window.innerWidth<760);
   const selected=threads.find(t=>t.id===selectedId)||threads[0]||null;
+  const q=search.trim().toLowerCase();
+  const filteredThreads=threads.filter(t=>{
+    if(!q) return true;
+    return [
+      t.displayName||"",
+      t.lastMessage||"",
+      t.id||"",
+      `LINE ${(t.id||"").slice(-6)}`
+    ].some(v=>String(v).toLowerCase().includes(q));
+  });
+  const showInbox=!isNarrow||!chatOpen;
+  const showChat=!isNarrow||chatOpen;
+
+  useEffect(()=>{
+    const onResize=()=>setIsNarrow(window.innerWidth<760);
+    window.addEventListener("resize",onResize);
+    return()=>window.removeEventListener("resize",onResize);
+  },[]);
 
   useEffect(()=>{
     if(!selectedId&&threads.length>0) setSelectedId(threads[0].id);
@@ -3666,12 +3687,18 @@ function LineChatPage({threads,setToast,devMessages}){
       <div style={S.htitle}>LINE Chat</div>
       <div style={S.hSub}>{threads.length} conversation{threads.length!==1?"s":""} · incoming messages from LINE OA</div>
     </div>
-    <div style={{padding:16,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14,alignItems:"stretch"}}>
-      <div style={{...S.card,overflow:"hidden",minHeight:420}}>
-        <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`,fontSize:12,fontWeight:800,color:C.text2}}>Inbox</div>
-        {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:threads.map(t=>{
+    <div style={{padding:16,display:"grid",gridTemplateColumns:isNarrow?"1fr":"minmax(300px,0.9fr) minmax(360px,1.1fr)",gap:14,alignItems:"stretch"}}>
+      {showInbox&&<div style={{...S.card,overflow:"hidden",minHeight:isNarrow?"calc(100vh - 190px)":420}}>
+        <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.text2,marginBottom:10}}>Inbox</div>
+          <div style={{position:"relative"}}>
+            <input style={{...S.inp,minHeight:42,padding:"10px 14px",paddingRight:search?36:14,borderRadius:12,fontSize:14}} placeholder="ค้นหาชื่อ LINE หรือข้อความ..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
+          </div>
+        </div>
+        {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:filteredThreads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>ไม่พบแชทที่ค้นหา</div>:filteredThreads.map(t=>{
           const active=selected&&selected.id===t.id;
-          return(<button key={t.id} onClick={()=>setSelectedId(t.id)} style={{width:"100%",display:"flex",gap:10,alignItems:"center",padding:"12px 14px",background:active?C.greenBg:C.white,border:"none",borderBottom:`1px solid ${C.borderLight}`,textAlign:"left",fontFamily:"inherit",cursor:"pointer"}}>
+          return(<button key={t.id} onClick={()=>{setSelectedId(t.id);setChatOpen(true);}} style={{width:"100%",display:"flex",gap:10,alignItems:"center",padding:"12px 14px",background:active?C.greenBg:C.white,border:"none",borderBottom:`1px solid ${C.borderLight}`,textAlign:"left",fontFamily:"inherit",cursor:"pointer"}}>
             <LineAvatar thread={t} active={active}/>
             <div style={{minWidth:0,flex:1}}>
               <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.displayName||`LINE ${t.id.slice(-6)}`}</div>
@@ -3680,10 +3707,11 @@ function LineChatPage({threads,setToast,devMessages}){
             <div style={{fontSize:10,color:C.text3,whiteSpace:"nowrap"}}>{lineTime(t.lastMessageAt)}</div>
           </button>);
         })}
-      </div>
-      <div style={{...S.card,overflow:"hidden",minHeight:420,display:"flex",flexDirection:"column"}}>
+      </div>}
+      {showChat&&<div style={{...S.card,overflow:"hidden",minHeight:isNarrow?"calc(100vh - 190px)":420,display:"flex",flexDirection:"column"}}>
         {selected?<>
           <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`,display:"flex",alignItems:"center",gap:10}}>
+            {isNarrow&&<button onClick={()=>setChatOpen(false)} style={{width:34,height:34,borderRadius:17,border:`1px solid ${C.borderLight}`,background:C.white,color:C.text,fontSize:18,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>‹</button>}
             <LineAvatar thread={selected} size={36}/>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:C.text}}>{selected.displayName||`LINE ${selected.id.slice(-6)}`}</div>
@@ -3707,7 +3735,7 @@ function LineChatPage({threads,setToast,devMessages}){
           </div>
           <div style={{padding:"10px 14px",borderTop:`1px solid ${C.borderLight}`,fontSize:12,color:C.text3}}>Read-only for now · replies still happen in LINE OA app</div>
         </>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:C.text3}}>Select a LINE conversation</div>}
-      </div>
+      </div>}
     </div>
   </div>);
 }
