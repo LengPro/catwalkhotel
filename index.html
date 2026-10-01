@@ -3712,6 +3712,7 @@ function LineChatPage({threads,setToast,devMessages}){
   const [isNarrow,setIsNarrow]=useState(()=>window.innerWidth<760);
   const [importDraft,setImportDraft]=useState(null);
   const [importBusy,setImportBusy]=useState(false);
+  const [importProgress,setImportProgress]=useState("");
   const [selectMode,setSelectMode]=useState(false);
   const [selectedThreadIds,setSelectedThreadIds]=useState([]);
   const [deleteBusy,setDeleteBusy]=useState(false);
@@ -3785,6 +3786,7 @@ function LineChatPage({threads,setToast,devMessages}){
   const commitLineCsvImport=async()=>{
     if(!importDraft||importBusy) return;
     setImportBusy(true);
+    setImportProgress("เริ่ม import...");
     try{
       const targetId=importDraft.targetId||lineSafeId(importDraft.userName);
       const threadRef=db.collection("lineThreads").doc(targetId);
@@ -3800,19 +3802,23 @@ function LineChatPage({threads,setToast,devMessages}){
         importedMessageCount:importDraft.messages.length,
         accountName:importDraft.meta.accountName||"Catwalk Hotel"
       };
-      const writes=[{ref:threadRef,data:threadData,merge:true},...importDraft.messages.map(m=>({
+      const writes=importDraft.messages.map(m=>({
         ref:threadRef.collection("messages").doc(m.id),
         data:m,
         merge:true
-      }))];
-      for(let i=0;i<writes.length;i+=450){
+      }));
+      for(let i=0;i<writes.length;i+=60){
         const batch=db.batch();
-        writes.slice(i,i+450).forEach(w=>batch.set(w.ref,w.data,{merge:w.merge}));
+        writes.slice(i,i+60).forEach(w=>batch.set(w.ref,w.data,{merge:w.merge}));
         await batch.commit();
+        setImportProgress(`Imported ${Math.min(i+60,writes.length)} / ${writes.length}`);
       }
+      setImportProgress("Saving chat summary...");
+      await threadRef.set(threadData,{merge:true});
       setSelectedId(targetId);
       setChatOpen(true);
       setImportDraft(null);
+      setImportProgress("");
       setToast&&setToast(`✅ Import LINE chat ${importDraft.messages.length} messages สำเร็จ`);
     }catch(err){
       console.error("LINE CSV import error:",err);
@@ -3820,6 +3826,7 @@ function LineChatPage({threads,setToast,devMessages}){
       setToast&&setToast(msg);
     }finally{
       setImportBusy(false);
+      setImportProgress("");
     }
   };
 
@@ -4014,6 +4021,7 @@ function LineChatPage({threads,setToast,devMessages}){
               <button disabled={importBusy} onClick={commitLineCsvImport} style={{...S.btnP,flex:1,opacity:importBusy?0.6:1}}>{importBusy?"Importing...":"Confirm Import"}</button>
               <button disabled={importBusy} onClick={()=>setImportDraft(null)} style={{...S.btnG,flex:1}}>Cancel</button>
             </div>
+            {importProgress&&<div style={{fontSize:12,color:C.text2,marginTop:8,textAlign:"center"}}>{importProgress}</div>}
           </div>}
         </div>
         {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:filteredThreads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>ไม่พบแชทที่ค้นหา</div>:filteredThreads.map(t=>{
