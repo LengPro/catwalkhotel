@@ -3647,7 +3647,7 @@ function LineChatPage({threads,setToast,devMessages}){
   const [search,setSearch]=useState("");
   const [chatOpen,setChatOpen]=useState(false);
   const [isNarrow,setIsNarrow]=useState(()=>window.innerWidth<760);
-  const selected=threads.find(t=>t.id===selectedId)||threads[0]||null;
+  const selected=threads.find(t=>t.id===selectedId)||null;
   const q=search.trim().toLowerCase();
   const filteredThreads=threads.filter(t=>{
     if(!q) return true;
@@ -3660,6 +3660,7 @@ function LineChatPage({threads,setToast,devMessages}){
   });
   const showInbox=!isNarrow||!chatOpen;
   const showChat=!isNarrow||chatOpen;
+  const shouldLoadMessages=!!selected&&showChat;
 
   useEffect(()=>{
     const onResize=()=>setIsNarrow(window.innerWidth<760);
@@ -3668,19 +3669,15 @@ function LineChatPage({threads,setToast,devMessages}){
   },[]);
 
   useEffect(()=>{
-    if(!selectedId&&threads.length>0) setSelectedId(threads[0].id);
-  },[threads,selectedId]);
-
-  useEffect(()=>{
-    if(devMessages&&devMessages[selected?.id]) { setMessages(devMessages[selected.id]); setLoading(false); return; }
-    if(!selected) { setMessages([]); return; }
+    if(!shouldLoadMessages) { setMessages([]); setLoading(false); return; }
+    if(devMessages&&devMessages[selected.id]) { setMessages(devMessages[selected.id]); setLoading(false); return; }
     setLoading(true);
     const unsub=db.collection("lineThreads").doc(selected.id).collection("messages").orderBy("timestamp","asc").limit(200).onSnapshot(
       snap=>{ setMessages(snap.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); },
       err=>{ console.error("Firestore line messages error:",err); setLoading(false); setToast&&setToast("LINE messages load failed"); }
     );
     return()=>unsub();
-  },[selected&&selected.id,devMessages]);
+  },[shouldLoadMessages,selected&&selected.id,devMessages]);
 
   return(<div>
     <div style={S.header}>
@@ -3720,15 +3717,17 @@ function LineChatPage({threads,setToast,devMessages}){
           </div>
           <div style={{flex:1,padding:14,background:"#f5f7f5",overflowY:"auto"}}>
             {loading?<div style={{textAlign:"center",color:C.text3,padding:24}}>Loading...</div>:messages.map(m=>{
-              const outgoing=m.direction==="out";
+              const outgoing=m.direction==="out"||m.direction==="outgoing"||m.from==="catwalk";
               const label=m.text||`[${m.type||"message"}]`;
-              return(<div key={m.id} style={{display:"flex",justifyContent:outgoing?"flex-end":"flex-start",marginBottom:10}}>
-                <div style={{maxWidth:"78%"}}>
-                  <div style={{background:outgoing?C.green:C.white,color:C.text,border:`1px solid ${outgoing?C.green:C.borderLight}`,borderRadius:16,padding:m.mediaUrl?6:"9px 12px",fontSize:14,lineHeight:1.45,boxShadow:"0 1px 2px rgba(0,0,0,0.04)",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
+              return(<div key={m.id} style={{display:"flex",justifyContent:outgoing?"flex-end":"flex-start",alignItems:"flex-end",gap:8,marginBottom:12}}>
+                {!outgoing&&<LineAvatar thread={selected} size={30}/>}
+                <div style={{maxWidth:"78%",display:"flex",flexDirection:"column",alignItems:outgoing?"flex-end":"flex-start"}}>
+                  {outgoing&&<div style={{fontSize:11,color:"#8a93a3",margin:"0 6px 3px 0",letterSpacing:1}}>Catwalk Hotel</div>}
+                  <div style={{background:outgoing?"#d7e3ff":"#f1f2f4",color:"#3d424a",border:"none",borderRadius:outgoing?"18px 18px 4px 18px":"18px 18px 18px 4px",padding:m.mediaUrl?6:"10px 14px",fontSize:15,lineHeight:1.45,boxShadow:"none",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>
                     {m.mediaUrl?<img src={m.mediaUrl} style={{display:"block",maxWidth:260,width:"100%",borderRadius:12}} alt="LINE image"/>:label}
                     {m.mediaTooLarge&&<span>{label} ใหญ่เกินกว่าจะเก็บใน Firestore</span>}
                   </div>
-                  <div style={{fontSize:10,color:C.text3,marginTop:3,textAlign:outgoing?"right":"left"}}>{lineTime(m.timestamp)}</div>
+                  <div style={{fontSize:11,color:"#8a93a3",marginTop:4,textAlign:outgoing?"right":"left"}}>{lineTime(m.timestamp)}</div>
                 </div>
               </div>);
             })}
