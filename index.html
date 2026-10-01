@@ -3819,13 +3819,11 @@ function LineChatPage({threads,setToast,devMessages}){
         merge:true
       }));
       await withTimeout(threadRef.set({...threadData,importStatus:"importing"},{merge:true}),"Start import");
-      for(let i=0;i<writes.length;i+=10){
-        const end=Math.min(i+10,writes.length);
-        setImportProgress(`Writing ${i+1}-${end} / ${writes.length}`);
-        const batch=db.batch();
-        writes.slice(i,end).forEach(w=>batch.set(w.ref,w.data,{merge:w.merge}));
-        await withTimeout(batch.commit(),`Import ${i+1}-${end}`);
-        setImportProgress(`Imported ${end} / ${writes.length}`);
+      for(let i=0;i<writes.length;i++){
+        const w=writes[i];
+        setImportProgress(`Writing ${i+1} / ${writes.length}`);
+        await withTimeout(w.ref.set(w.data,{merge:w.merge}),`Import message ${i+1}`,30000);
+        if((i+1)%10===0||i===writes.length-1) setImportProgress(`Imported ${i+1} / ${writes.length}`);
       }
       setImportProgress("Saving chat summary...");
       await withTimeout(threadRef.set({...threadData,importStatus:"done"},{merge:true}),"Save summary");
