@@ -3712,6 +3712,9 @@ function LineChatPage({threads,setToast,devMessages}){
   const [isNarrow,setIsNarrow]=useState(()=>window.innerWidth<760);
   const [importDraft,setImportDraft]=useState(null);
   const [importBusy,setImportBusy]=useState(false);
+  const [selectMode,setSelectMode]=useState(false);
+  const [selectedThreadIds,setSelectedThreadIds]=useState([]);
+  const [deleteBusy,setDeleteBusy]=useState(false);
   const selected=threads.find(t=>t.id===selectedId)||null;
   const q=search.trim().toLowerCase();
   const filteredThreads=threads.filter(t=>{
@@ -3818,6 +3821,42 @@ function LineChatPage({threads,setToast,devMessages}){
     }
   };
 
+  const toggleThreadSelect=id=>setSelectedThreadIds(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
+  const exitThreadSelect=()=>{setSelectMode(false);setSelectedThreadIds([]);};
+  const deleteThreadMessages=async(threadId)=>{
+    const msgCol=db.collection("lineThreads").doc(threadId).collection("messages");
+    while(true){
+      const snap=await msgCol.limit(450).get();
+      if(snap.empty) break;
+      const batch=db.batch();
+      snap.docs.forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+  };
+  const deleteSelectedThreads=async()=>{
+    if(deleteBusy||selectedThreadIds.length===0) return;
+    if(!window.confirm(`ลบแชท LINE ${selectedThreadIds.length} รายการ พร้อมข้อความทั้งหมด ใช่ไหม?`)) return;
+    setDeleteBusy(true);
+    try{
+      for(const id of selectedThreadIds){
+        await deleteThreadMessages(id);
+        await db.collection("lineThreads").doc(id).delete();
+      }
+      if(selectedThreadIds.includes(selectedId)){
+        setSelectedId("");
+        setChatOpen(false);
+      }
+      setToast&&setToast(`ลบแชทแล้ว ${selectedThreadIds.length} รายการ`);
+      exitThreadSelect();
+    }catch(err){
+      console.error("LINE delete error:",err);
+      const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ต้องอนุญาต delete สำหรับ owner":"❌ ลบแชทไม่สำเร็จ";
+      setToast&&setToast(msg);
+    }finally{
+      setDeleteBusy(false);
+    }
+  };
+
   useEffect(()=>{
     const onResize=()=>setIsNarrow(window.innerWidth<760);
     window.addEventListener("resize",onResize);
@@ -3845,7 +3884,12 @@ function LineChatPage({threads,setToast,devMessages}){
         <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.borderLight}`}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
             <div style={{fontSize:12,fontWeight:800,color:C.text2}}>Inbox</div>
-            <button onClick={()=>importRef.current&&importRef.current.click()} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Import CSV</button>
+            <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+              {!selectMode&&<button onClick={()=>importRef.current&&importRef.current.click()} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Import CSV</button>}
+              {!selectMode&&<button onClick={()=>setSelectMode(true)} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Select</button>}
+              {selectMode&&<button disabled={deleteBusy||selectedThreadIds.length===0} onClick={deleteSelectedThreads} style={{...S.btnD,padding:"7px 10px",fontSize:12,opacity:(deleteBusy||selectedThreadIds.length===0)?0.5:1}}>{deleteBusy?"Deleting...":`Delete ${selectedThreadIds.length}`}</button>}
+              {selectMode&&<button disabled={deleteBusy} onClick={exitThreadSelect} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Cancel</button>}
+            </div>
             <input ref={importRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleLineCsvFile}/>
           </div>
           <div style={{position:"relative"}}>
@@ -3867,7 +3911,9 @@ function LineChatPage({threads,setToast,devMessages}){
         </div>
         {threads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>No LINE messages yet</div>:filteredThreads.length===0?<div style={{padding:24,textAlign:"center",color:C.text3,fontSize:14}}>ไม่พบแชทที่ค้นหา</div>:filteredThreads.map(t=>{
           const active=selected&&selected.id===t.id;
-          return(<button key={t.id} onClick={()=>{setSelectedId(t.id);setChatOpen(true);}} style={{width:"100%",display:"flex",gap:10,alignItems:"center",padding:"12px 14px",background:active?C.greenBg:C.white,border:"none",borderBottom:`1px solid ${C.borderLight}`,textAlign:"left",fontFamily:"inherit",cursor:"pointer"}}>
+          const isChecked=selectedThreadIds.includes(t.id);
+          return(<button key={t.id} onClick={()=>selectMode?toggleThreadSelect(t.id):(()=>{setSelectedId(t.id);setChatOpen(true);})()} style={{width:"100%",display:"flex",gap:10,alignItems:"center",padding:"12px 14px",background:isChecked?"#fff1f2":active?C.greenBg:C.white,border:"none",borderBottom:`1px solid ${C.borderLight}`,textAlign:"left",fontFamily:"inherit",cursor:"pointer"}}>
+            {selectMode&&<span style={{width:22,height:22,borderRadius:6,border:`2px solid ${isChecked?C.red:C.border}`,background:isChecked?C.red:C.white,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,flexShrink:0}}>{isChecked?"✓":""}</span>}
             <LineAvatar thread={t} active={active}/>
             <div style={{minWidth:0,flex:1}}>
               <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.displayName||`LINE ${t.id.slice(-6)}`}</div>
