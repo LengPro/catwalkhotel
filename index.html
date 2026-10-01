@@ -3727,6 +3727,12 @@ function LineChatPage({threads,setToast,devMessages}){
   const showChat=!isNarrow||chatOpen;
   const shouldLoadMessages=!!selected&&showChat;
   const norm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
+  const toMs=v=>{
+    if(!v) return 0;
+    if(v.toDate) return v.toDate().getTime();
+    const d=new Date(v);
+    return isNaN(d.getTime())?0:d.getTime();
+  };
 
   const handleLineCsvFile=e=>{
     const file=e.target.files&&e.target.files[0];
@@ -3737,10 +3743,23 @@ function LineChatPage({threads,setToast,devMessages}){
         const parsed=parseLineChatCsv(ev.target.result,file.name);
         if(parsed.messages.length===0) throw new Error("ไม่พบข้อความในไฟล์");
         const n=norm(parsed.userName);
-        const candidates=threads.filter(t=>{
+        const lastText=norm(parsed.last?.text);
+        const lastMs=toMs(parsed.last?.timestamp);
+        const candidates=threads.map(t=>{
           const dn=norm(t.displayName);
-          return dn&&n&&(dn===n||dn.includes(n)||n.includes(dn));
-        }).slice(0,8);
+          const lm=norm(t.lastMessage);
+          const tMs=toMs(t.lastMessageAt);
+          let score=0;
+          if(dn&&n&&(dn===n||dn.includes(n)||n.includes(dn))) score+=10;
+          if(lastText&&lm&&lastText===lm) score+=8;
+          if(lastText&&lm&&(lastText.includes(lm)||lm.includes(lastText))) score+=4;
+          if(lastMs&&tMs){
+            const diff=Math.abs(lastMs-tMs);
+            if(diff<5*60*1000) score+=4;
+            else if(diff<60*60*1000) score+=2;
+          }
+          return {...t,_matchScore:score};
+        }).filter(t=>t._matchScore>0).sort((a,b)=>b._matchScore-a._matchScore).slice(0,8);
         setImportDraft({
           ...parsed,
           fileName:file.name,
@@ -3838,7 +3857,7 @@ function LineChatPage({threads,setToast,devMessages}){
             <div style={{fontSize:12,color:C.text2,marginBottom:8}}>{importDraft.messages.length} messages · {importDraft.fileName}</div>
             <select style={{...S.inp,minHeight:40,fontSize:13,marginBottom:8}} value={importDraft.targetId} onChange={e=>setImportDraft(d=>({...d,targetId:e.target.value}))}>
               <option value="">สร้างแชทใหม่: {importDraft.userName}</option>
-              {importDraft.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {t.displayName||`LINE ${t.id.slice(-6)}`}</option>)}
+              {importDraft.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {t.displayName||`LINE ${t.id.slice(-6)}`} · {t.lastMessage||"No message"}</option>)}
             </select>
             <div style={{display:"flex",gap:8}}>
               <button disabled={importBusy} onClick={commitLineCsvImport} style={{...S.btnP,flex:1,opacity:importBusy?0.6:1}}>{importBusy?"Importing...":"Confirm Import"}</button>
