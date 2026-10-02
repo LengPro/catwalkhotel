@@ -12,8 +12,9 @@
 	},
 	"upload_source_maps": true,
 	"vars": {
-		"FIREBASE_PROJECT_ID": "catwalk-cat-hotel"
-	}
+		"FIREBASE_PROJECT_ID": "catwalk-cat-hotel",
+		"FIREBASE_WEB_API_KEY": "AIzaSyDyJDGHrC2GFW-sly--8YI7jf3CJPtN0QU"
+	},
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

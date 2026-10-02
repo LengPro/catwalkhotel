@@ -76,6 +76,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 auth.useDeviceLanguage();
+const LINE_API_BASE = (localStorage.getItem("cw_line_worker_url") || "https://line-webhook.nvvcv7ds48.workers.dev").replace(/\/$/,"");
 // LOCAL persistence so an installed PWA stays signed in across relaunches.
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(e=>console.warn("persistence:",e));
 
@@ -3634,6 +3635,46 @@ function lineTime(v){
   if(isNaN(d.getTime())) return "";
   return d.toLocaleString("th-TH",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
 }
+function fromSupabaseLineThread(row){
+  return {
+    id:row.id,
+    lineUserId:row.line_user_id,
+    displayName:row.display_name,
+    crmDisplayName:row.crm_display_name,
+    pictureUrl:row.picture_url,
+    lastMessage:row.last_message,
+    lastMessageAt:row.last_message_at,
+    source:row.source,
+    importFileName:row.import_file_name,
+    importedMessageCount:row.imported_message_count,
+    mergedThreadIds:row.merged_thread_ids||[],
+    updatedAt:row.updated_at
+  };
+}
+function fromSupabaseLineMessage(row){
+  return {
+    id:row.id,
+    lineUserId:row.line_user_id,
+    lineMessageId:row.line_message_id,
+    direction:row.direction,
+    eventType:row.event_type,
+    type:row.type,
+    text:row.text,
+    mediaUrl:row.media_url,
+    mediaContentType:row.media_content_type,
+    mediaTooLarge:row.media_too_large,
+    stickerPackageId:row.sticker_package_id,
+    stickerId:row.sticker_id,
+    senderType:row.sender_type,
+    senderName:row.sender_name,
+    importedFrom:row.imported_from,
+    mergedFrom:row.merged_from,
+    timestamp:row.timestamp,
+    createdAt:row.created_at,
+    importedAt:row.imported_at,
+    mergedAt:row.merged_at
+  };
+}
 function lineCsvRows(text){
   const rows=[]; let row=[],cur="",q=false;
   const s=String(text||"").replace(/^\uFEFF/,"");
@@ -3687,9 +3728,9 @@ function parseLineChatCsv(text,fileName){
     return {
       id:`csv_${lineHash([date,time,senderType,senderName,text,i].join("|"))}`,
       direction,type:"text",text,senderType,senderName,
-      timestamp:firebase.firestore.Timestamp.fromDate(stamp),
+      timestamp:stamp.toISOString(),
       importedFrom:"line_csv",
-      importedAt:firebase.firestore.FieldValue.serverTimestamp()
+      importedAt:new Date().toISOString()
     };
   }).filter(Boolean);
   const userName=(messages.find(m=>m.direction==="in")?.senderName)||"Imported LINE";
@@ -3705,7 +3746,7 @@ function LineAvatar({thread,size=38,active=false}){
 function lineThreadName(thread){
   return thread?.crmDisplayName||thread?.displayName||`LINE ${(thread?.id||"").slice(-6)}`;
 }
-function LineChatPage({threads,setToast,devMessages}){
+function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
   const importRef=useRef(null);
   const [selectedId,setSelectedId]=useState("");
   const [messages,setMessages]=useState([]);
@@ -3797,36 +3838,18 @@ function LineChatPage({threads,setToast,devMessages}){
     setImportProgress("เริ่ม import...");
     try{
       const targetId=importDraft.targetId||lineSafeId(importDraft.userName);
-      const isNewImportedThread=!importDraft.targetId;
-      const threadRef=db.collection("lineThreads").doc(targetId);
-      const last=importDraft.last||importDraft.messages[importDraft.messages.length-1];
-      const threadData={
-        crmDisplayName:importDraft.userName,
-        lineCsvDisplayName:importDraft.userName,
-        lastMessage:last?.text||"[imported message]",
-        lastMessageAt:last?.timestamp||firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
-        source:"line_csv_import",
-        importedAt:firebase.firestore.FieldValue.serverTimestamp(),
-        importFileName:importDraft.fileName,
-        importedMessageCount:importDraft.messages.length,
-        accountName:importDraft.meta.accountName||"Catwalk Hotel"
-      };
-      if(isNewImportedThread) threadData.displayName=importDraft.userName;
-      const writes=importDraft.messages.map(m=>({
-        ref:threadRef.collection("messages").doc(m.id),
-        data:m,
-        merge:true
-      }));
-      await withTimeout(threadRef.set({...threadData,importStatus:"importing"},{merge:true}),"Start import");
-      for(let i=0;i<writes.length;i++){
-        const w=writes[i];
-        setImportProgress(`Writing ${i+1} / ${writes.length}`);
-        await withTimeout(w.ref.set(w.data,{merge:w.merge}),`Import message ${i+1}`,30000);
-        if((i+1)%10===0||i===writes.length-1) setImportProgress(`Imported ${i+1} / ${writes.length}`);
-      }
-      setImportProgress("Saving chat summary...");
-      await withTimeout(threadRef.set({...threadData,importStatus:"done"},{merge:true}),"Save summary");
+      setImportProgress(`Uploading ${importDraft.messages.length} messages...`);
+      await withTimeout(lineApi("/line/import",{
+        method:"POST",
+        body:JSON.stringify({
+          targetId,
+          userName:importDraft.userName,
+          fileName:importDraft.fileName,
+          accountName:importDraft.meta.accountName||"Catwalk Hotel",
+          messages:importDraft.messages
+        })
+      }),"Import LINE CSV",60000);
+      await reloadThreads();
       setSelectedId(targetId);
       setChatOpen(true);
       setImportDraft(null);
@@ -3835,8 +3858,7 @@ function LineChatPage({threads,setToast,devMessages}){
     }catch(err){
       console.error("LINE CSV import error:",err);
       setImportProgress(err?.message||"Import failed");
-      const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ยังไม่อนุญาตให้ import LINE chat":"❌ Import LINE chat ไม่สำเร็จ";
-      setToast&&setToast(msg);
+      setToast&&setToast("❌ Import LINE chat ไม่สำเร็จ");
     }finally{
       setImportBusy(false);
     }
@@ -3853,10 +3875,11 @@ function LineChatPage({threads,setToast,devMessages}){
     const clean=next.trim();
     if(!clean||clean===current) return;
     try{
-      await db.collection("lineThreads").doc(thread.id).set({
-        crmDisplayName:clean,
-        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-      },{merge:true});
+      await lineApi(`/line/threads/${encodeURIComponent(thread.id)}/rename`,{
+        method:"POST",
+        body:JSON.stringify({crmDisplayName:clean})
+      });
+      await reloadThreads();
       setToast&&setToast("บันทึกชื่อ LINE ใน CRM แล้ว");
     }catch(err){
       console.error("LINE rename error:",err);
@@ -3871,27 +3894,11 @@ function LineChatPage({threads,setToast,devMessages}){
     return `[${m.type||"message"}]`;
   };
   const getThreadMessages=async(threadId)=>{
-    const out=[];
-    let query=db.collection("lineThreads").doc(threadId).collection("messages").orderBy("timestamp","asc").limit(450);
-    while(true){
-      const snap=await query.get();
-      if(snap.empty) break;
-      snap.docs.forEach(d=>out.push({id:d.id,...d.data()}));
-      const last=snap.docs[snap.docs.length-1];
-      if(snap.size<450) break;
-      query=db.collection("lineThreads").doc(threadId).collection("messages").orderBy("timestamp","asc").startAfter(last).limit(450);
-    }
-    return out;
+    const data=await lineApi(`/line/threads/${encodeURIComponent(threadId)}/messages?limit=3000`);
+    return (data.messages||[]).map(fromSupabaseLineMessage);
   };
   const deleteThreadMessages=async(threadId)=>{
-    const msgCol=db.collection("lineThreads").doc(threadId).collection("messages");
-    while(true){
-      const snap=await msgCol.limit(450).get();
-      if(snap.empty) break;
-      const batch=db.batch();
-      snap.docs.forEach(d=>batch.delete(d.ref));
-      await batch.commit();
-    }
+    await lineApi(`/line/threads/${encodeURIComponent(threadId)}`,{method:"DELETE"});
   };
   const deleteSelectedThreads=async()=>{
     if(deleteBusy||selectedThreadIds.length===0) return;
@@ -3900,7 +3907,6 @@ function LineChatPage({threads,setToast,devMessages}){
     try{
       for(const id of selectedThreadIds){
         await deleteThreadMessages(id);
-        await db.collection("lineThreads").doc(id).delete();
       }
       if(selectedThreadIds.includes(selectedId)){
         setSelectedId("");
@@ -3910,8 +3916,7 @@ function LineChatPage({threads,setToast,devMessages}){
       exitThreadSelect();
     }catch(err){
       console.error("LINE delete error:",err);
-      const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ต้องอนุญาต delete สำหรับ owner":"❌ ลบแชทไม่สำเร็จ";
-      setToast&&setToast(msg);
+      setToast&&setToast("❌ ลบแชทไม่สำเร็จ");
     }finally{
       setDeleteBusy(false);
     }
@@ -3957,43 +3962,18 @@ function LineChatPage({threads,setToast,devMessages}){
     if(!window.confirm(`รวม ${sources.length} แชทเข้า "${threadLabel(target)}" แล้วลบแชทที่ถูกรวม ใช่ไหม?`)) return;
     setMergeBusy(true);
     try{
-      const targetRef=db.collection("lineThreads").doc(target.id);
-      for(const source of sources){
-        const msgs=await getThreadMessages(source.id);
-        for(let i=0;i<msgs.length;i+=450){
-          const batch=db.batch();
-          msgs.slice(i,i+450).forEach(m=>{
-            const {id,...data}=m;
-            batch.set(targetRef.collection("messages").doc(id),{...data,mergedFrom:source.id,mergedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
-          });
-          await batch.commit();
-        }
-      }
-      const mergedThreads=[target,...sources];
-      const newest=mergedThreads.slice().sort((a,b)=>toMs(b.lastMessageAt)-toMs(a.lastMessageAt))[0]||target;
-      const displaySource=(target.crmDisplayName||target.displayName)?target:(sources.find(s=>s.crmDisplayName||s.displayName)||target);
-      const targetUpdate={
-        crmDisplayName:threadLabel(displaySource),
-        lastMessage:newest.lastMessage||target.lastMessage||"",
-        lastMessageAt:newest.lastMessageAt||target.lastMessageAt||firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt:firebase.firestore.FieldValue.serverTimestamp(),
-        mergedThreadIds:firebase.firestore.FieldValue.arrayUnion(...sources.map(s=>s.id))
-      };
-      const mergedPicture=target.pictureUrl||displaySource.pictureUrl;
-      if(mergedPicture) targetUpdate.pictureUrl=mergedPicture;
-      await targetRef.set(targetUpdate,{merge:true});
-      for(const source of sources){
-        await deleteThreadMessages(source.id);
-        await db.collection("lineThreads").doc(source.id).delete();
-      }
+      await lineApi("/line/merge",{
+        method:"POST",
+        body:JSON.stringify({targetId:target.id,sourceIds:sources.map(s=>s.id)})
+      });
+      await reloadThreads();
       setSelectedId(target.id);
       setChatOpen(true);
       setToast&&setToast(`รวมแชทเข้า ${threadLabel(target)} แล้ว`);
       exitThreadSelect();
     }catch(err){
       console.error("LINE merge error:",err);
-      const msg=err&&err.code==="permission-denied"?"❌ Firestore rules ต้องอนุญาต create/update/delete สำหรับ LINE chat":"❌ Merge chat ไม่สำเร็จ";
-      setToast&&setToast(msg);
+      setToast&&setToast("❌ Merge chat ไม่สำเร็จ");
     }finally{
       setMergeBusy(false);
     }
@@ -4009,12 +3989,13 @@ function LineChatPage({threads,setToast,devMessages}){
     if(!shouldLoadMessages) { setMessages([]); setLoading(false); return; }
     if(devMessages&&devMessages[selected.id]) { setMessages(devMessages[selected.id]); setLoading(false); return; }
     setLoading(true);
-    const unsub=db.collection("lineThreads").doc(selected.id).collection("messages").orderBy("timestamp","asc").limit(200).onSnapshot(
-      snap=>{ setMessages(snap.docs.map(d=>({id:d.id,...d.data()}))); setLoading(false); },
-      err=>{ console.error("Firestore line messages error:",err); setLoading(false); setToast&&setToast("LINE messages load failed"); }
-    );
-    return()=>unsub();
-  },[shouldLoadMessages,selected&&selected.id,devMessages]);
+    let cancelled=false;
+    lineApi(`/line/threads/${encodeURIComponent(selected.id)}/messages?limit=1000`)
+      .then(data=>{ if(!cancelled) setMessages((data.messages||[]).map(fromSupabaseLineMessage)); })
+      .catch(err=>{ console.error("Supabase line messages error:",err); if(!cancelled) setToast&&setToast("LINE messages load failed"); })
+      .finally(()=>{ if(!cancelled) setLoading(false); });
+    return()=>{cancelled=true;};
+  },[shouldLoadMessages,selected&&selected.id,devMessages,lineApi]);
 
   return(<div>
     <div style={S.header}>
@@ -5946,6 +5927,35 @@ function App(){
   const [receiptMode,setReceiptMode]=useState("receipt"); // "receipt" | "quote"
   const [receiptCounter,setReceiptCounter]=useState(()=>parseInt(localStorage.getItem("cw_receipt_counter")||"1"));
   const bumpReceipt=()=>{ const n=receiptCounter+1; setReceiptCounter(n); try{localStorage.setItem("cw_receipt_counter",String(n));}catch(e){} };
+  const lineApi=useCallback(async(path,options={})=>{
+    requireAuth();
+    const token=await auth.currentUser.getIdToken();
+    const res=await fetch(`${LINE_API_BASE}${path}`,{
+      method:options.method||"GET",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":`Bearer ${token}`,
+        ...(options.headers||{})
+      },
+      body:options.body
+    });
+    let data=null;
+    try{ data=await res.json(); }catch(e){}
+    if(!res.ok||data?.ok===false){
+      const err=new Error(data?.error||`LINE API ${res.status}`);
+      err.status=res.status;
+      throw err;
+    }
+    return data||{};
+  },[]);
+  const reloadLineThreads=useCallback(async()=>{
+    if(isLocalDev){
+      setLineThreads(devLineThreads);
+      return;
+    }
+    const data=await lineApi("/line/threads?limit=100");
+    setLineThreads((data.threads||[]).map(fromSupabaseLineThread));
+  },[isLocalDev,lineApi]);
 
   // ── Auth gate ──────────────────────────────────────────────────────
   // "checking" | "signedout" | "checking_staff" | "authorized" | "denied" | "autherror"
@@ -6060,13 +6070,12 @@ function App(){
   },[authState,isLocalDev]);
 
   useEffect(()=>{
-    if(authState!=="authorized"||isLocalDev||page!=="line") return;
-    const unsub=db.collection("lineThreads").orderBy("lastMessageAt","desc").limit(100).onSnapshot(
-      snap=>{ setLineThreads(snap.docs.map(d=>({id:d.id,...d.data()}))); },
-      err=>{ console.error("Firestore lineThreads error:",err); setToast("LINE inbox load failed"); }
-    );
-    return()=>unsub();
-  },[authState,isLocalDev,page]);
+    if(authState!=="authorized"||page!=="line") return;
+    reloadLineThreads().catch(err=>{
+      console.error("Supabase lineThreads error:",err);
+      setToast("LINE inbox load failed");
+    });
+  },[authState,page,reloadLineThreads]);
 
   useEffect(()=>{
     if(authState!=="authorized"||isLocalDev||bookings.length===0) return;
@@ -6157,7 +6166,7 @@ const onDeleteCustomer=useCallback(async id=>{
     {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}}/>}
     {receiptBooking&&<ReceiptModal booking={receiptBooking} customers={customers} mode={receiptMode} receiptNum={receiptCounter} onClose={()=>{bumpReceipt();setReceiptBooking(null);}}/>}
     {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
-    {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast} devMessages={isLocalDev?devLineMessages:null}/>}
+    {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast} devMessages={isLocalDev?devLineMessages:null} lineApi={lineApi} reloadThreads={reloadLineThreads}/>}
     {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
     {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast} pricingDoc={pricingDoc} onSavePricing={async(doc)=>{await db.collection("settings").doc("pricing").set(doc);onPricingLoaded(doc);setPricingDoc(doc);}} icalUrl={icalUrl} onSaveIcalUrl={async(url)=>{await db.collection("settings").doc("ical").set({url,updatedAt:new Date().toISOString(),updatedBy:(window.__cwUser?.email||"")});}}/>}
 
