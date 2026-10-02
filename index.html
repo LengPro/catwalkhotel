@@ -4094,7 +4094,7 @@ function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
 // ════════════════════════════════════════════════════════════════
 // BOOKINGS PAGE
 // ════════════════════════════════════════════════════════════════
-function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings,onShowReceipt,onRemoteSearch,remoteSearchBusy,onLoadOlder,olderLoadBusy}){
+function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings,onShowReceipt,onRemoteSearch,remoteSearchBusy}){
   const [showForm,setShowForm]=useState(false);
   const [editBook,setEditBook]=useState(null);
   const [filter,setFilter]=useState("upcoming");
@@ -4174,7 +4174,6 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
         {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
       </div>
       <div style={{marginTop:8,display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap"}}>
-        {filter==="past"&&<button disabled={olderLoadBusy} onClick={onLoadOlder} style={{...S.btnG,fontSize:12,padding:"7px 10px",opacity:olderLoadBusy?0.6:1}}>{olderLoadBusy?"Loading...":"โหลดรายการเก่ากว่านี้"}</button>}
         {search.trim().length>=2&&<button disabled={remoteSearchBusy} onClick={()=>onRemoteSearch&&onRemoteSearch(search)} style={{...S.btnG,fontSize:12,padding:"7px 10px",opacity:remoteSearchBusy?0.6:1}}>{remoteSearchBusy?"Searching...":"ค้นหาเพิ่มในฐานข้อมูล"}</button>}
       </div>
     </div>
@@ -5938,7 +5937,6 @@ function App(){
   const [receiptMode,setReceiptMode]=useState("receipt"); // "receipt" | "quote"
   const [receiptCounter,setReceiptCounter]=useState(()=>parseInt(localStorage.getItem("cw_receipt_counter")||"1"));
   const [remoteSearchBusy,setRemoteSearchBusy]=useState(false);
-  const [olderLoadBusy,setOlderLoadBusy]=useState(false);
   // ── Auth gate ──────────────────────────────────────────────────────
   // "checking" | "signedout" | "checking_staff" | "authorized" | "denied" | "autherror"
   const [authState,setAuthState]=useState("checking");
@@ -6010,22 +6008,6 @@ function App(){
       setToast("โหลด booking ช่วงวันที่นี้ไม่สำเร็จ");
     });
   },[isLocalDev,authState,loadBookingsForRange]);
-  const loadOlderBookings=useCallback(async()=>{
-    if(isLocalDev||authState!=="authorized"||olderLoadBusy) return;
-    setOlderLoadBusy(true);
-    try{
-      const earliest=bookings.map(b=>b.checkout||b.checkin).filter(Boolean).sort()[0]||today();
-      const start=addDays(earliest,-180);
-      const end=addDays(earliest,-1);
-      await loadBookingsForRange(start,end,{limit:900});
-      setToast(`โหลดรายการเก่าเพิ่ม: ${fmt(start)} → ${fmt(end)}`);
-    }catch(err){
-      console.error("Firestore older bookings error:",err);
-      setToast("โหลดรายการเก่าไม่สำเร็จ");
-    }finally{
-      setOlderLoadBusy(false);
-    }
-  },[isLocalDev,authState,olderLoadBusy,bookings,loadBookingsForRange]);
   const remoteSearchRecords=useCallback(async(raw)=>{
     const term=String(raw||"").trim();
     if(isLocalDev||authState!=="authorized"||term.length<2||remoteSearchBusy) return;
@@ -6138,7 +6120,7 @@ function App(){
       return false;
     };
 
-    const unsubC=db.collection("customers").orderBy("createdAt","desc").limit(80).onSnapshot(
+    const unsubC=db.collection("customers").orderBy("createdAt","desc").limit(1000).onSnapshot(
       snap=>{
         clearTimeout(loadTimeout);
         setCustomers(snap.docs.map(d=>({id:d.id,...d.data()})));
@@ -6152,8 +6134,7 @@ function App(){
         setDbError(err.code||"unknown");
       }
     );
-    const recentStart=addDays(today(),-30);
-    const unsubB=db.collection("bookings").where("checkout",">=",recentStart).orderBy("checkout","asc").limit(500).onSnapshot(
+    const unsubB=db.collection("bookings").orderBy("checkout","asc").limit(5000).onSnapshot(
       snap=>{ mergeBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
       err=>{ if(onErr("bookings",err)) return; setDbError(err.code||"unknown"); }
     );
@@ -6260,7 +6241,7 @@ const onDeleteCustomer=useCallback(async id=>{
 
     {/* ── Main Content ── */}
     {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}} onRangeChange={handleRoomsRangeChange}/>}
-    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}} onRemoteSearch={remoteSearchRecords} remoteSearchBusy={remoteSearchBusy} onLoadOlder={loadOlderBookings} olderLoadBusy={olderLoadBusy}/>}
+    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}} onRemoteSearch={remoteSearchRecords} remoteSearchBusy={remoteSearchBusy}/>}
     {receiptBooking&&<ReceiptModal booking={receiptBooking} customers={customers} mode={receiptMode} receiptNum={receiptCounter} onClose={()=>{bumpReceipt();setReceiptBooking(null);}}/>}
     {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast} onRemoteSearch={remoteSearchRecords} remoteSearchBusy={remoteSearchBusy}/>}
     {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast} devMessages={isLocalDev?devLineMessages:null} lineApi={lineApi} reloadThreads={reloadLineThreads}/>}
