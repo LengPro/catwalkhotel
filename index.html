@@ -1297,7 +1297,7 @@ function InfiniteScrollCalendar({checkin,checkout,onChange,allowPast=false,start
 // ════════════════════════════════════════════════════════════════
 // ROOMS PAGE — Timeline + Availability
 // ════════════════════════════════════════════════════════════════
-function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,onShowReceipt}){
+function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,onShowReceipt,onRangeChange}){
   const [viewDate,setViewDate]=useState(today());
   const [daysShow,setDaysShow]=useState(30); // configurable: 14/30/60/90
   const [detailBooking,setDetailBooking]=useState(null);
@@ -1320,6 +1320,10 @@ function RoomsPage({bookings,customers,setToast,onSaveBooking,onDeleteBooking,on
     const arr=[];
     for(let i=0;i<daysShow;i++) arr.push(addDays(viewDate,i));
     return arr;
+  },[viewDate,daysShow]);
+
+  useEffect(()=>{
+    onRangeChange&&onRangeChange(viewDate,addDays(viewDate,daysShow-1));
   },[viewDate,daysShow]);
 
   const todayStr=today();
@@ -3521,7 +3525,7 @@ function ImportSheet({mode, customers, onImportCustomers, onImportBookings, onCl
 // ════════════════════════════════════════════════════════════════
 // CUSTOMERS PAGE
 // ════════════════════════════════════════════════════════════════
-function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSaveBooking,onImportCustomers,setToast}){
+function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSaveBooking,onImportCustomers,setToast,onRemoteSearch,remoteSearchBusy}){
   const [search,setSearch]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [editCust,setEditCust]=useState(null);
@@ -3584,9 +3588,12 @@ function CustomersPage({customers,bookings,onSaveCustomer,onDeleteCustomer,onSav
       </div>
       <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["highlow","High→Low"],["1cat","1 Cat"],["2cat","2 Cats"],["3cat","3 Cats"],["4cat","4+ Cats"]].map(([v,l])=><button key={v} style={S.tab(filter===v)} onClick={()=>{setFilter(v);exitSelect();}}>{l}</button>)}</div>
       <div style={{position:"relative",marginTop:12}}>
-        <input style={{...S.inp,minHeight:52,padding:"14px 16px",paddingRight:search?40:16,borderRadius:14,fontSize:15}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+        <input style={{...S.inp,minHeight:52,padding:"14px 16px",paddingRight:search?40:16,borderRadius:14,fontSize:15}} placeholder="🔍  Search name, cat name, phone..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}} onKeyDown={e=>{if(e.key==="Enter"&&search.trim()) onRemoteSearch&&onRemoteSearch(search);}}/>
         {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
       </div>
+      {search.trim().length>=2&&<div style={{marginTop:8,display:"flex",justifyContent:"flex-end"}}>
+        <button disabled={remoteSearchBusy} onClick={()=>onRemoteSearch&&onRemoteSearch(search)} style={{...S.btnG,fontSize:12,padding:"7px 10px",opacity:remoteSearchBusy?0.6:1}}>{remoteSearchBusy?"Searching...":"ค้นหาเพิ่มในฐานข้อมูล"}</button>
+      </div>}
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
       {filtered.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:C.text3}}><div style={{fontSize:32,marginBottom:8}}>🐱</div>No customers found</div>
@@ -4087,7 +4094,7 @@ function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
 // ════════════════════════════════════════════════════════════════
 // BOOKINGS PAGE
 // ════════════════════════════════════════════════════════════════
-function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings,onShowReceipt}){
+function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImportBookings,onShowReceipt,onRemoteSearch,remoteSearchBusy,onLoadOlder,olderLoadBusy}){
   const [showForm,setShowForm]=useState(false);
   const [editBook,setEditBook]=useState(null);
   const [filter,setFilter]=useState("upcoming");
@@ -4163,8 +4170,12 @@ function BookingsPage({bookings,customers,onSaveBooking,onDeleteBooking,onImport
       </div>
       <div style={{...S.tabs,marginTop:12}}>{[["upcoming","Upcoming"],["past","Past"],["all","All"]].map(([v,l])=><button key={v} style={{...S.tab(filter===v),fontSize:13}} onClick={()=>{setFilter(v);exitSelect();setSearch("");}}>{l}</button>)}</div>
       <div style={{position:"relative",marginTop:10}}>
-        <input style={{...S.inp,paddingRight:search?36:14}} placeholder="🔍  Search by name, cat, room, date (e.g. Mar, Apr 2026)..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}}/>
+        <input style={{...S.inp,paddingRight:search?36:14}} placeholder="🔍  Search by name, cat, room, date (e.g. Mar, Apr 2026)..." value={search} onChange={e=>{setSearch(e.target.value);exitSelect();}} onKeyDown={e=>{if(e.key==="Enter"&&search.trim()) onRemoteSearch&&onRemoteSearch(search);}}/>
         {search&&<button onClick={()=>{setSearch("");exitSelect();}} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
+      </div>
+      <div style={{marginTop:8,display:"flex",gap:8,justifyContent:"flex-end",flexWrap:"wrap"}}>
+        {filter==="past"&&<button disabled={olderLoadBusy} onClick={onLoadOlder} style={{...S.btnG,fontSize:12,padding:"7px 10px",opacity:olderLoadBusy?0.6:1}}>{olderLoadBusy?"Loading...":"โหลดรายการเก่ากว่านี้"}</button>}
+        {search.trim().length>=2&&<button disabled={remoteSearchBusy} onClick={()=>onRemoteSearch&&onRemoteSearch(search)} style={{...S.btnG,fontSize:12,padding:"7px 10px",opacity:remoteSearchBusy?0.6:1}}>{remoteSearchBusy?"Searching...":"ค้นหาเพิ่มในฐานข้อมูล"}</button>}
       </div>
     </div>
     <div style={{...S.sec,marginTop:0}}><div style={{marginTop:16}}>
@@ -5926,7 +5937,31 @@ function App(){
   const [receiptBooking,setReceiptBooking]=useState(null);
   const [receiptMode,setReceiptMode]=useState("receipt"); // "receipt" | "quote"
   const [receiptCounter,setReceiptCounter]=useState(()=>parseInt(localStorage.getItem("cw_receipt_counter")||"1"));
+  const [remoteSearchBusy,setRemoteSearchBusy]=useState(false);
+  const [olderLoadBusy,setOlderLoadBusy]=useState(false);
+  // ── Auth gate ──────────────────────────────────────────────────────
+  // "checking" | "signedout" | "checking_staff" | "authorized" | "denied" | "autherror"
+  const [authState,setAuthState]=useState("checking");
+  const [user,setUser]=useState(null);
+  const [authErr,setAuthErr]=useState("");
+  const [redirectBlocked,setRedirectBlocked]=useState(false);
   const bumpReceipt=()=>{ const n=receiptCounter+1; setReceiptCounter(n); try{localStorage.setItem("cw_receipt_counter",String(n));}catch(e){} };
+  const mergeCustomers=useCallback(items=>{
+    if(!items||items.length===0) return;
+    setCustomers(prev=>{
+      const byId=new Map(prev.map(x=>[x.id,x]));
+      items.forEach(x=>byId.set(x.id,{...(byId.get(x.id)||{}),...x}));
+      return [...byId.values()];
+    });
+  },[]);
+  const mergeBookings=useCallback(items=>{
+    if(!items||items.length===0) return;
+    setBookings(prev=>{
+      const byId=new Map(prev.map(x=>[x.id,x]));
+      items.forEach(x=>byId.set(x.id,{...(byId.get(x.id)||{}),...x}));
+      return [...byId.values()];
+    });
+  },[]);
   const lineApi=useCallback(async(path,options={})=>{
     requireAuth();
     const token=await auth.currentUser.getIdToken();
@@ -5956,13 +5991,79 @@ function App(){
     const data=await lineApi("/line/threads?limit=100");
     setLineThreads((data.threads||[]).map(fromSupabaseLineThread));
   },[isLocalDev,lineApi]);
-
-  // ── Auth gate ──────────────────────────────────────────────────────
-  // "checking" | "signedout" | "checking_staff" | "authorized" | "denied" | "autherror"
-  const [authState,setAuthState]=useState("checking");
-  const [user,setUser]=useState(null);
-  const [authErr,setAuthErr]=useState("");
-  const [redirectBlocked,setRedirectBlocked]=useState(false);
+  const loadBookingsForRange=useCallback(async(start,end,opts={})=>{
+    if(isLocalDev||authState!=="authorized"||!start) return;
+    const snap=await db.collection("bookings").where("checkout",">=",start).orderBy("checkout","asc").limit(opts.limit||700).get();
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>!end||!b.checkin||b.checkin<=end);
+    mergeBookings(rows);
+    const known=new Set(customers.map(c=>c.id));
+    const missing=[...new Set(rows.map(b=>b.customerId).filter(id=>id&&!known.has(id)))].slice(0,120);
+    if(missing.length){
+      const custSnaps=await Promise.all(missing.map(id=>db.collection("customers").doc(id).get().catch(()=>null)));
+      mergeCustomers(custSnaps.filter(s=>s&&s.exists).map(s=>({id:s.id,...s.data()})));
+    }
+  },[isLocalDev,authState,customers,mergeBookings,mergeCustomers]);
+  const handleRoomsRangeChange=useCallback((start,end)=>{
+    if(isLocalDev||authState!=="authorized") return;
+    loadBookingsForRange(start,end).catch(err=>{
+      console.error("Firestore room range bookings error:",err);
+      setToast("โหลด booking ช่วงวันที่นี้ไม่สำเร็จ");
+    });
+  },[isLocalDev,authState,loadBookingsForRange]);
+  const loadOlderBookings=useCallback(async()=>{
+    if(isLocalDev||authState!=="authorized"||olderLoadBusy) return;
+    setOlderLoadBusy(true);
+    try{
+      const earliest=bookings.map(b=>b.checkout||b.checkin).filter(Boolean).sort()[0]||today();
+      const start=addDays(earliest,-180);
+      const end=addDays(earliest,-1);
+      await loadBookingsForRange(start,end,{limit:900});
+      setToast(`โหลดรายการเก่าเพิ่ม: ${fmt(start)} → ${fmt(end)}`);
+    }catch(err){
+      console.error("Firestore older bookings error:",err);
+      setToast("โหลดรายการเก่าไม่สำเร็จ");
+    }finally{
+      setOlderLoadBusy(false);
+    }
+  },[isLocalDev,authState,olderLoadBusy,bookings,loadBookingsForRange]);
+  const remoteSearchRecords=useCallback(async(raw)=>{
+    const term=String(raw||"").trim();
+    if(isLocalDev||authState!=="authorized"||term.length<2||remoteSearchBusy) return;
+    setRemoteSearchBusy(true);
+    try{
+      const lower=term.toLowerCase();
+      const monthMap={jan:1,january:1,feb:2,february:2,mar:3,march:3,apr:4,april:4,may:5,jun:6,june:6,jul:7,july:7,aug:8,august:8,sep:9,september:9,oct:10,october:10,nov:11,november:11,dec:12,december:12};
+      const ym=lower.match(/(20\d{2})[-/ ](0?[1-9]|1[0-2])/)||lower.match(/(0?[1-9]|1[0-2])[-/ ](20\d{2})/);
+      const monthName=Object.entries(monthMap).find(([name])=>lower.includes(name));
+      const year=(lower.match(/20\d{2}/)||[])[0];
+      if(ym||monthName&&year){
+        const y=ym?(ym[1].length===4?parseInt(ym[1]):parseInt(ym[2])):parseInt(year);
+        const m=ym?(ym[1].length===4?parseInt(ym[2]):parseInt(ym[1])):monthName[1];
+        const start=`${y}-${String(m).padStart(2,"0")}-01`;
+        const end=fmtD(new Date(y,m,0));
+        await loadBookingsForRange(start,end,{limit:900});
+      }
+      const foundCustomers=[];
+      const customerQueries=[
+        db.collection("customers").orderBy("nickname").startAt(term).endAt(term+"\uf8ff").limit(20).get(),
+        db.collection("customers").orderBy("phone").startAt(term).endAt(term+"\uf8ff").limit(20).get().catch(()=>({docs:[]})),
+      ];
+      const snaps=await Promise.all(customerQueries);
+      snaps.forEach(snap=>snap.docs.forEach(d=>foundCustomers.push({id:d.id,...d.data()})));
+      mergeCustomers(foundCustomers);
+      const ids=[...new Set(foundCustomers.map(c=>c.id))].slice(0,10);
+      const bookingSnaps=await Promise.all(ids.map(id=>db.collection("bookings").where("customerId","==",id).limit(100).get().catch(()=>({docs:[]}))));
+      const foundBookings=[];
+      bookingSnaps.forEach(snap=>snap.docs.forEach(d=>foundBookings.push({id:d.id,...d.data()})));
+      mergeBookings(foundBookings);
+      setToast(foundCustomers.length||foundBookings.length?`เจอเพิ่ม ${foundCustomers.length} ลูกค้า · ${foundBookings.length} booking`:"ค้นหาเพิ่มแล้ว ถ้าเป็นวันที่ ระบบโหลดช่วงเดือนให้แล้ว");
+    }catch(err){
+      console.error("Firestore remote search error:",err);
+      setToast("ค้นหาเพิ่มไม่สำเร็จ");
+    }finally{
+      setRemoteSearchBusy(false);
+    }
+  },[isLocalDev,authState,remoteSearchBusy,mergeCustomers,mergeBookings,loadBookingsForRange]);
 
   // Resolve a pending redirect first. If the sentinel survived the round trip
   // but no credential came back, the browser blocked the cross-site handoff —
@@ -6053,7 +6154,7 @@ function App(){
     );
     const recentStart=addDays(today(),-30);
     const unsubB=db.collection("bookings").where("checkout",">=",recentStart).orderBy("checkout","asc").limit(500).onSnapshot(
-      snap=>{ setBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
+      snap=>{ mergeBookings(snap.docs.map(d=>({id:d.id,...d.data()}))); },
       err=>{ if(onErr("bookings",err)) return; setDbError(err.code||"unknown"); }
     );
     const unsubP=db.collection("settings").doc("pricing").onSnapshot(
@@ -6067,7 +6168,7 @@ function App(){
       err=>{ console.error("Firestore ical error:",err); }
     );
     return()=>{ clearTimeout(loadTimeout); unsubC(); unsubB(); unsubP(); unsubI(); };
-  },[authState,isLocalDev]);
+  },[authState,isLocalDev,mergeBookings]);
 
   useEffect(()=>{
     if(authState!=="authorized"||page!=="line") return;
@@ -6090,14 +6191,10 @@ function App(){
       if(cancelled) return;
       const found=snaps.filter(s=>s&&s.exists).map(s=>({id:s.id,...s.data()}));
       if(found.length===0) return;
-      setCustomers(prev=>{
-        const byId=new Map(prev.map(c=>[c.id,c]));
-        found.forEach(c=>byId.set(c.id,c));
-        return [...byId.values()];
-      });
+      mergeCustomers(found);
     });
     return()=>{cancelled=true;};
-  },[authState,isLocalDev,bookings,customers]);
+  },[authState,isLocalDev,bookings,customers,mergeCustomers]);
 
   const saving=async fn=>{setSync("saving");try{await fn();setSync("saved");setTimeout(()=>setSync(""),2000);}catch(e){setSync("error");setToast("❌ Save failed");setTimeout(()=>setSync(""),3000);}};
 
@@ -6162,10 +6259,10 @@ const onDeleteCustomer=useCallback(async id=>{
     {sync&&<div style={{position:"fixed",top:0,left:0,right:0,height:3,zIndex:999,background:sync==="saving"?C.orange:sync==="saved"?C.green:C.red,transition:"background 0.3s"}}/>}
 
     {/* ── Main Content ── */}
-    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}}/>}
-    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}}/>}
+    {page==="rooms"    &&<RoomsPage     bookings={bookings} customers={customers} setToast={setToast} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}} onRangeChange={handleRoomsRangeChange}/>}
+    {page==="bookings" &&<BookingsPage  bookings={bookings} customers={customers} onSaveBooking={onSaveBooking} onDeleteBooking={onDeleteBooking} onImportBookings={onImportBookings} onShowReceipt={(b,m)=>{setReceiptBooking(b);setReceiptMode(m);}} onRemoteSearch={remoteSearchRecords} remoteSearchBusy={remoteSearchBusy} onLoadOlder={loadOlderBookings} olderLoadBusy={olderLoadBusy}/>}
     {receiptBooking&&<ReceiptModal booking={receiptBooking} customers={customers} mode={receiptMode} receiptNum={receiptCounter} onClose={()=>{bumpReceipt();setReceiptBooking(null);}}/>}
-    {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast}/>}
+    {page==="customers"&&<CustomersPage customers={customers} bookings={bookings} onSaveCustomer={onSaveCustomer} onDeleteCustomer={onDeleteCustomer} onSaveBooking={onSaveBooking} onImportCustomers={onImportCustomers} setToast={setToast} onRemoteSearch={remoteSearchRecords} remoteSearchBusy={remoteSearchBusy}/>}
     {page==="line"     &&<LineChatPage threads={lineThreads} setToast={setToast} devMessages={isLocalDev?devLineMessages:null} lineApi={lineApi} reloadThreads={reloadLineThreads}/>}
     {page==="dashboard"&&<DashboardPage bookings={bookings} customers={customers} onExportBookings={()=>{exportBookingsCSV(bookings,customers);setToast("CSV downloaded!");}}/>}
     {page==="settings" &&<SettingsPage  customers={customers} bookings={bookings} onImportCustomers={onImportCustomers} onImportBookings={onImportBookings} setToast={setToast} pricingDoc={pricingDoc} onSavePricing={async(doc)=>{await db.collection("settings").doc("pricing").set(doc);onPricingLoaded(doc);setPricingDoc(doc);}} icalUrl={icalUrl} onSaveIcalUrl={async(url)=>{await db.collection("settings").doc("ical").set({url,updatedAt:new Date().toISOString(),updatedBy:(window.__cwUser?.email||"")});}}/>}
