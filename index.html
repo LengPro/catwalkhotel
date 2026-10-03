@@ -3796,47 +3796,59 @@ function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
     new Promise((_,reject)=>setTimeout(()=>reject(new Error(`${label} timeout`)),ms))
   ]);
 
-  const handleLineCsvFile=e=>{
-    const file=e.target.files&&e.target.files[0];
-    if(!file) return;
+  const readCsvFile=file=>new Promise((resolve,reject)=>{
     const reader=new FileReader();
-    reader.onload=ev=>{
-      try{
-        const parsed=parseLineChatCsv(ev.target.result,file.name);
-        if(parsed.messages.length===0) throw new Error("ไม่พบข้อความในไฟล์");
-        const n=norm(parsed.userName);
-        const lastText=norm(parsed.last?.text);
-        const lastMs=toMs(parsed.last?.timestamp);
-        const candidates=threads.map(t=>{
-          const dn=norm(lineThreadName(t));
-          const lm=norm(t.lastMessage);
-          const tMs=toMs(t.lastMessageAt);
-          let score=0;
-          if(dn&&n&&(dn===n||dn.includes(n)||n.includes(dn))) score+=10;
-          if(lastText&&lm&&lastText===lm) score+=8;
-          if(lastText&&lm&&(lastText.includes(lm)||lm.includes(lastText))) score+=4;
-          if(lastMs&&tMs){
-            const diff=Math.abs(lastMs-tMs);
-            if(diff<5*60*1000) score+=4;
-            else if(diff<60*60*1000) score+=2;
-          }
-          return {...t,_matchScore:score};
-        }).filter(t=>t._matchScore>0).sort((a,b)=>b._matchScore-a._matchScore).slice(0,8);
-        setImportDraft({
+    reader.onload=ev=>resolve(String(ev.target.result||""));
+    reader.onerror=()=>reject(reader.error||new Error("อ่านไฟล์ไม่สำเร็จ"));
+    reader.readAsText(file,"utf-8");
+  });
+  const getImportCandidates=parsed=>{
+    const n=norm(parsed.userName);
+    const lastText=norm(parsed.last?.text);
+    const lastMs=toMs(parsed.last?.timestamp);
+    return threads.map(t=>{
+      const dn=norm(lineThreadName(t));
+      const lm=norm(t.lastMessage);
+      const tMs=toMs(t.lastMessageAt);
+      let score=0;
+      if(dn&&n&&(dn===n||dn.includes(n)||n.includes(dn))) score+=10;
+      if(lastText&&lm&&lastText===lm) score+=8;
+      if(lastText&&lm&&(lastText.includes(lm)||lm.includes(lastText))) score+=4;
+      if(lastMs&&tMs){
+        const diff=Math.abs(lastMs-tMs);
+        if(diff<5*60*1000) score+=4;
+        else if(diff<60*60*1000) score+=2;
+      }
+      return {...t,_matchScore:score};
+    }).filter(t=>t._matchScore>0).sort((a,b)=>b._matchScore-a._matchScore).slice(0,8);
+  };
+  const handleLineCsvFile=async e=>{
+    const files=Array.from(e.target.files||[]);
+    if(files.length===0) return;
+    try{
+      const items=[];
+      for(const file of files){
+        const text=await readCsvFile(file);
+        const parsed=parseLineChatCsv(text,file.name);
+        if(parsed.messages.length===0) throw new Error(`ไม่พบข้อความในไฟล์ ${file.name}`);
+        const candidates=getImportCandidates(parsed);
+        items.push({
           ...parsed,
+          key:`${file.name}_${items.length}_${lineHash(file.name)}`,
           fileName:file.name,
           targetId:candidates.length===1?candidates[0].id:"",
           candidates
         });
-        setToast&&setToast(`อ่านไฟล์แล้ว: ${parsed.messages.length} messages`);
-      }catch(err){
-        console.error("LINE CSV import parse error:",err);
-        setToast&&setToast("❌ อ่านไฟล์ LINE CSV ไม่สำเร็จ");
-      }finally{
-        e.target.value="";
       }
-    };
-    reader.readAsText(file,"utf-8");
+      const totalMessages=items.reduce((sum,item)=>sum+item.messages.length,0);
+      setImportDraft({items,totalMessages});
+      setToast&&setToast(`อ่านไฟล์แล้ว ${items.length} ไฟล์ · ${totalMessages} messages`);
+    }catch(err){
+      console.error("LINE CSV import parse error:",err);
+      setToast&&setToast("❌ อ่านไฟล์ LINE CSV ไม่สำเร็จ");
+    }finally{
+      e.target.value="";
+    }
   };
 
   const commitLineCsvImport=async()=>{
@@ -3844,24 +3856,29 @@ function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
     setImportBusy(true);
     setImportProgress("เริ่ม import...");
     try{
-      const targetId=importDraft.targetId||lineSafeId(importDraft.userName);
-      setImportProgress(`Uploading ${importDraft.messages.length} messages...`);
-      await withTimeout(lineApi("/line/import",{
-        method:"POST",
-        body:JSON.stringify({
-          targetId,
-          userName:importDraft.userName,
-          fileName:importDraft.fileName,
-          accountName:importDraft.meta.accountName||"Catwalk Hotel",
-          messages:importDraft.messages
-        })
-      }),"Import LINE CSV",60000);
+      let lastTargetId="";
+      for(let i=0;i<importDraft.items.length;i++){
+        const item=importDraft.items[i];
+        const targetId=item.targetId||lineSafeId(item.userName);
+        lastTargetId=targetId;
+        setImportProgress(`Uploading ${i+1}/${importDraft.items.length}: ${item.messages.length} messages...`);
+        await withTimeout(lineApi("/line/import",{
+          method:"POST",
+          body:JSON.stringify({
+            targetId,
+            userName:item.userName,
+            fileName:item.fileName,
+            accountName:item.meta.accountName||"Catwalk Hotel",
+            messages:item.messages
+          })
+        }),`Import LINE CSV ${i+1}`,90000);
+      }
       await reloadThreads();
-      setSelectedId(targetId);
+      setSelectedId(lastTargetId);
       setChatOpen(true);
       setImportDraft(null);
       setImportProgress("");
-      setToast&&setToast(`✅ Import LINE chat ${importDraft.messages.length} messages สำเร็จ`);
+      setToast&&setToast(`✅ Import LINE chat ${importDraft.items.length} ไฟล์ · ${importDraft.totalMessages} messages สำเร็จ`);
     }catch(err){
       console.error("LINE CSV import error:",err);
       setImportProgress(err?.message||"Import failed");
@@ -4022,19 +4039,25 @@ function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
               {selectMode&&<button disabled={deleteBusy||selectedThreadIds.length===0} onClick={deleteSelectedThreads} style={{...S.btnD,padding:"7px 10px",fontSize:12,opacity:(deleteBusy||selectedThreadIds.length===0)?0.5:1}}>{deleteBusy?"Deleting...":`Delete ${selectedThreadIds.length}`}</button>}
               {selectMode&&<button disabled={deleteBusy||mergeBusy||exportBusy} onClick={exitThreadSelect} style={{...S.btnG,padding:"7px 10px",fontSize:12}}>Cancel</button>}
             </div>
-            <input ref={importRef} type="file" accept=".csv,text/csv" style={{display:"none"}} onChange={handleLineCsvFile}/>
+            <input ref={importRef} type="file" multiple accept=".csv,text/csv" style={{display:"none"}} onChange={handleLineCsvFile}/>
           </div>
           <div style={{position:"relative"}}>
             <input style={{...S.inp,minHeight:42,padding:"10px 14px",paddingRight:search?36:14,borderRadius:12,fontSize:14}} placeholder="ค้นหาชื่อ LINE หรือข้อความ..." value={search} onChange={e=>setSearch(e.target.value)}/>
             {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e0e0e0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,color:"#555",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✕</button>}
           </div>
           {importDraft&&<div style={{marginTop:10,padding:10,border:`1px solid ${C.borderLight}`,borderRadius:12,background:"#fff"}}>
-            <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:4}}>Preview import: {importDraft.userName}</div>
-            <div style={{fontSize:12,color:C.text2,marginBottom:8}}>{importDraft.messages.length} messages · {importDraft.fileName}</div>
-            <select style={{...S.inp,minHeight:40,fontSize:13,marginBottom:8}} value={importDraft.targetId} onChange={e=>setImportDraft(d=>({...d,targetId:e.target.value}))}>
-              <option value="">สร้างแชทใหม่: {importDraft.userName}</option>
-              {importDraft.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {lineThreadName(t)} · {t.lastMessage||"No message"}</option>)}
-            </select>
+            <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:4}}>Preview import: {importDraft.items.length} ไฟล์</div>
+            <div style={{fontSize:12,color:C.text2,marginBottom:8}}>{importDraft.totalMessages} messages total</div>
+            <div style={{display:"grid",gap:8,maxHeight:260,overflowY:"auto",paddingRight:2,marginBottom:8}}>
+              {importDraft.items.map((item,idx)=><div key={item.key} style={{padding:8,border:`1px solid ${C.borderLight}`,borderRadius:10,background:C.bg}}>
+                <div style={{fontSize:13,fontWeight:800,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{idx+1}. {item.userName}</div>
+                <div style={{fontSize:11,color:C.text2,margin:"2px 0 6px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.messages.length} messages · {item.fileName}</div>
+                <select style={{...S.inp,minHeight:38,fontSize:13}} value={item.targetId} onChange={e=>setImportDraft(d=>({...d,items:d.items.map(x=>x.key===item.key?{...x,targetId:e.target.value}:x)}))}>
+                  <option value="">สร้างแชทใหม่: {item.userName}</option>
+                  {item.candidates.map(t=><option key={t.id} value={t.id}>รวมกับ: {lineThreadName(t)} · {t.lastMessage||"No message"}</option>)}
+                </select>
+              </div>)}
+            </div>
             <div style={{display:"flex",gap:8}}>
               <button disabled={importBusy} onClick={commitLineCsvImport} style={{...S.btnP,flex:1,opacity:importBusy?0.6:1}}>{importBusy?"Importing...":"Confirm Import"}</button>
               <button disabled={importBusy} onClick={()=>setImportDraft(null)} style={{...S.btnG,flex:1}}>Cancel</button>
