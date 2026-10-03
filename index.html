@@ -3836,7 +3836,7 @@ function LineChatPage({threads,setToast,devMessages,lineApi,reloadThreads}){
           ...parsed,
           key:`${file.name}_${items.length}_${lineHash(file.name)}`,
           fileName:file.name,
-          targetId:candidates.length===1?candidates[0].id:"",
+          targetId:"",
           candidates
         });
       }
